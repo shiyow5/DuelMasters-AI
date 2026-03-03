@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+@theme {
+  /* Primary colors */
+  --color-primary: #0dccf2;
+  --color-primary-dark: #0ab8da;
+  --color-primary-purple: #7f0df2;
+  --color-primary-purple-light: #9c4df5;
+
+  /* Backgrounds */
+  --color-bg-dark: #101f22;
+  --color-bg-surface: #1a2c30;
+  --color-bg-surface-highlight: #23363b;
+  --color-bg-card: #2a1b36;
+  --color-bg-card-hover: #362249;
+
+  /* DM Civilization colors */
+  --color-dm-fire: #ef4444;
+  --color-dm-water: #3b82f6;
+  --color-dm-nature: #22c55e;
+  --color-dm-light: #facc15;
+  --color-dm-darkness: #6b7280;
+
+  /* Text */
+  --color-text-main: #e1e7e9;
+  --color-text-muted: #90aab0;
+  --color-text-dim: #5a7a82;
+
+  /* Border */
+  --color-border-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-highlight: #23363b;
+}
+
+body {
+  font-family: "Inter", "Noto Sans JP", sans-serif;
+  background-color: var(--color-bg-dark);
+  color: var(--color-text-main);
+}
+
+/* Glass panel */
+.glass-panel {
+  background: rgba(26, 44, 48, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Chat bubbles */
+.glass-bubble-user {
+  background: rgba(13, 204, 242, 0.15);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(13, 204, 242, 0.3);
+}
+
+.glass-bubble-ai {
+  background: rgba(34, 66, 73, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Rule page - purple theme bubble */
+.glass-bubble-ai-purple {
+  background: rgba(45, 27, 62, 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(127, 13, 242, 0.2);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2d4a50;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3d5f66;
+}
+
+/* Material Symbols */
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@dm-ai/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@dm-ai/core": "workspace:*",
+    "@dm-ai/db": "workspace:*",
+    "@dm-ai/deck-engine": "workspace:*",
+    "@dm-ai/rag": "workspace:*",
+    "@hono/node-server": "^1.14.0",
+    "hono": "^4.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
