@@ -235,7 +235,7 @@ export default function RulePage() {
         </div>
 
         {/* Right: Quick Reference Panel */}
-        <aside className="w-96 bg-[#231630] border-l border-border-subtle flex flex-col overflow-hidden hidden xl:flex">
+        <aside className="w-96 bg-bg-card border-l border-border-subtle flex flex-col overflow-hidden hidden xl:flex">
           <div className="p-5 border-b border-border-subtle">
             <h3 className="text-white font-bold text-lg flex items-center gap-2">
               <span className="material-symbols-outlined text-primary-purple">

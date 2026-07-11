@@ -167,6 +167,12 @@ export default function DeckPage() {
     ? Object.values(score.civilizationBalance).reduce((a, b) => a + b, 0)
     : 0;
 
+  // 入力中デッキリストの合計枚数 (各行の先頭数値を合算)
+  const parsedCount = decklist.split("\n").reduce((s, l) => {
+    const m = l.trim().match(/^(\d+)/);
+    return s + (m ? parseInt(m[1], 10) : 0);
+  }, 0);
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Header */}
@@ -204,17 +210,23 @@ export default function DeckPage() {
       </div>
 
       {/* Dashboard Columns */}
-      <div className="flex-1 overflow-hidden p-6 grid grid-cols-12 gap-6">
+      <div className="flex-1 overflow-y-auto lg:overflow-hidden p-6 grid grid-cols-12 gap-6">
         {/* Left Column: Deck Input */}
-        <div className="col-span-12 lg:col-span-3 flex flex-col gap-6 overflow-y-auto pr-2">
+        <div className="col-span-12 lg:col-span-3 flex flex-col gap-6 lg:overflow-y-auto lg:pr-2">
           {/* Deck List Input */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">
                 Deck List
               </h3>
-              <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
-                40 Cards
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${
+                  parsedCount === 40
+                    ? "bg-primary/20 text-primary"
+                    : "bg-bg-surface-highlight text-text-muted"
+                }`}
+              >
+                {parsedCount}/40 枚
               </span>
             </div>
             <form onSubmit={handleEvaluate}>
@@ -402,7 +414,7 @@ export default function DeckPage() {
         </div>
 
         {/* Right Column: Analytics */}
-        <div className="col-span-12 lg:col-span-3 flex flex-col gap-6 overflow-y-auto pl-2">
+        <div className="col-span-12 lg:col-span-3 flex flex-col gap-6 lg:overflow-y-auto lg:pl-2">
           {/* Overall Score */}
           <div className="bg-gradient-to-br from-bg-surface to-bg-surface-highlight border border-border-highlight rounded-xl p-5 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
