@@ -1,5 +1,5 @@
 import { DECK_SIZE, DECK_GUIDELINES, type DeckScore } from "@dm-ai/core";
-import type { Card } from "@dm-ai/core";
+import type { Card, DeckEntry } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import type { ParsedDeck } from "./parser.js";
 
@@ -20,21 +20,9 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   const warnings: string[] = [];
   const suggestions: string[] = [];
 
-  // カード情報をDBから取得
-  const cardInfoMap = await fetchCardInfo(
-    deck.entries.map((e) => e.name)
-  );
-
-  // 展開済みリスト (各カード × 枚数)
-  const expandedCards: Card[] = [];
-  for (const entry of deck.entries) {
-    const info = cardInfoMap.get(entry.name);
-    if (info) {
-      for (let i = 0; i < entry.count; i++) {
-        expandedCards.push(info);
-      }
-    }
-  }
+  // カード情報をDBから取得 → 各カード × 枚数に展開
+  const cardInfoMap = await fetchCardInfo(deck.entries.map((e) => e.name));
+  const expandedCards = expandCards(deck.entries, cardInfoMap);
 
   // S・トリガー枚数
   const triggerCount = expandedCards.filter((c) => c.is_shield_trigger).length;
@@ -55,13 +43,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   }
 
   // コスト帯配分
-  const costCurve = { low: 0, mid: 0, high: 0 };
-  for (const card of expandedCards) {
-    if (card.cost <= 3) costCurve.low++;
-    else if (card.cost <= 6) costCurve.mid++;
-    else costCurve.high++;
-  }
-
+  const costCurve = computeCostCurve(expandedCards);
   if (costCurve.low < DECK_GUIDELINES.costCurve.low) {
     warnings.push(
       `低コスト(3以下)が${costCurve.low}枚です (推奨: ${DECK_GUIDELINES.costCurve.low}枚)`
@@ -70,14 +52,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   }
 
   // 文明比率
-  const civilizationBalance: Record<string, number> = {};
-  for (const card of expandedCards) {
-    for (const civ of card.civilizations) {
-      civilizationBalance[civ] = (civilizationBalance[civ] ?? 0) + 1;
-    }
-  }
-
-  // 色事故リスク判定
+  const civilizationBalance = computeCivilizationBalance(expandedCards);
   const civCount = Object.keys(civilizationBalance).length;
   if (civCount >= MULTI_CIV_WARN_THRESHOLD) {
     warnings.push(`${civCount}色デッキです。色事故のリスクがあります`);
@@ -95,13 +70,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   );
 
   // 役割バランス
-  const roleBalance: Record<string, number> = {};
-  for (const card of expandedCards) {
-    for (const tag of card.tags) {
-      roleBalance[tag] = (roleBalance[tag] ?? 0) + 1;
-    }
-  }
-
+  const roleBalance = computeRoleBalance(expandedCards);
   if ((roleBalance["受け"] ?? 0) < MIN_DEFENSE_CARDS) {
     warnings.push("受け札が少なく、攻撃に弱い構成です");
     suggestions.push("S・トリガーやブロッカーなどの受け札を追加しましょう");
@@ -135,6 +104,26 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   };
 }
 
+/** DB行 → Card 変換 */
+function rowToCard(row: Record<string, unknown>): Card {
+  return {
+    name: row.name as string,
+    civilizations: (row.civilizations ?? []) as Card["civilizations"],
+    cost: (row.cost as number) ?? 0,
+    type: (row.type ?? "creature") as Card["type"],
+    races: (row.races as string[]) ?? [],
+    text: (row.text as string) ?? "",
+    power: (row.power as number) ?? null,
+    is_rainbow: (row.is_rainbow as boolean) ?? false,
+    is_shield_trigger: (row.is_shield_trigger as boolean) ?? false,
+    tags: ((row.tags as string[]) ?? []) as Card["tags"],
+    card_image_url: (row.card_image_url as string) ?? null,
+    official_id: (row.official_id as string) ?? null,
+    set_code: (row.set_code as string) ?? null,
+    rarity: (row.rarity as string) ?? null,
+  };
+}
+
 /** カード情報をDBから一括取得 */
 async function fetchCardInfo(names: string[]): Promise<Map<string, Card>> {
   const map = new Map<string, Card>();
@@ -149,22 +138,7 @@ async function fetchCardInfo(names: string[]): Promise<Map<string, Card>> {
     for (const row of rows) {
       const name = row.name as string;
       if (map.has(name)) continue; // 同名複数行は最初の1行を採用 (変更前の LIMIT 1 相当)
-      map.set(name, {
-        name,
-        civilizations: (row.civilizations ?? []) as Card["civilizations"],
-        cost: (row.cost as number) ?? 0,
-        type: (row.type ?? "creature") as Card["type"],
-        races: (row.races as string[]) ?? [],
-        text: (row.text as string) ?? "",
-        power: (row.power as number) ?? null,
-        is_rainbow: (row.is_rainbow as boolean) ?? false,
-        is_shield_trigger: (row.is_shield_trigger as boolean) ?? false,
-        tags: ((row.tags as string[]) ?? []) as Card["tags"],
-        card_image_url: (row.card_image_url as string) ?? null,
-        official_id: (row.official_id as string) ?? null,
-        set_code: (row.set_code as string) ?? null,
-        rarity: (row.rarity as string) ?? null,
-      });
+      map.set(name, rowToCard(row));
     }
   } catch (err) {
     // DB未接続時はカード情報なしで評価を続行する (劣化動作は仕様として維持)
@@ -175,6 +149,57 @@ async function fetchCardInfo(names: string[]): Promise<Map<string, Card>> {
   }
 
   return map;
+}
+
+/** デッキエントリをカード情報で展開 (カード × 枚数) */
+function expandCards(entries: DeckEntry[], cardInfo: Map<string, Card>): Card[] {
+  const expanded: Card[] = [];
+  for (const entry of entries) {
+    const info = cardInfo.get(entry.name);
+    if (info) {
+      for (let i = 0; i < entry.count; i++) {
+        expanded.push(info);
+      }
+    }
+  }
+  return expanded;
+}
+
+/** コストカーブ集計 */
+function computeCostCurve(cards: Card[]): {
+  low: number;
+  mid: number;
+  high: number;
+} {
+  const costCurve = { low: 0, mid: 0, high: 0 };
+  for (const card of cards) {
+    if (card.cost <= 3) costCurve.low++;
+    else if (card.cost <= 6) costCurve.mid++;
+    else costCurve.high++;
+  }
+  return costCurve;
+}
+
+/** 文明比率集計 */
+function computeCivilizationBalance(cards: Card[]): Record<string, number> {
+  const balance: Record<string, number> = {};
+  for (const card of cards) {
+    for (const civ of card.civilizations) {
+      balance[civ] = (balance[civ] ?? 0) + 1;
+    }
+  }
+  return balance;
+}
+
+/** 役割タグ集計 */
+function computeRoleBalance(cards: Card[]): Record<string, number> {
+  const balance: Record<string, number> = {};
+  for (const card of cards) {
+    for (const tag of card.tags) {
+      balance[tag] = (balance[tag] ?? 0) + 1;
+    }
+  }
+  return balance;
 }
 
 /** 初手に特定コスト帯のカードが含まれる確率 (超幾何分布の近似) */
@@ -232,4 +257,3 @@ function calculateOverallScore(params: {
 
   return Math.max(0, Math.min(100, score));
 }
-
