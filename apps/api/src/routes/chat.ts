@@ -175,9 +175,9 @@ export async function executeToolCall(
         }
         const { query, civilization, max_cost, type } = parsed.data;
         const sql = getSql();
-        // jsonb 配列に要素が含まれるか (?)。postgres.js は $1 を使うため ? はリテラル演算子
+        // 文明フィルタ: jsonb 配列に要素が含まれるか (? 演算子は避け、移植性の高い EXISTS 形で)
         const civFrag = civilization
-          ? sql`AND civilizations ? ${civilization}`
+          ? sql`AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(civilizations) c WHERE c = ${civilization})`
           : sql``;
         const costFrag =
           max_cost !== undefined ? sql`AND cost <= ${max_cost}` : sql``;

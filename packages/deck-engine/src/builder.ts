@@ -64,7 +64,7 @@ export async function autoBuild(
     excludeCards.length > 0 ? sql`AND name NOT IN ${sql(excludeCards)}` : sql``;
   const civFrag =
     civs.length > 0
-      ? sql`AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(civilizations) c WHERE c = ANY(${civs}))`
+      ? sql`AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(civilizations) c WHERE c = ANY(${sql.array(civs)}))`
       : sql``;
   const costFrag = maxCost !== undefined ? sql`AND cost <= ${maxCost}` : sql``;
 
