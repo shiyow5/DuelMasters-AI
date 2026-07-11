@@ -31,7 +31,7 @@ async function main() {
 
   // 3. チャンク化
   console.log("チャンク化中...");
-  const chunks = chunkRuleText(parsed.text, "comprehensive_rules", VERSION);
+  const chunks = chunkRuleText(parsed.text);
   console.log(`チャンク数: ${chunks.length}`);
 
   // 4. 既存データ削除 (同バージョン)

@@ -11,9 +11,7 @@ describe("chunker 特性テスト", () => {
       "101. セクションB",
       "セクション本文",
     ].join("\n");
-    // 注意: R-03 実施後は第2・第3引数が無くなるため、その項目内の指示に従い
-    // 呼び出しを chunkRuleText(rule) に変更する。期待値は変わらない。
-    expect(chunkRuleText(rule, "comprehensive_rules", "1.49")).toEqual([
+    expect(chunkRuleText(rule)).toEqual([
       { text: "100. セクションA", meta: { section: "100" } },
       { text: "100.1. 条文1本文\n続きの行", meta: { section: "100", article: "100.1" } },
       { text: "100.2a. 条文2本文", meta: { section: "100", article: "100.2a" } },
