@@ -3,6 +3,7 @@ import { getSql } from "@dm-ai/db";
 import { FORMATS, IngestUrlRequestSchema, aggregateTierData } from "@dm-ai/core";
 import { extractTextFromHtml } from "@dm-ai/rag";
 import { extractTournament } from "../tournament-extract.js";
+import { requireInternal } from "../middleware/auth.js";
 
 const metaRouter = new Hono();
 
@@ -145,13 +146,8 @@ metaRouter.get("/archetype/:name", async (c) => {
   }
 });
 
-/** 大会結果ページの取り込み (Gemini 汎用抽出)。X-Internal-Key 必須 (I-14 でミドルウェア化) */
-metaRouter.post("/ingest/url", async (c) => {
-  const key = c.req.header("x-internal-key");
-  if (!process.env.INTERNAL_API_KEY || key !== process.env.INTERNAL_API_KEY) {
-    return c.json({ error: "内部APIキーが不正です" }, 401);
-  }
-
+/** 大会結果ページの取り込み (Gemini 汎用抽出)。X-Internal-Key 必須 */
+metaRouter.post("/ingest/url", requireInternal, async (c) => {
   const raw = await c.req.json().catch(() => null);
   const parsed = IngestUrlRequestSchema.safeParse(raw);
   if (!parsed.success) {

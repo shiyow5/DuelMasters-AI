@@ -5,6 +5,7 @@ import { logger } from "hono/logger";
 import { chatRouter } from "./routes/chat.js";
 import { deckRouter } from "./routes/deck.js";
 import { metaRouter } from "./routes/meta.js";
+import { optionalAuth } from "./middleware/auth.js";
 
 const app = new Hono();
 
@@ -19,6 +20,8 @@ app.use(
     ].filter(Boolean),
   })
 );
+// 認証 (無認証でも通す。userId を設定するだけ)
+app.use("*", optionalAuth);
 
 // ヘルスチェック
 app.get("/", (c) => c.json({ status: "ok", service: "dm-ai-api" }));
