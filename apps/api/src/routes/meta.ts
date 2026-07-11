@@ -1,11 +1,18 @@
 import { Hono } from "hono";
 import { getSql } from "@dm-ai/db";
+import { FORMATS } from "@dm-ai/core";
 
 const metaRouter = new Hono();
 
 /** ティアリスト取得 */
 metaRouter.get("/tier", async (c) => {
   const format = c.req.query("format") ?? "original";
+  if (!(FORMATS as readonly string[]).includes(format)) {
+    return c.json(
+      { error: `format は ${FORMATS.join(" | ")} のいずれかを指定してください` },
+      400
+    );
+  }
   const period = c.req.query("period") ?? "4w";
 
   const weeks = parseInt(period.replace("w", ""), 10) || 4;
@@ -82,7 +89,8 @@ metaRouter.get("/tier", async (c) => {
       period_end: snapshots[0].period_end,
       tier_data: snapshots[0].tier_data,
     });
-  } catch {
+  } catch (err) {
+    console.error("[api/meta] tier 取得に失敗 (フォールバック応答を返します):", err);
     // DB未接続の場合は空データを返す
     return c.json({
       format,
@@ -98,6 +106,12 @@ metaRouter.get("/tier", async (c) => {
 metaRouter.get("/archetype/:name", async (c) => {
   const name = c.req.param("name");
   const format = c.req.query("format") ?? "original";
+  if (!(FORMATS as readonly string[]).includes(format)) {
+    return c.json(
+      { error: `format は ${FORMATS.join(" | ")} のいずれかを指定してください` },
+      400
+    );
+  }
 
   try {
     const sql = getSql();
@@ -126,7 +140,11 @@ metaRouter.get("/archetype/:name", async (c) => {
       stats: stats[0],
       recent_results: results,
     });
-  } catch {
+  } catch (err) {
+    console.error(
+      "[api/meta] archetype 取得に失敗 (フォールバック応答を返します):",
+      err
+    );
     return c.json({
       archetype: name,
       format,
