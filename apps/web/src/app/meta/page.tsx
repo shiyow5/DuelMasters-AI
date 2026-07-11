@@ -179,7 +179,8 @@ export default function MetaPage() {
                         className={`text-sm font-medium px-2 py-0.5 rounded ${style.badge}`}
                       >
                         使用率{" "}
-                        {tier === "Tier1" ? "15%以上" : "5% - 15%"}
+                        {/* 閾値は apps/api の TIER_THRESHOLDS (15% / 8%) と一致させること */}
+                        {tier === "Tier1" ? "15%以上" : "8% - 15%"}
                       </span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

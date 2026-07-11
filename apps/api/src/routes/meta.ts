@@ -1,8 +1,42 @@
 import { Hono } from "hono";
 import { getSql } from "@dm-ai/db";
-import { FORMATS } from "@dm-ai/core";
+import { FORMATS, TIER_THRESHOLDS } from "@dm-ai/core";
 
 const metaRouter = new Hono();
+
+/** Date → "YYYY-MM-DD" */
+function isoDate(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
+/** 大会結果の集計行をティアリストに変換する */
+function aggregateTierData(
+  results: Array<Record<string, unknown>>
+): Array<{
+  tier: string;
+  archetype: string;
+  usage_rate: number;
+  win_rate: null;
+  sample_decklist: null;
+}> {
+  const totalEntries = results.reduce((sum, r) => sum + Number(r.count), 0);
+  return results.map((r) => {
+    const usageRate = Number(r.count) / totalEntries;
+    const tier =
+      usageRate >= TIER_THRESHOLDS.tier1
+        ? "Tier1"
+        : usageRate >= TIER_THRESHOLDS.tier2
+          ? "Tier2"
+          : "Tier3";
+    return {
+      tier,
+      archetype: r.deck_archetype as string,
+      usage_rate: Math.round(usageRate * 1000) / 10,
+      win_rate: null,
+      sample_decklist: null,
+    };
+  });
+}
 
 /** ティアリスト取得 */
 metaRouter.get("/tier", async (c) => {
@@ -28,7 +62,7 @@ metaRouter.get("/tier", async (c) => {
       SELECT tier_data, period_start, period_end, created_at
       FROM meta_snapshots
       WHERE format = ${format}
-        AND period_end >= ${periodStart.toISOString().split("T")[0]}
+        AND period_end >= ${isoDate(periodStart)}
       ORDER BY period_end DESC
       LIMIT 1
     `;
@@ -36,11 +70,11 @@ metaRouter.get("/tier", async (c) => {
     if (snapshots.length === 0) {
       // スナップショットがない場合は tournament_results から集計
       const results = await sql`
-        SELECT deck_archetype, COUNT(*) as count,
-               COUNT(*) FILTER (WHERE placement <= 8) as top8_count
+        SELECT deck_archetype, COUNT(*)::int as count,
+               (COUNT(*) FILTER (WHERE placement <= 8))::int as top8_count
         FROM tournament_results
         WHERE format = ${format}
-          AND event_date >= ${periodStart.toISOString().split("T")[0]}
+          AND event_date >= ${isoDate(periodStart)}
         GROUP BY deck_archetype
         ORDER BY count DESC
       `;
@@ -49,35 +83,19 @@ metaRouter.get("/tier", async (c) => {
         return c.json({
           format,
           period: `${weeks}w`,
-          period_start: periodStart.toISOString().split("T")[0],
-          period_end: periodEnd.toISOString().split("T")[0],
+          period_start: isoDate(periodStart),
+          period_end: isoDate(periodEnd),
           tier_data: [],
         });
       }
 
-      const totalEntries = results.reduce(
-        (sum, r) => sum + (r.count as number),
-        0
-      );
-
-      const tierData = results.map((r) => {
-        const usageRate = (r.count as number) / totalEntries;
-        const tier =
-          usageRate >= 0.15 ? "Tier1" : usageRate >= 0.08 ? "Tier2" : "Tier3";
-        return {
-          tier,
-          archetype: r.deck_archetype as string,
-          usage_rate: Math.round(usageRate * 1000) / 10,
-          win_rate: null,
-          sample_decklist: null,
-        };
-      });
+      const tierData = aggregateTierData(results);
 
       return c.json({
         format,
         period: `${weeks}w`,
-        period_start: periodStart.toISOString().split("T")[0],
-        period_end: periodEnd.toISOString().split("T")[0],
+        period_start: isoDate(periodStart),
+        period_end: isoDate(periodEnd),
         tier_data: tierData,
       });
     }
@@ -95,8 +113,8 @@ metaRouter.get("/tier", async (c) => {
     return c.json({
       format,
       period: `${weeks}w`,
-      period_start: periodStart.toISOString().split("T")[0],
-      period_end: periodEnd.toISOString().split("T")[0],
+      period_start: isoDate(periodStart),
+      period_end: isoDate(periodEnd),
       tier_data: [],
     });
   }
