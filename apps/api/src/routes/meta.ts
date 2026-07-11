@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getSql } from "@dm-ai/db";
-import { FORMATS, TIER_THRESHOLDS, IngestUrlRequestSchema } from "@dm-ai/core";
+import { FORMATS, IngestUrlRequestSchema, aggregateTierData } from "@dm-ai/core";
 import { extractTextFromHtml } from "@dm-ai/rag";
 import { extractTournament } from "../tournament-extract.js";
 
@@ -9,35 +9,6 @@ const metaRouter = new Hono();
 /** Date → "YYYY-MM-DD" */
 function isoDate(d: Date): string {
   return d.toISOString().split("T")[0];
-}
-
-/** 大会結果の集計行をティアリストに変換する */
-function aggregateTierData(
-  results: Array<Record<string, unknown>>
-): Array<{
-  tier: string;
-  archetype: string;
-  usage_rate: number;
-  win_rate: null;
-  sample_decklist: null;
-}> {
-  const totalEntries = results.reduce((sum, r) => sum + Number(r.count), 0);
-  return results.map((r) => {
-    const usageRate = Number(r.count) / totalEntries;
-    const tier =
-      usageRate >= TIER_THRESHOLDS.tier1
-        ? "Tier1"
-        : usageRate >= TIER_THRESHOLDS.tier2
-          ? "Tier2"
-          : "Tier3";
-    return {
-      tier,
-      archetype: r.deck_archetype as string,
-      usage_rate: Math.round(usageRate * 1000) / 10,
-      win_rate: null,
-      sample_decklist: null,
-    };
-  });
 }
 
 /** ティアリスト取得 */
