@@ -12,6 +12,26 @@ function isoDate(d: Date): string {
   return d.toISOString().split("T")[0];
 }
 
+/**
+ * SSRF 対策: http(s) かつプライベート/ループバック/リンクローカル/メタデータ宛先でないことを確認する。
+ * (DNS リバインディングまでは防げないため、公開運用では解決後 IP の再チェックも検討)
+ */
+function isPublicHttpUrl(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  const host = u.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost")) return false;
+  if (/^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(host)) return false;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+  if (host === "0.0.0.0" || host === "::1" || host === "[::1]") return false;
+  return true;
+}
+
 /** ティアリスト取得 */
 metaRouter.get("/tier", async (c) => {
   const format = c.req.query("format") ?? "original";
@@ -118,10 +138,10 @@ metaRouter.get("/archetype/:name", async (c) => {
 
     const stats = await sql`
       SELECT
-        COUNT(*) as total_entries,
-        COUNT(*) FILTER (WHERE placement = 1) as wins,
-        COUNT(*) FILTER (WHERE placement <= 4) as top4,
-        COUNT(*) FILTER (WHERE placement <= 8) as top8
+        COUNT(*)::int as total_entries,
+        (COUNT(*) FILTER (WHERE placement = 1))::int as wins,
+        (COUNT(*) FILTER (WHERE placement <= 4))::int as top4,
+        (COUNT(*) FILTER (WHERE placement <= 8))::int as top8
       FROM tournament_results
       WHERE deck_archetype = ${name} AND format = ${format}
     `;
@@ -162,6 +182,12 @@ metaRouter.post("/ingest/url", requireInternal, async (c) => {
     );
   }
   const { url, format } = parsed.data;
+  if (!isPublicHttpUrl(url)) {
+    return c.json(
+      { error: "許可されていない URL です (内部/プライベート宛先は取得できません)" },
+      400
+    );
+  }
 
   let html: string;
   try {

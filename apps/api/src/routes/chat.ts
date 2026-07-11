@@ -246,7 +246,9 @@ export async function executeToolCall(
         return `不明なツール: ${name}`;
     }
   } catch (err) {
-    return `ツール実行エラー: ${err instanceof Error ? err.message : String(err)}`;
+    // 生のエラー文言をユーザー/Gemini に渡さない (詳細はサーバーログのみ)
+    console.error(`[api/chat] ツール実行エラー (${name}):`, err);
+    return "ツール実行中にエラーが発生しました。しばらくしてから再度お試しください。";
   }
 }
 

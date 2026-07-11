@@ -54,12 +54,16 @@ async function main() {
     );
 
     const embeddings = await embed(texts);
+    if (embeddings.length !== texts.length) {
+      throw new Error(
+        `embed() が ${texts.length} 件中 ${embeddings.length} 件しか返しませんでした`
+      );
+    }
 
     // DB挿入
     for (let j = 0; j < batch.length; j++) {
       const chunk = batch[j];
-      const embedding = embeddings[j];
-      const vecStr = `[${embedding.join(",")}]`;
+      const vecStr = `[${(embeddings[j] ?? []).join(",")}]`;
 
       await sql`
         INSERT INTO rule_chunks (doc_type, version, chunk_text, chunk_meta, embedding)

@@ -208,7 +208,10 @@ function calculateOpeningRate(
   deckSize: number,
   handSize: number
 ): number {
-  if (deckSize === 0 || targetCards === 0) return 0;
+  if (deckSize <= 0 || targetCards <= 0) return 0;
+  // 山札が初手枚数以下だと超幾何分布が定義できない(分母0で NaN)。
+  // 対象カードが1枚でもあれば必ず引ける扱いとする。
+  if (deckSize <= handSize) return 1;
   // P(少なくとも1枚引く) = 1 - P(0枚引く)
   // P(0枚) = C(N-K, n) / C(N, n)
   let pZero = 1;
