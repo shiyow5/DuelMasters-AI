@@ -2,9 +2,12 @@ import { Hono } from "hono";
 import {
   chat,
   ChatRequestSchema,
+  CIVILIZATIONS,
+  CARD_TYPES,
   type ChatMode,
   type ChatResponse,
 } from "@dm-ai/core";
+import { z } from "zod";
 import { searchRules } from "@dm-ai/rag";
 import {
   parseDecklist,
@@ -142,7 +145,7 @@ async function chatWithRuleContext(
   };
 }
 
-async function executeToolCall(
+export async function executeToolCall(
   name: string,
   args: Record<string, unknown>,
   format?: string
@@ -157,13 +160,33 @@ async function executeToolCall(
       }
 
       case "search_cards": {
+        // Gemini 出力なので必ず検証してから使う
+        const schema = z.object({
+          query: z.string(),
+          civilization: z.enum(CIVILIZATIONS).optional(),
+          max_cost: z.number().optional(),
+          type: z.enum(CARD_TYPES).optional(),
+        });
+        const parsed = schema.safeParse(args);
+        if (!parsed.success) {
+          return `ツール引数が不正です: ${parsed.error.issues
+            .map((i) => `${i.path.join(".")}: ${i.message}`)
+            .join(", ")}`;
+        }
+        const { query, civilization, max_cost, type } = parsed.data;
         const sql = getSql();
-        const query = args.query as string;
+        // jsonb 配列に要素が含まれるか (?)。postgres.js は $1 を使うため ? はリテラル演算子
+        const civFrag = civilization
+          ? sql`AND civilizations ? ${civilization}`
+          : sql``;
+        const costFrag =
+          max_cost !== undefined ? sql`AND cost <= ${max_cost}` : sql``;
+        const typeFrag = type ? sql`AND type = ${type}` : sql``;
         const rows = await sql`
           SELECT name, civilizations, cost, type, races, text, power
           FROM cards
-          WHERE name ILIKE ${"%" + query + "%"}
-             OR text ILIKE ${"%" + query + "%"}
+          WHERE (name ILIKE ${"%" + query + "%"} OR text ILIKE ${"%" + query + "%"})
+            ${civFrag} ${costFrag} ${typeFrag}
           LIMIT 10
         `;
         return rows
@@ -196,10 +219,15 @@ async function executeToolCall(
       case "get_tier_list": {
         const sql = getSql();
         const fmt = (args.format as string) ?? format ?? "original";
+        const period = (args.period as string) ?? "4w";
+        const weeks = parseInt(period.replace("w", ""), 10) || 4;
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - weeks * 7);
+        const cutoffStr = cutoff.toISOString().split("T")[0];
         const snapshots = await sql`
           SELECT tier_data, period_start, period_end
           FROM meta_snapshots
-          WHERE format = ${fmt}
+          WHERE format = ${fmt} AND period_end >= ${cutoffStr}
           ORDER BY period_end DESC
           LIMIT 1
         `;
