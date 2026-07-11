@@ -14,7 +14,9 @@ export function getSupabase(): SupabaseClient {
     const key =
       process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY;
     if (!url || !key) {
-      throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY are required");
+      throw new Error(
+        "SUPABASE_URL と、SUPABASE_SERVICE_ROLE_KEY または SUPABASE_ANON_KEY が必要です"
+      );
     }
     _supabase = createClient(url, key);
   }
@@ -24,12 +26,7 @@ export function getSupabase(): SupabaseClient {
 /** Drizzle ORM (SQL クエリ) */
 export function getDb(): PostgresJsDatabase<typeof schema> {
   if (!_db) {
-    const databaseUrl = process.env.DATABASE_URL;
-    if (!databaseUrl) {
-      throw new Error("DATABASE_URL is required");
-    }
-    _sql = postgres(databaseUrl);
-    _db = drizzle(_sql, { schema });
+    _db = drizzle(getSql(), { schema });
   }
   return _db;
 }
