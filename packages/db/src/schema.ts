@@ -9,6 +9,7 @@ import {
   date,
   varchar,
   index,
+  uniqueIndex,
   real,
 } from "drizzle-orm/pg-core";
 
@@ -62,7 +63,7 @@ export const cards = pgTable(
   },
   (table) => [
     index("cards_name_idx").on(table.name),
-    index("cards_official_id_idx").on(table.official_id),
+    uniqueIndex("cards_official_id_uidx").on(table.official_id),
   ]
 );
 

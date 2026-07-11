@@ -112,7 +112,11 @@ async function scrapeCardDetail(url: string): Promise<RawCard | null> {
   });
 
   const imageUrl = $(".cardImage img").attr("src") ?? null;
-  const officialId = new URL(url).searchParams.get("id") ?? "";
+  const officialId = new URL(url).searchParams.get("id");
+  if (!officialId) {
+    console.warn(`official_id が取得できないためスキップ: ${url}`);
+    return null;
+  }
 
   return {
     name,
