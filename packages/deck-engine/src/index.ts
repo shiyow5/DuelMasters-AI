@@ -8,3 +8,8 @@ export {
   type BuildResult,
 } from "./builder.js";
 export { inferTagsByRule } from "./tagger.js";
+export {
+  classifyRegulations,
+  applyRegulationToRequired,
+  type RegulationSets,
+} from "./regulation-rules.js";

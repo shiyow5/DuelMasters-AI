@@ -1,5 +1,9 @@
 import { DECK_SIZE, MAX_COPIES, type Format, type DeckEntry } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
+import {
+  classifyRegulations,
+  applyRegulationToRequired,
+} from "./regulation-rules.js";
 
 export interface BuildConstraints {
   /** 必須カード */
@@ -31,31 +35,64 @@ export async function autoBuild(
   const sql = getSql();
   const entries: DeckEntry[] = [];
   let totalCards = 0;
+  const weaknesses: string[] = [];
 
-  // 1. 必須カード追加
-  if (constraints.requiredCards) {
-    for (const name of constraints.requiredCards) {
-      entries.push({ name, count: MAX_COPIES });
-      totalCards += MAX_COPIES;
+  // 殿堂レギュレーションを取得・分類
+  const regRows = await sql`
+    SELECT card_name, restriction_type FROM regulations WHERE format = ${format}
+  `;
+  const reg = classifyRegulations(
+    regRows.map((r) => ({
+      card_name: r.card_name as string,
+      restriction_type: r.restriction_type as string,
+    }))
+  );
+
+  // 制約フィルタ断片 (該当なしは空フラグメント)。
+  // civ 判定は jsonb 配列の要素一致 (= ANY)。postgres.js は JS 配列を text[] にバインドする。
+  const excludeCards = constraints.excludeCards ?? [];
+  const civs = constraints.civilizations ?? [];
+  const maxCost = constraints.maxCost;
+  const excludeFrag =
+    excludeCards.length > 0 ? sql`AND name NOT IN ${sql(excludeCards)}` : sql``;
+  const civFrag =
+    civs.length > 0
+      ? sql`AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(civilizations) c WHERE c = ANY(${civs}))`
+      : sql``;
+  const costFrag = maxCost !== undefined ? sql`AND cost <= ${maxCost}` : sql``;
+
+  // 1. 必須カード追加 (殿堂制約を適用)
+  if (constraints.requiredCards && constraints.requiredCards.length > 0) {
+    const { adopted, warnings } = applyRegulationToRequired(
+      constraints.requiredCards,
+      reg
+    );
+    for (const a of adopted) {
+      entries.push(a);
+      totalCards += a.count;
     }
+    weaknesses.push(...warnings);
   }
 
   // 2. テーマに関連するカードを検索
   const themeCards = await sql`
     SELECT name, cost, type, tags, civilizations, is_shield_trigger, is_rainbow
     FROM cards
-    WHERE text ILIKE ${"%" + theme + "%"}
-       OR name ILIKE ${"%" + theme + "%"}
-       OR EXISTS (
-         SELECT 1 FROM jsonb_array_elements_text(races) r WHERE r ILIKE ${"%" + theme + "%"}
-       )
+    WHERE (
+      text ILIKE ${"%" + theme + "%"}
+      OR name ILIKE ${"%" + theme + "%"}
+      OR EXISTS (
+        SELECT 1 FROM jsonb_array_elements_text(races) r WHERE r ILIKE ${"%" + theme + "%"}
+      )
+    )
+    ${excludeFrag} ${civFrag} ${costFrag}
     ORDER BY cost ASC
     LIMIT 100
   `;
 
   // 3. 役割ごとにカードを選定
   const roleQuotas: Record<string, number> = {
-    初動: 12,     // 2-3コスト帯
+    初動: 12,
     フィニッシャー: 4,
     受け: 8,
     除去: 4,
@@ -65,16 +102,14 @@ export async function autoBuild(
 
   const usedNames = new Set(entries.map((e) => e.name));
 
-  // テーマカードから優先的に採用
   for (const card of themeCards) {
     if (totalCards >= DECK_SIZE) break;
     const name = card.name as string;
-    if (usedNames.has(name)) continue;
+    if (usedNames.has(name) || reg.banned.has(name)) continue;
 
     const tags = (card.tags as string[]) ?? [];
     const cost = card.cost as number;
 
-    // 役割に基づいてカウント決定
     let count = MAX_COPIES;
     for (const tag of tags) {
       if (roleQuotas[tag] !== undefined && roleQuotas[tag] > 0) {
@@ -84,9 +119,8 @@ export async function autoBuild(
       }
     }
 
-    // 高コストは枚数を絞る
     if (cost >= 7) count = Math.min(count, 2);
-
+    if (reg.limited.has(name)) count = Math.min(count, 1); // 殿堂入りは1枚
     if (totalCards + count > DECK_SIZE) count = DECK_SIZE - totalCards;
     if (count <= 0) continue;
 
@@ -95,13 +129,16 @@ export async function autoBuild(
     totalCards += count;
   }
 
-  // 4. 不足分を汎用カードで補充
+  // 4. 不足分を汎用カード (S・トリガー) で補充
   if (totalCards < DECK_SIZE) {
+    const usedList =
+      Array.from(usedNames).length > 0 ? Array.from(usedNames) : ["__none__"];
     const fillers = await sql`
       SELECT name, cost, tags
       FROM cards
-      WHERE name NOT IN ${sql(Array.from(usedNames).length > 0 ? Array.from(usedNames) : ["__none__"])}
+      WHERE name NOT IN ${sql(usedList)}
         AND is_shield_trigger = true
+        ${excludeFrag} ${civFrag} ${costFrag}
       ORDER BY cost ASC
       LIMIT 20
     `;
@@ -109,8 +146,10 @@ export async function autoBuild(
     for (const filler of fillers) {
       if (totalCards >= DECK_SIZE) break;
       const name = filler.name as string;
-      if (usedNames.has(name)) continue;
-      const count = Math.min(MAX_COPIES, DECK_SIZE - totalCards);
+      if (usedNames.has(name) || reg.banned.has(name)) continue;
+      let count = Math.min(MAX_COPIES, DECK_SIZE - totalCards);
+      if (reg.limited.has(name)) count = Math.min(count, 1);
+      if (count <= 0) continue;
       entries.push({ name, count });
       usedNames.add(name);
       totalCards += count;
@@ -121,7 +160,7 @@ export async function autoBuild(
     entries,
     totalCards,
     strategy: `「${theme}」をテーマとした構築です。`,
-    weaknesses: analyzeWeaknesses(entries),
+    weaknesses: [...weaknesses, ...analyzeWeaknesses(entries)],
     alternatives: [],
   };
 }
