@@ -7,3 +7,4 @@ export {
   type BuildConstraints,
   type BuildResult,
 } from "./builder.js";
+export { inferTagsByRule } from "./tagger.js";
