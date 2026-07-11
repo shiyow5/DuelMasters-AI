@@ -1,9 +1,16 @@
-import { DECK_SIZE, MAX_COPIES, type Format, type DeckEntry } from "@dm-ai/core";
+import {
+  DECK_SIZE,
+  MAX_COPIES,
+  ROLE_TAGS,
+  type Format,
+  type DeckEntry,
+} from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import {
   classifyRegulations,
   applyRegulationToRequired,
 } from "./regulation-rules.js";
+import { pickReplacements } from "./suggest.js";
 
 export interface BuildConstraints {
   /** 必須カード */
@@ -174,39 +181,66 @@ function analyzeWeaknesses(entries: DeckEntry[]): string[] {
 }
 
 /**
- * デッキの改善提案を生成する
+ * デッキの改善提案を生成する。
+ * 「何を抜いて何を入れるか」を決定的に返す (純粋ロジックは suggest.ts)。
  */
 export async function suggestReplacements(
   entries: DeckEntry[],
   goals: string[]
 ): Promise<Array<{ original: string; replacement: string; reason: string }>> {
-  // 簡易版: goals に基づいてDBから候補を検索
+  if (entries.length === 0 || goals.length === 0) return [];
   const sql = getSql();
-  const suggestions: Array<{
-    original: string;
-    replacement: string;
-    reason: string;
-  }> = [];
 
+  const deckNames = entries.map((e) => e.name);
+  const notInDeck = deckNames.length > 0 ? deckNames : ["__none__"];
+
+  // デッキ内カードの情報を一括取得
+  const rows = await sql`
+    SELECT name, cost, tags FROM cards WHERE name IN ${sql(deckNames)}
+  `;
+  const infoByName = new Map(
+    rows.map((r) => [
+      r.name as string,
+      { cost: (r.cost as number) ?? 0, tags: (r.tags as string[]) ?? [] },
+    ])
+  );
+  const deckCards = entries.map((e) => {
+    const info = infoByName.get(e.name);
+    return {
+      name: e.name,
+      count: e.count,
+      cost: info?.cost ?? 0,
+      tags: info?.tags ?? [],
+    };
+  });
+
+  // goal ごとに候補を検索 (ROLE_TAGS はタグ一致、自由語は text ILIKE)
+  const isRoleTag = (g: string) => (ROLE_TAGS as readonly string[]).includes(g);
+  const candidatesByGoal = new Map<
+    string,
+    Array<{ name: string; cost: number; tags: string[] }>
+  >();
   for (const goal of goals) {
-    const candidates = await sql`
-      SELECT name, text
-      FROM cards
-      WHERE text ILIKE ${"%" + goal + "%"}
-         OR EXISTS (
-           SELECT 1 FROM jsonb_array_elements_text(tags) t WHERE t = ${goal}
-         )
-      LIMIT 5
-    `;
-
-    for (const candidate of candidates) {
-      suggestions.push({
-        original: "",
-        replacement: candidate.name as string,
-        reason: `「${goal}」の強化候補`,
-      });
-    }
+    const candRows = isRoleTag(goal)
+      ? await sql`
+          SELECT name, cost, tags FROM cards
+          WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) t WHERE t = ${goal})
+            AND name NOT IN ${sql(notInDeck)}
+          ORDER BY cost ASC LIMIT 5`
+      : await sql`
+          SELECT name, cost, tags FROM cards
+          WHERE text ILIKE ${"%" + goal + "%"}
+            AND name NOT IN ${sql(notInDeck)}
+          ORDER BY cost ASC LIMIT 5`;
+    candidatesByGoal.set(
+      goal,
+      candRows.map((r) => ({
+        name: r.name as string,
+        cost: (r.cost as number) ?? 0,
+        tags: (r.tags as string[]) ?? [],
+      }))
+    );
   }
 
-  return suggestions;
+  return pickReplacements({ deckCards, candidatesByGoal });
 }
