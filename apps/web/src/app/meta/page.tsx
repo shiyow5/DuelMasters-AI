@@ -234,7 +234,7 @@ function DeckCard({ entry, tier }: { entry: TierEntry; tier: string }) {
   const hue = nameToHue(entry.archetype);
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-xl bg-bg-card border border-border-highlight hover:border-primary-purple/50 transition-all cursor-pointer shadow-sm hover:shadow-lg hover:shadow-primary-purple/10">
+    <div className="group relative flex flex-col overflow-hidden rounded-xl bg-bg-card border border-border-highlight transition-all shadow-sm">
       {/* Header: アーキタイプ名から決定的に生成するグラデーション */}
       <div className="h-32 w-full relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-t from-bg-card to-transparent z-10" />

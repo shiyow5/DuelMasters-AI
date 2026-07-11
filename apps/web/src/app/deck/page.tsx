@@ -20,6 +20,7 @@ export default function DeckPage() {
   const [buildResult, setBuildResult] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [title, setTitle] = useState("");
+  const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [myDecks, setMyDecks] = useState<SavedDeckSummary[]>([]);
   const [loggedIn, setLoggedIn] = useState(false);
@@ -54,8 +55,9 @@ export default function DeckPage() {
   }, [refreshMyDecks]);
 
   async function handleSave() {
-    if (!title.trim() || !score) return;
+    if (!title.trim() || !score || saving) return;
     setSaveMsg("");
+    setSaving(true);
     try {
       await apiPost("/api/deck/save", {
         title: title.trim(),
@@ -69,10 +71,18 @@ export default function DeckPage() {
       setSaveMsg(
         `保存に失敗しました: ${err instanceof Error ? err.message : "不明"}`
       );
+    } finally {
+      setSaving(false);
     }
   }
 
   async function loadDeck(id: number) {
+    if (
+      decklist.trim() &&
+      !confirm("現在の入力を破棄してこのデッキを読み込みますか?")
+    ) {
+      return;
+    }
     try {
       const deck = await apiGet<{
         cards: Array<{ name: string; count: number }>;
@@ -123,6 +133,12 @@ export default function DeckPage() {
   async function handleBuild(e: React.FormEvent) {
     e.preventDefault();
     if (!theme.trim() || loading) return;
+    if (
+      decklist.trim() &&
+      !confirm("現在の入力を破棄して自動構築の結果に置き換えますか?")
+    ) {
+      return;
+    }
     setLoading(true);
     setBuildResult("");
     try {
@@ -170,7 +186,11 @@ export default function DeckPage() {
           {(["original", "advance"] as const).map((f) => (
             <button
               key={f}
-              onClick={() => setFormat(f)}
+              onClick={() => {
+                setFormat(f);
+                setScore(null);
+                setValidation(null);
+              }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 format === f
                   ? "bg-primary/20 text-primary border border-primary/20"
@@ -572,10 +592,10 @@ export default function DeckPage() {
                   />
                   <button
                     onClick={handleSave}
-                    disabled={!title.trim()}
+                    disabled={!title.trim() || saving}
                     className="py-2 bg-primary/20 text-primary rounded-lg text-sm font-medium hover:bg-primary/30 transition-colors disabled:opacity-50"
                   >
-                    保存
+                    {saving ? "保存中..." : "保存"}
                   </button>
                   {saveMsg && (
                     <p className="text-xs text-text-muted">{saveMsg}</p>

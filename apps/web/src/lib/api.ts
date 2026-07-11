@@ -11,15 +11,27 @@ async function authHeaders(): Promise<Record<string, string>> {
     : {};
 }
 
+/** サーバーが返す具体的なエラー文言 (error / details) を優先して Error にする */
+async function toApiError(res: Response): Promise<Error> {
+  const body = (await res.json().catch(() => null)) as {
+    error?: string;
+    details?: string[];
+  } | null;
+  const detail = body?.details?.length ? `: ${body.details.join(", ")}` : "";
+  return new Error(
+    body?.error
+      ? `${body.error}${detail}`
+      : `API error: ${res.status} ${res.statusText}`
+  );
+}
+
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await toApiError(res);
   return res.json() as Promise<T>;
 }
 
@@ -34,9 +46,7 @@ export async function apiGet<T>(
     }
   }
   const res = await fetch(url.toString(), { headers: await authHeaders() });
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await toApiError(res);
   return res.json() as Promise<T>;
 }
 
@@ -46,8 +56,6 @@ export async function apiDelete<T>(path: string): Promise<T> {
     method: "DELETE",
     headers: await authHeaders(),
   });
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
-  }
+  if (!res.ok) throw await toApiError(res);
   return res.json() as Promise<T>;
 }

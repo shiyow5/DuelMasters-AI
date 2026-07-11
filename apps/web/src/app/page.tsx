@@ -55,6 +55,8 @@ export default function ChatPage() {
 
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [loadText, setLoadText] = useState("");
+  const [helpful, setHelpful] = useState<Set<number>>(new Set());
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   function insertTemplate(prefix: string) {
@@ -201,22 +203,29 @@ export default function ChatPage() {
                     {msg.content}
                   </p>
                   <div className="mt-4 flex gap-2">
-                    <button className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle">
+                    <button
+                      onClick={() =>
+                        setHelpful((prev) => new Set(prev).add(i))
+                      }
+                      disabled={helpful.has(i)}
+                      className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle disabled:text-primary disabled:opacity-100"
+                    >
                       <span className="material-symbols-outlined text-sm">
                         thumb_up
                       </span>
-                      役に立った
+                      {helpful.has(i) ? "ありがとうございます" : "役に立った"}
                     </button>
                     <button
                       className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle"
-                      onClick={() =>
-                        navigator.clipboard.writeText(msg.content)
-                      }
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(msg.content);
+                        setCopiedIdx(i);
+                      }}
                     >
                       <span className="material-symbols-outlined text-sm">
                         content_copy
                       </span>
-                      コピー
+                      {copiedIdx === i ? "コピーしました" : "コピー"}
                     </button>
                   </div>
                 </div>
