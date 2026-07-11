@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { chat, type ChatMode } from "@dm-ai/core";
+import { chat, ChatRequestSchema, type ChatMode } from "@dm-ai/core";
 import { searchRules } from "@dm-ai/rag";
 import { parseDecklist, scoreDeck, validateRegulation } from "@dm-ai/deck-engine";
 import { getSql } from "@dm-ai/db";
@@ -25,20 +25,21 @@ const SYSTEM_PROMPTS: Record<ChatMode, string> = {
 };
 
 chatRouter.post("/", async (c) => {
-  const body = await c.req.json<{
-    message: string;
-    mode?: ChatMode;
-    history?: Array<{ role: "user" | "assistant"; content: string }>;
-    format?: string;
-  }>();
-
-  const mode: ChatMode = body.mode ?? "integrated";
-  const history = body.history ?? [];
-  const messages = [
-    ...history,
-    { role: "user" as const, content: body.message },
-  ];
-
+  const raw = await c.req.json().catch(() => null);
+  const parsed = ChatRequestSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json(
+      {
+        error: "リクエストが不正です",
+        details: parsed.error.issues.map(
+          (i) => `${i.path.join(".")}: ${i.message}`
+        ),
+      },
+      400
+    );
+  }
+  const { message, mode, history, format } = parsed.data;
+  const messages = [...history, { role: "user" as const, content: message }];
   const systemPrompt = SYSTEM_PROMPTS[mode];
   const useTools = mode === "integrated";
 
@@ -57,7 +58,7 @@ chatRouter.post("/", async (c) => {
       const result = await executeToolCall(
         toolCall.name,
         toolCall.args,
-        body.format
+        format
       );
       toolResults.push(`[${toolCall.name}の結果]\n${result}`);
     }
@@ -84,7 +85,7 @@ chatRouter.post("/", async (c) => {
 
   // ルールモードの場合は RAG 結果を付加
   if (mode === "rule") {
-    const searchResult = await searchRules(body.message);
+    const searchResult = await searchRules(message);
     if (searchResult.chunks.length > 0) {
       const context = searchResult.chunks
         .map(
