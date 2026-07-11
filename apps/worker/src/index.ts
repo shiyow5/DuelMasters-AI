@@ -15,11 +15,17 @@ async function main() {
     case "regulations":
       await import("./jobs/ingest-regulations.js");
       break;
+    case "tags": {
+      const { runIngestTags } = await import("./jobs/ingest-tags.js");
+      await runIngestTags({ onlyEmpty: !process.argv.includes("--all") });
+      break;
+    }
     default:
-      console.log("使用法: tsx src/index.ts <rules|cards|regulations>");
+      console.log("使用法: tsx src/index.ts <rules|cards|regulations|tags>");
       console.log("  rules       - ルールPDF取り込み");
       console.log("  cards       - カードデータ取り込み");
       console.log("  regulations - 殿堂レギュレーション取り込み");
+      console.log("  tags        - カード役割タグ付与 (--all で全カード)");
       process.exit(1);
   }
 }

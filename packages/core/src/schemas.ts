@@ -249,3 +249,12 @@ export const DeckSuggestRequestSchema = z.object({
   goals: z.array(z.string()).default([]),
 });
 export type DeckSuggestRequest = z.infer<typeof DeckSuggestRequestSchema>;
+
+/** ingest:tags の LLM 出力検証 (カード名 → 役割タグ) */
+export const TagExtractionSchema = z.array(
+  z.object({
+    name: z.string(),
+    tags: z.array(z.enum(ROLE_TAGS)),
+  })
+);
+export type TagExtraction = z.infer<typeof TagExtractionSchema>;

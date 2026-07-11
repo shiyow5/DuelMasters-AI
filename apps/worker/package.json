@@ -10,6 +10,7 @@
     "ingest:rules": "tsx src/jobs/ingest-rules.ts",
     "ingest:cards": "tsx src/jobs/ingest-cards.ts",
     "ingest:regulations": "tsx src/jobs/ingest-regulations.ts",
+    "ingest:tags": "tsx src/jobs/ingest-tags.ts",
     "fix:card-types": "tsx src/jobs/fix-card-types.ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
@@ -17,6 +18,7 @@
   "dependencies": {
     "@dm-ai/core": "workspace:*",
     "@dm-ai/db": "workspace:*",
+    "@dm-ai/deck-engine": "workspace:*",
     "@dm-ai/rag": "workspace:*",
     "cheerio": "^1.0.0",
     "pdf-parse": "^1.1.1"
