@@ -75,11 +75,6 @@ export default function RulePage() {
             Beta
           </span>
         </div>
-        <div className="flex items-center gap-4">
-          <button className="p-2 rounded-full hover:bg-white/5 text-text-muted transition-colors">
-            <span className="material-symbols-outlined">help</span>
-          </button>
-        </div>
       </header>
 
       {/* Split View */}
@@ -240,7 +235,7 @@ export default function RulePage() {
         </div>
 
         {/* Right: Quick Reference Panel */}
-        <aside className="w-96 bg-[#231630] border-l border-border-subtle flex flex-col overflow-hidden hidden xl:flex">
+        <aside className="w-96 bg-bg-card border-l border-border-subtle flex flex-col overflow-hidden hidden xl:flex">
           <div className="p-5 border-b border-border-subtle">
             <h3 className="text-white font-bold text-lg flex items-center gap-2">
               <span className="material-symbols-outlined text-primary-purple">

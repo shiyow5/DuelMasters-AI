@@ -66,6 +66,24 @@ const commands = [
                 .setRequired(true)
             )
         )
+        .addSubcommand((sub) =>
+          sub
+            .setName("save")
+            .setDescription("デッキを保存 (要ログイン設定)")
+            .addStringOption((opt) =>
+              opt
+                .setName("list")
+                .setDescription("デッキリスト")
+                .setRequired(true)
+            )
+            .addStringOption((opt) =>
+              opt
+                .setName("name")
+                .setDescription("デッキ名")
+                .setRequired(true)
+                .setMaxLength(100)
+            )
+        )
     )
     .addSubcommandGroup((group) =>
       group

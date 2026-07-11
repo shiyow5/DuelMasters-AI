@@ -46,3 +46,11 @@ export interface TierData {
   period_end: string;
   tier_data: TierEntry[];
 }
+
+export interface SavedDeckSummary {
+  id: number;
+  title: string;
+  format: string;
+  overall: number | null;
+  created_at: string;
+}

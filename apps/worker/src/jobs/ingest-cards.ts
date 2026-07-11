@@ -7,6 +7,7 @@ import { getSql, closeDb } from "@dm-ai/db";
 import { CIVILIZATIONS } from "@dm-ai/core";
 import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
 import { sleep, fetchWithRetry } from "../lib.js";
+import { normalizeCardType } from "../card-type-map.js";
 
 const BASE_URL = OFFICIAL_SITE_BASE_URL;
 const CARD_LIST_URL = `${BASE_URL}/card/`;
@@ -119,11 +120,18 @@ async function scrapeCardDetail(url: string): Promise<RawCard | null> {
     return null;
   }
 
+  const type = normalizeCardType(typeText);
+  if (!type) {
+    console.warn(
+      `未知のカード種別 "${typeText}" のため creature として格納: ${url}`
+    );
+  }
+
   return {
     name,
     civilizations,
     cost,
-    type: typeText,
+    type: type ?? "creature",
     races: raceText ? raceText.split("/").map((r) => r.trim()) : [],
     text: cardText,
     power: powerText ? parseInt(powerText.replace(/\+/, ""), 10) || null : null,
@@ -151,10 +159,10 @@ async function upsertCard(
       set_code, rarity, updated_at
     ) VALUES (
       ${card.name},
-      ${JSON.stringify(card.civilizations)},
+      ${sql.json(card.civilizations)},
       ${card.cost},
       ${card.type},
-      ${JSON.stringify(card.races)},
+      ${sql.json(card.races)},
       ${card.text},
       ${card.power},
       ${card.is_rainbow},

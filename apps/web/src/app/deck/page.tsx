@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { apiPost } from "@/lib/api";
+import { useState, useEffect, useCallback } from "react";
+import { apiPost, apiGet, apiDelete } from "@/lib/api";
 import { scoreGrade } from "@/lib/format";
-import type { DeckScore, ValidationResult } from "@/lib/types";
+import { supabase } from "@/lib/supabase";
+import type {
+  DeckScore,
+  ValidationResult,
+  SavedDeckSummary,
+} from "@/lib/types";
 import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";
 
 export default function DeckPage() {
@@ -14,6 +19,98 @@ export default function DeckPage() {
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [buildResult, setBuildResult] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [title, setTitle] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+  const [myDecks, setMyDecks] = useState<SavedDeckSummary[]>([]);
+  const [loggedIn, setLoggedIn] = useState(false);
+
+  const refreshMyDecks = useCallback(async () => {
+    if (!supabase) {
+      setLoggedIn(false);
+      return;
+    }
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) {
+      setLoggedIn(false);
+      setMyDecks([]);
+      return;
+    }
+    setLoggedIn(true);
+    try {
+      const res = await apiGet<{ decks: SavedDeckSummary[] }>("/api/deck/list");
+      setMyDecks(res.decks);
+    } catch {
+      setMyDecks([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMyDecks();
+    if (!supabase) return;
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      refreshMyDecks();
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [refreshMyDecks]);
+
+  async function handleSave() {
+    if (!title.trim() || !score || saving) return;
+    setSaveMsg("");
+    setSaving(true);
+    try {
+      await apiPost("/api/deck/save", {
+        title: title.trim(),
+        format,
+        decklist,
+      });
+      setSaveMsg("保存しました");
+      setTitle("");
+      await refreshMyDecks();
+    } catch (err) {
+      setSaveMsg(
+        `保存に失敗しました: ${err instanceof Error ? err.message : "不明"}`
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function loadDeck(id: number) {
+    if (
+      decklist.trim() &&
+      !confirm("現在の入力を破棄してこのデッキを読み込みますか?")
+    ) {
+      return;
+    }
+    try {
+      const deck = await apiGet<{
+        cards: Array<{ name: string; count: number }>;
+        format: "original" | "advance";
+      }>(`/api/deck/${id}`);
+      setDecklist(deck.cards.map((c) => `${c.count} ${c.name}`).join("\n"));
+      setFormat(deck.format);
+      setScore(null);
+      setValidation(null);
+      setBuildResult("");
+    } catch (err) {
+      alert(
+        `読み込みに失敗しました: ${err instanceof Error ? err.message : "不明"}`
+      );
+    }
+  }
+
+  async function deleteDeck(id: number) {
+    if (!confirm("このデッキを削除しますか?")) return;
+    try {
+      await apiDelete(`/api/deck/${id}`);
+      await refreshMyDecks();
+    } catch (err) {
+      alert(
+        `削除に失敗しました: ${err instanceof Error ? err.message : "不明"}`
+      );
+    }
+  }
 
   async function handleEvaluate(e: React.FormEvent) {
     e.preventDefault();
@@ -38,6 +135,12 @@ export default function DeckPage() {
   async function handleBuild(e: React.FormEvent) {
     e.preventDefault();
     if (!theme.trim() || loading) return;
+    if (
+      decklist.trim() &&
+      !confirm("現在の入力を破棄して自動構築の結果に置き換えますか?")
+    ) {
+      return;
+    }
     setLoading(true);
     setBuildResult("");
     try {
@@ -66,6 +169,12 @@ export default function DeckPage() {
     ? Object.values(score.civilizationBalance).reduce((a, b) => a + b, 0)
     : 0;
 
+  // 入力中デッキリストの合計枚数 (各行の先頭数値を合算)
+  const parsedCount = decklist.split("\n").reduce((s, l) => {
+    const m = l.trim().match(/^(\d+)/);
+    return s + (m ? parseInt(m[1], 10) : 0);
+  }, 0);
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Header */}
@@ -85,7 +194,11 @@ export default function DeckPage() {
           {(["original", "advance"] as const).map((f) => (
             <button
               key={f}
-              onClick={() => setFormat(f)}
+              onClick={() => {
+                setFormat(f);
+                setScore(null);
+                setValidation(null);
+              }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 format === f
                   ? "bg-primary/20 text-primary border border-primary/20"
@@ -99,17 +212,23 @@ export default function DeckPage() {
       </div>
 
       {/* Dashboard Columns */}
-      <div className="flex-1 overflow-hidden p-6 grid grid-cols-12 gap-6">
+      <div className="flex-1 overflow-y-auto lg:overflow-hidden p-6 grid grid-cols-12 gap-6">
         {/* Left Column: Deck Input */}
-        <div className="col-span-12 lg:col-span-3 flex flex-col gap-6 overflow-y-auto pr-2">
+        <div className="col-span-12 lg:col-span-3 flex flex-col gap-6 lg:overflow-y-auto lg:pr-2">
           {/* Deck List Input */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">
                 Deck List
               </h3>
-              <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
-                40 Cards
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${
+                  parsedCount === 40
+                    ? "bg-primary/20 text-primary"
+                    : "bg-bg-surface-highlight text-text-muted"
+                }`}
+              >
+                {parsedCount}/40 枚
               </span>
             </div>
             <form onSubmit={handleEvaluate}>
@@ -175,6 +294,50 @@ export default function DeckPage() {
               </p>
             </div>
           )}
+
+          {/* My Decks (ログイン時のみ) */}
+          {loggedIn && (
+            <div className="bg-bg-surface border border-border-highlight rounded-xl p-4">
+              <h3 className="text-sm font-semibold text-text-muted mb-3">
+                マイデッキ
+              </h3>
+              {myDecks.length === 0 ? (
+                <p className="text-xs text-text-dim">
+                  保存したデッキはありません
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {myDecks.map((d) => (
+                    <li
+                      key={d.id}
+                      className="flex items-center justify-between gap-2 bg-bg-dark rounded-lg px-3 py-2"
+                    >
+                      <button
+                        onClick={() => loadDeck(d.id)}
+                        className="flex flex-col items-start min-w-0 flex-1 text-left"
+                      >
+                        <span className="text-xs text-white truncate w-full">
+                          {d.title}
+                        </span>
+                        <span className="text-[10px] text-text-muted">
+                          {d.format} · {d.overall ?? "--"}点
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => deleteDeck(d.id)}
+                        className="text-text-dim hover:text-dm-fire transition-colors flex-shrink-0"
+                        title="削除"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          delete
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Center Column: Build Result / Validation */}
@@ -183,18 +346,6 @@ export default function DeckPage() {
             <h3 className="text-sm font-semibold text-text-muted">
               {buildResult ? "構築結果" : "デッキ内容"}
             </h3>
-            {/* Civilization Filter */}
-            <div className="flex items-center gap-2">
-              {Object.entries(CIV_COLORS).map(([civ, colors]) => (
-                <button
-                  key={civ}
-                  className={`w-8 h-8 rounded-full ${colors.bg} border border-current flex items-center justify-center hover:opacity-80 transition-colors ${colors.text}`}
-                  title={CIV_LABELS[civ]}
-                >
-                  <span className={`w-3 h-3 rounded-full ${colors.dot}`} />
-                </button>
-              ))}
-            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4">
             {buildResult ? (
@@ -203,8 +354,8 @@ export default function DeckPage() {
               </pre>
             ) : validation && !validation.valid ? (
               <div className="space-y-3">
-                <div className="rounded-xl border border-dm-fire/30 bg-dm-fire/10 p-4">
-                  <h4 className="text-sm font-medium text-dm-fire mb-2">
+                <div className="rounded-xl border border-danger/30 bg-danger/10 p-4">
+                  <h4 className="text-sm font-medium text-danger mb-2">
                     レギュレーション違反
                   </h4>
                   <ul className="space-y-1">
@@ -216,8 +367,8 @@ export default function DeckPage() {
                   </ul>
                 </div>
                 {validation.warnings.length > 0 && (
-                  <div className="rounded-xl border border-dm-light/30 bg-dm-light/10 p-4">
-                    <h4 className="text-sm font-medium text-dm-light mb-2">
+                  <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
+                    <h4 className="text-sm font-medium text-warning mb-2">
                       警告
                     </h4>
                     <ul className="space-y-1">
@@ -235,7 +386,7 @@ export default function DeckPage() {
                 {score.warnings.map((w, i) => (
                   <div
                     key={i}
-                    className="p-3 rounded-lg bg-dm-fire/10 border border-dm-fire/20 text-sm text-text-muted"
+                    className="p-3 rounded-lg bg-danger/10 border border-danger/20 text-sm text-text-muted"
                   >
                     {w}
                   </div>
@@ -265,7 +416,7 @@ export default function DeckPage() {
         </div>
 
         {/* Right Column: Analytics */}
-        <div className="col-span-12 lg:col-span-3 flex flex-col gap-6 overflow-y-auto pl-2">
+        <div className="col-span-12 lg:col-span-3 flex flex-col gap-6 lg:overflow-y-auto lg:pl-2">
           {/* Overall Score */}
           <div className="bg-gradient-to-br from-bg-surface to-bg-surface-highlight border border-border-highlight rounded-xl p-5 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
@@ -436,6 +587,41 @@ export default function DeckPage() {
               </div>
             </div>
           </div>
+
+          {/* デッキ保存 (評価後のみ表示) */}
+          {score && (
+            <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-text-muted mb-3">
+                デッキを保存
+              </h3>
+              {loggedIn ? (
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    maxLength={100}
+                    placeholder="デッキ名"
+                    className="w-full bg-bg-dark border border-border-highlight rounded-lg px-3 py-2 text-sm text-text-main placeholder-text-dim/50 focus:border-primary focus:ring-1 focus:ring-primary"
+                  />
+                  <button
+                    onClick={handleSave}
+                    disabled={!title.trim() || saving}
+                    className="py-2 bg-primary/20 text-primary rounded-lg text-sm font-medium hover:bg-primary/30 transition-colors disabled:opacity-50"
+                  >
+                    {saving ? "保存中..." : "保存"}
+                  </button>
+                  {saveMsg && (
+                    <p className="text-xs text-text-muted">{saveMsg}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-text-dim">
+                  ログインすると保存できます
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

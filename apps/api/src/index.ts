@@ -5,6 +5,8 @@ import { logger } from "hono/logger";
 import { chatRouter } from "./routes/chat.js";
 import { deckRouter } from "./routes/deck.js";
 import { metaRouter } from "./routes/meta.js";
+import { userRouter } from "./routes/user.js";
+import { optionalAuth } from "./middleware/auth.js";
 
 const app = new Hono();
 
@@ -17,8 +19,13 @@ app.use(
       "http://localhost:3000",
       process.env.WEB_URL ?? "",
     ].filter(Boolean),
+    // 許可ヘッダ/メソッドを明示 (Hono の既定エコー挙動に頼らず堅牢化する)
+    allowHeaders: ["Content-Type", "Authorization", "X-Internal-Key", "X-User-Id"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   })
 );
+// 認証 (無認証でも通す。userId を設定するだけ)
+app.use("*", optionalAuth);
 
 // ヘルスチェック
 app.get("/", (c) => c.json({ status: "ok", service: "dm-ai-api" }));
@@ -28,6 +35,7 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 app.route("/api/chat", chatRouter);
 app.route("/api/deck", deckRouter);
 app.route("/api/meta", metaRouter);
+app.route("/api/user", userRouter);
 
 // 予期しない例外の共通ハンドリング (詳細はサーバーログのみに出し、クライアントには汎用文言を返す)
 app.onError((err, c) => {

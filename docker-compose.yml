@@ -29,6 +29,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./infra/sql/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
       - ./infra/sql/002_cards_official_id_unique.sql:/docker-entrypoint-initdb.d/002_cards_official_id_unique.sql
+      - ./infra/sql/003_features.sql:/docker-entrypoint-initdb.d/003_features.sql
 
 volumes:
   pgdata:

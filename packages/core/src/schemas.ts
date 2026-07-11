@@ -249,3 +249,49 @@ export const DeckSuggestRequestSchema = z.object({
   goals: z.array(z.string()).default([]),
 });
 export type DeckSuggestRequest = z.infer<typeof DeckSuggestRequestSchema>;
+
+/** POST /api/deck/save */
+export const DeckSaveRequestSchema = z.object({
+  title: z.string().min(1, "title は必須です").max(100),
+  format: z.enum(FORMATS).default("original"),
+  decklist: z.string().min(1, "decklist は必須です"),
+});
+export type DeckSaveRequest = z.infer<typeof DeckSaveRequestSchema>;
+
+/** PUT /api/user/settings */
+export const UserSettingsRequestSchema = z.object({
+  format: z.enum(FORMATS),
+});
+export type UserSettingsRequest = z.infer<typeof UserSettingsRequestSchema>;
+
+/** ingest:tags の LLM 出力検証 (カード名 → 役割タグ) */
+export const TagExtractionSchema = z.array(
+  z.object({
+    name: z.string(),
+    tags: z.array(z.enum(ROLE_TAGS)),
+  })
+);
+export type TagExtraction = z.infer<typeof TagExtractionSchema>;
+
+/** 大会結果ページからの抽出結果 (Gemini 構造化出力の検証用) */
+export const TournamentExtractionSchema = z.object({
+  event_name: z.string().min(1),
+  event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  participants: z.number().int().positive().nullable(),
+  results: z
+    .array(
+      z.object({
+        deck_archetype: z.string().min(1),
+        placement: z.number().int().positive(),
+      })
+    )
+    .min(1),
+});
+export type TournamentExtraction = z.infer<typeof TournamentExtractionSchema>;
+
+/** POST /api/meta/ingest/url リクエスト */
+export const IngestUrlRequestSchema = z.object({
+  url: z.string().url(),
+  format: z.enum(FORMATS).default("original"),
+});
+export type IngestUrlRequest = z.infer<typeof IngestUrlRequestSchema>;

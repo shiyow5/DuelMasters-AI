@@ -53,6 +53,50 @@ export default function ChatPage() {
     }
   }
 
+  const [showLoadModal, setShowLoadModal] = useState(false);
+  const [loadText, setLoadText] = useState("");
+  const [helpful, setHelpful] = useState<Set<number>>(new Set());
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  function insertTemplate(prefix: string) {
+    setInput(prefix);
+    textareaRef.current?.focus();
+  }
+
+  function handleExport() {
+    if (messages.length === 0) return;
+    const text = messages
+      .map(
+        (m) =>
+          `[${m.timestamp ?? ""}] ${m.role === "user" ? "You" : "AI"}: ${m.content}`
+      )
+      .join("\n\n");
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const d = new Date();
+    const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dm-ai-chat-${ymd}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleDeleteChat() {
+    if (confirm("チャット履歴を削除しますか?")) setMessages([]);
+  }
+
+  function applyLoadedDeck() {
+    if (!loadText.trim()) return;
+    setInput(`次のデッキを評価してください:\n${loadText.trim()}`);
+    setLoadText("");
+    setShowLoadModal(false);
+    textareaRef.current?.focus();
+  }
+
   return (
     <div className="flex-1 flex flex-col h-full relative">
       {/* Header */}
@@ -76,10 +120,19 @@ export default function ChatPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Export Chat">
+          <button
+            onClick={handleExport}
+            disabled={messages.length === 0}
+            className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Export Chat"
+          >
             <span className="material-symbols-outlined">ios_share</span>
           </button>
-          <button className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Delete Chat">
+          <button
+            onClick={handleDeleteChat}
+            className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+            title="Delete Chat"
+          >
             <span className="material-symbols-outlined">delete</span>
           </button>
         </div>
@@ -150,22 +203,29 @@ export default function ChatPage() {
                     {msg.content}
                   </p>
                   <div className="mt-4 flex gap-2">
-                    <button className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle">
+                    <button
+                      onClick={() =>
+                        setHelpful((prev) => new Set(prev).add(i))
+                      }
+                      disabled={helpful.has(i)}
+                      className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle disabled:text-primary disabled:opacity-100"
+                    >
                       <span className="material-symbols-outlined text-sm">
                         thumb_up
                       </span>
-                      役に立った
+                      {helpful.has(i) ? "ありがとうございます" : "役に立った"}
                     </button>
                     <button
                       className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle"
-                      onClick={() =>
-                        navigator.clipboard.writeText(msg.content)
-                      }
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(msg.content);
+                        setCopiedIdx(i);
+                      }}
                     >
                       <span className="material-symbols-outlined text-sm">
                         content_copy
                       </span>
-                      コピー
+                      {copiedIdx === i ? "コピーしました" : "コピー"}
                     </button>
                   </div>
                 </div>
@@ -213,6 +273,7 @@ export default function ChatPage() {
           <div className="flex items-center gap-2 px-2 pb-2 border-b border-border-subtle mb-2">
             <button
               type="button"
+              onClick={() => setShowLoadModal(true)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
             >
               <span className="material-symbols-outlined text-sm">
@@ -222,6 +283,7 @@ export default function ChatPage() {
             </button>
             <button
               type="button"
+              onClick={() => insertTemplate("カード検索: ")}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/5 transition-colors"
             >
               <span className="material-symbols-outlined text-sm">search</span>
@@ -229,6 +291,7 @@ export default function ChatPage() {
             </button>
             <button
               type="button"
+              onClick={() => insertTemplate("裁定確認: ")}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/5 transition-colors"
             >
               <span className="material-symbols-outlined text-sm">
@@ -240,6 +303,7 @@ export default function ChatPage() {
           {/* Text Input */}
           <div className="relative flex items-end gap-2 px-2">
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -265,6 +329,43 @@ export default function ChatPage() {
           AIは不正確な情報を生成する可能性があります。重要な大会ルール等は公式サイトで確認してください。
         </p>
       </div>
+
+      {/* デッキリスト読込モーダル */}
+      {showLoadModal && (
+        <div
+          className="absolute inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
+          onClick={() => setShowLoadModal(false)}
+        >
+          <div
+            className="glass-panel rounded-2xl p-5 w-full max-w-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-white font-bold mb-3">デッキリストを読み込む</h3>
+            <textarea
+              value={loadText}
+              onChange={(e) => setLoadText(e.target.value)}
+              rows={8}
+              className="w-full bg-bg-dark border border-border-subtle rounded-lg p-3 text-sm text-text-main font-mono focus:ring-1 focus:ring-primary resize-none"
+              placeholder={"4 ボルシャック・ドラゴン\n4 ナチュラル・トラップ\n..."}
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => setShowLoadModal(false)}
+                className="px-4 py-2 rounded-lg text-sm text-text-muted hover:text-white hover:bg-white/5 transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={applyLoadedDeck}
+                disabled={!loadText.trim()}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-bg-dark hover:bg-primary-dark transition-colors disabled:opacity-50"
+              >
+                読み込む
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

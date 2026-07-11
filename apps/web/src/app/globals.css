@@ -14,17 +14,23 @@
   --color-bg-card: #2a1b36;
   --color-bg-card-hover: #362249;
 
-  /* DM Civilization colors */
+  /* DM Civilization colors (文明のブランド色。UI のセマンティクスには使わない) */
   --color-dm-fire: #ef4444;
   --color-dm-water: #3b82f6;
   --color-dm-nature: #22c55e;
   --color-dm-light: #facc15;
   --color-dm-darkness: #6b7280;
 
+  /* Semantic colors (エラー/警告/成功。文明色とは切り離して意味付けする) */
+  --color-danger: #ef4444;
+  --color-warning: #facc15;
+  --color-success: #22c55e;
+
   /* Text */
   --color-text-main: #e1e7e9;
   --color-text-muted: #90aab0;
-  --color-text-dim: #5a7a82;
+  /* text-dim: 小さい補助テキストでも AA を満たすよう #5a7a82 から引き上げ */
+  --color-text-dim: #789ba3;
 
   /* Border */
   --color-border-subtle: rgba(255, 255, 255, 0.05);
