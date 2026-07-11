@@ -4,8 +4,11 @@
  */
 import * as cheerio from "cheerio";
 import { getSql, closeDb } from "@dm-ai/db";
+import { CIVILIZATIONS } from "@dm-ai/core";
+import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
+import { sleep, fetchWithRetry } from "../lib.js";
 
-const BASE_URL = "https://dm.takaratomy.co.jp";
+const BASE_URL = OFFICIAL_SITE_BASE_URL;
 const CARD_LIST_URL = `${BASE_URL}/card/`;
 const CONCURRENT_LIMIT = 3;
 const DELAY_MS = 1000;
@@ -104,15 +107,17 @@ async function scrapeCardDetail(url: string): Promise<RawCard | null> {
   const civilizations: string[] = [];
   civElements.each((_, el) => {
     const civClass = $(el).attr("class") ?? "";
-    if (civClass.includes("fire")) civilizations.push("fire");
-    if (civClass.includes("water")) civilizations.push("water");
-    if (civClass.includes("nature")) civilizations.push("nature");
-    if (civClass.includes("light")) civilizations.push("light");
-    if (civClass.includes("darkness")) civilizations.push("darkness");
+    for (const civ of CIVILIZATIONS) {
+      if (civClass.includes(civ)) civilizations.push(civ);
+    }
   });
 
   const imageUrl = $(".cardImage img").attr("src") ?? null;
-  const officialId = new URL(url).searchParams.get("id") ?? "";
+  const officialId = new URL(url).searchParams.get("id");
+  if (!officialId) {
+    console.warn(`official_id が取得できないためスキップ: ${url}`);
+    return null;
+  }
 
   return {
     name,
@@ -175,24 +180,6 @@ async function upsertCard(
       rarity = EXCLUDED.rarity,
       updated_at = NOW()
   `;
-}
-
-async function fetchWithRetry(url: string, retries = 3): Promise<string> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.text();
-    } catch (err) {
-      if (i === retries - 1) throw err;
-      await sleep(1000 * (i + 1));
-    }
-  }
-  throw new Error("unreachable");
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 main().catch((err) => {

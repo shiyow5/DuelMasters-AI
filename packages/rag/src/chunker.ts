@@ -1,5 +1,3 @@
-import type { DocType } from "@dm-ai/core";
-
 export interface Chunk {
   text: string;
   meta: {
@@ -14,11 +12,7 @@ export interface Chunk {
  * ルールPDFのテキストを条文単位でチャンク化する。
  * 「X.Y.」パターン (例: "100.1.", "101.2a.") で分割。
  */
-export function chunkRuleText(
-  fullText: string,
-  docType: DocType,
-  version: string
-): Chunk[] {
+export function chunkRuleText(fullText: string): Chunk[] {
   const lines = fullText.split("\n");
   const chunks: Chunk[] = [];
   let currentSection = "";

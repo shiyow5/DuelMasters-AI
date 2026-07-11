@@ -196,3 +196,56 @@ export const SearchResultSchema = z.object({
   total: z.number(),
 });
 export type SearchResult = z.infer<typeof SearchResultSchema>;
+
+/** ===== API リクエストスキーマ (apps/api の入力検証用) ===== */
+
+/** POST /api/chat */
+export const ChatRequestSchema = z.object({
+  message: z.string().min(1, "message は必須です"),
+  mode: ChatModeSchema.default("integrated"),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+      })
+    )
+    .default([]),
+  format: z.enum(FORMATS).optional(),
+});
+export type ChatRequest = z.infer<typeof ChatRequestSchema>;
+
+/** POST /api/deck/parse */
+export const DeckParseRequestSchema = z.object({
+  decklist: z.string().min(1, "decklist は必須です"),
+});
+export type DeckParseRequest = z.infer<typeof DeckParseRequestSchema>;
+
+/** POST /api/deck/evaluate */
+export const DeckEvaluateRequestSchema = z.object({
+  decklist: z.string().min(1, "decklist は必須です"),
+  format: z.enum(FORMATS).default("original"),
+});
+export type DeckEvaluateRequest = z.infer<typeof DeckEvaluateRequestSchema>;
+
+/** POST /api/deck/build */
+export const DeckBuildRequestSchema = z.object({
+  theme: z.string().min(1, "theme は必須です"),
+  format: z.enum(FORMATS).default("original"),
+  constraints: z
+    .object({
+      requiredCards: z.array(z.string()).optional(),
+      excludeCards: z.array(z.string()).optional(),
+      civilizations: z.array(z.string()).optional(),
+      maxCost: z.number().optional(),
+    })
+    .default({}),
+});
+export type DeckBuildRequest = z.infer<typeof DeckBuildRequestSchema>;
+
+/** POST /api/deck/suggest */
+export const DeckSuggestRequestSchema = z.object({
+  decklist: z.string().min(1, "decklist は必須です"),
+  goals: z.array(z.string()).default([]),
+});
+export type DeckSuggestRequest = z.infer<typeof DeckSuggestRequestSchema>;

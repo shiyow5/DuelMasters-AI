@@ -39,7 +39,7 @@ interface ChunkResult {
   meta: Record<string, unknown>;
 }
 
-/** キーワード検索 (LIKE ベース) */
+/** キーワード検索 (ILIKE ベース) */
 async function searchByKeyword(
   sql: ReturnType<typeof getSql>,
   query: string,
@@ -53,23 +53,27 @@ async function searchByKeyword(
 
   if (keywords.length === 0) return [];
 
-  const conditions = keywords.map((k) => `chunk_text ILIKE '%' || '${escapeSql(k)}' || '%'`);
-  const whereClause = conditions.join(" OR ");
-  const docFilter = docType ? `AND doc_type = '${escapeSql(docType)}'` : "";
+  const patterns = keywords.map((k) => `%${k}%`);
+  const matchExpr = patterns
+    .map((p) => sql`(chunk_text ILIKE ${p})::int`)
+    .reduce((acc, frag) => sql`${acc} + ${frag}`);
+  const whereExpr = patterns
+    .map((p) => sql`chunk_text ILIKE ${p}`)
+    .reduce((acc, frag) => sql`${acc} OR ${frag}`);
 
-  const rows = await sql.unsafe(`
+  const rows = await sql`
     SELECT id, chunk_text, chunk_meta,
-           (${conditions.map(() => "1").join(" + ")}) as match_count
+           (${matchExpr}) AS match_count
     FROM rule_chunks
-    WHERE (${whereClause}) ${docFilter}
+    WHERE (${whereExpr}) ${docType ? sql`AND doc_type = ${docType}` : sql``}
     ORDER BY match_count DESC
     LIMIT ${topK}
-  `);
+  `;
 
   return rows.map((row: Record<string, unknown>) => ({
     id: row.id as number,
     text: row.chunk_text as string,
-    score: ((row.match_count as number) / keywords.length) * 0.5,
+    score: (Number(row.match_count) / keywords.length) * 0.5,
     meta: (row.chunk_meta as Record<string, unknown>) ?? {},
   }));
 }
@@ -82,17 +86,16 @@ async function searchByVector(
   docType?: string
 ): Promise<ChunkResult[]> {
   const embedding = await embedSingle(query);
-  const vecStr = `[${embedding.join(",")}]`;
-  const docFilter = docType ? `AND doc_type = '${escapeSql(docType)}'` : "";
+  const vecParam = `[${embedding.join(",")}]`;
 
-  const rows = await sql.unsafe(`
+  const rows = await sql`
     SELECT id, chunk_text, chunk_meta,
-           1 - (embedding <=> '${vecStr}'::vector) as similarity
+           1 - (embedding <=> ${vecParam}::vector) AS similarity
     FROM rule_chunks
-    WHERE embedding IS NOT NULL ${docFilter}
-    ORDER BY embedding <=> '${vecStr}'::vector
+    WHERE embedding IS NOT NULL ${docType ? sql`AND doc_type = ${docType}` : sql``}
+    ORDER BY embedding <=> ${vecParam}::vector
     LIMIT ${topK}
-  `);
+  `;
 
   return rows.map((row: Record<string, unknown>) => ({
     id: row.id as number,
@@ -135,9 +138,4 @@ function mergeResults(
     .sort((a, b) => b.score - a.score)
     .slice(0, topK)
     .map(({ text, score, meta }) => ({ text, score, meta }));
-}
-
-/** SQL インジェクション対策 */
-function escapeSql(str: string): string {
-  return str.replace(/'/g, "''");
 }

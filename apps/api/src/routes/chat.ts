@@ -1,7 +1,18 @@
 import { Hono } from "hono";
-import { chat, type ChatMode } from "@dm-ai/core";
+import {
+  chat,
+  ChatRequestSchema,
+  type ChatMode,
+  type ChatResponse,
+} from "@dm-ai/core";
 import { searchRules } from "@dm-ai/rag";
-import { parseDecklist, scoreDeck, validateRegulation } from "@dm-ai/deck-engine";
+import {
+  parseDecklist,
+  scoreDeck,
+  validateRegulation,
+  autoBuild,
+  suggestReplacements,
+} from "@dm-ai/deck-engine";
 import { getSql } from "@dm-ai/db";
 import { TOOL_DEFINITIONS } from "../tools.js";
 
@@ -25,20 +36,21 @@ const SYSTEM_PROMPTS: Record<ChatMode, string> = {
 };
 
 chatRouter.post("/", async (c) => {
-  const body = await c.req.json<{
-    message: string;
-    mode?: ChatMode;
-    history?: Array<{ role: "user" | "assistant"; content: string }>;
-    format?: string;
-  }>();
-
-  const mode: ChatMode = body.mode ?? "integrated";
-  const history = body.history ?? [];
-  const messages = [
-    ...history,
-    { role: "user" as const, content: body.message },
-  ];
-
+  const raw = await c.req.json().catch(() => null);
+  const parsed = ChatRequestSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json(
+      {
+        error: "リクエストが不正です",
+        details: parsed.error.issues.map(
+          (i) => `${i.path.join(".")}: ${i.message}`
+        ),
+      },
+      400
+    );
+  }
+  const { message, mode, history, format } = parsed.data;
+  const messages = [...history, { role: "user" as const, content: message }];
   const systemPrompt = SYSTEM_PROMPTS[mode];
   const useTools = mode === "integrated";
 
@@ -49,77 +61,86 @@ chatRouter.post("/", async (c) => {
     temperature: 0.3,
   });
 
-  // ツール呼び出しがある場合は実行
   if (response.toolCalls && response.toolCalls.length > 0) {
-    const toolResults: string[] = [];
-
-    for (const toolCall of response.toolCalls) {
-      const result = await executeToolCall(
-        toolCall.name,
-        toolCall.args,
-        body.format
-      );
-      toolResults.push(`[${toolCall.name}の結果]\n${result}`);
-    }
-
-    // ツール結果を含めて再度 Gemini に問い合わせ
-    const followUp = await chat(
-      [
-        ...messages,
-        { role: "assistant", content: response.text || "ツールを実行しています..." },
-        {
-          role: "user",
-          content: `ツール実行結果:\n${toolResults.join("\n\n")}\n\nこの結果を踏まえてユーザーの質問に回答してください。`,
-        },
-      ],
-      { systemPrompt, temperature: 0.3 }
+    const text = await chatWithToolResults(
+      messages,
+      response.toolCalls,
+      systemPrompt,
+      response.text,
+      format
     );
-
-    return c.json({
-      response: followUp.text,
-      toolCalls: response.toolCalls,
-      mode,
-    });
+    return c.json({ response: text, toolCalls: response.toolCalls, mode });
   }
 
-  // ルールモードの場合は RAG 結果を付加
   if (mode === "rule") {
-    const searchResult = await searchRules(body.message);
-    if (searchResult.chunks.length > 0) {
-      const context = searchResult.chunks
-        .map(
-          (ch, i) =>
-            `[${i + 1}] ${ch.meta.article ? `条${ch.meta.article}: ` : ""}${ch.text}`
-        )
-        .join("\n\n");
-
-      const ragResponse = await chat(
-        [
-          ...messages,
-          {
-            role: "user",
-            content: `以下のルール条文を参考に回答してください:\n\n${context}`,
-          },
-        ],
-        { systemPrompt, temperature: 0.2 }
-      );
-
-      return c.json({
-        response: ragResponse.text,
-        citations: searchResult.chunks.map((ch) => ({
-          text: ch.text.slice(0, 100),
-          ...ch.meta,
-        })),
-        mode,
-      });
+    const rag = await chatWithRuleContext(messages, message, systemPrompt);
+    if (rag) {
+      return c.json({ response: rag.text, citations: rag.citations, mode });
     }
   }
 
-  return c.json({
-    response: response.text,
-    mode,
-  });
+  return c.json({ response: response.text, mode });
 });
+
+/** ツール呼び出しを実行し、結果を踏まえた再問い合わせの応答文を返す */
+async function chatWithToolResults(
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  toolCalls: NonNullable<ChatResponse["toolCalls"]>,
+  systemPrompt: string,
+  responseText: string,
+  format?: string
+): Promise<string> {
+  const toolResults: string[] = [];
+  for (const toolCall of toolCalls) {
+    const result = await executeToolCall(toolCall.name, toolCall.args, format);
+    toolResults.push(`[${toolCall.name}の結果]\n${result}`);
+  }
+  const followUp = await chat(
+    [
+      ...messages,
+      { role: "assistant", content: responseText || "ツールを実行しています..." },
+      {
+        role: "user",
+        content: `ツール実行結果:\n${toolResults.join("\n\n")}\n\nこの結果を踏まえてユーザーの質問に回答してください。`,
+      },
+    ],
+    { systemPrompt, temperature: 0.3 }
+  );
+  return followUp.text;
+}
+
+/** rule モード: RAG 検索結果を付加して回答を生成する。ヒットが無ければ null */
+async function chatWithRuleContext(
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  query: string,
+  systemPrompt: string
+): Promise<{ text: string; citations: Array<Record<string, unknown>> } | null> {
+  const searchResult = await searchRules(query);
+  if (searchResult.chunks.length === 0) return null;
+  const context = searchResult.chunks
+    .map(
+      (ch, i) =>
+        `[${i + 1}] ${ch.meta.article ? `条${ch.meta.article}: ` : ""}${ch.text}`
+    )
+    .join("\n\n");
+  const ragResponse = await chat(
+    [
+      ...messages,
+      {
+        role: "user",
+        content: `以下のルール条文を参考に回答してください:\n\n${context}`,
+      },
+    ],
+    { systemPrompt, temperature: 0.2 }
+  );
+  return {
+    text: ragResponse.text,
+    citations: searchResult.chunks.map((ch) => ({
+      text: ch.text.slice(0, 100),
+      ...ch.meta,
+    })),
+  };
+}
 
 async function executeToolCall(
   name: string,
@@ -164,7 +185,6 @@ async function executeToolCall(
       }
 
       case "build_deck": {
-        const { autoBuild } = await import("@dm-ai/deck-engine");
         const result = await autoBuild(
           args.theme as string,
           ((args.format as string) ?? format ?? "original") as "original" | "advance",
@@ -188,7 +208,6 @@ async function executeToolCall(
       }
 
       case "suggest_improvements": {
-        const { suggestReplacements } = await import("@dm-ai/deck-engine");
         const deck = parseDecklist(args.decklist as string);
         const goals = (args.goals as string[]) ?? [];
         const suggestions = await suggestReplacements(deck.entries, goals);

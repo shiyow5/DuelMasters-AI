@@ -29,6 +29,12 @@ app.route("/api/chat", chatRouter);
 app.route("/api/deck", deckRouter);
 app.route("/api/meta", metaRouter);
 
+// 予期しない例外の共通ハンドリング (詳細はサーバーログのみに出し、クライアントには汎用文言を返す)
+app.onError((err, c) => {
+  console.error(`[api] ${c.req.method} ${c.req.path} で未処理エラー:`, err);
+  return c.json({ error: "内部エラーが発生しました" }, 500);
+});
+
 // サーバー起動
 const port = parseInt(process.env.PORT ?? "3001", 10);
 console.log(`DM-AI API server starting on port ${port}`);

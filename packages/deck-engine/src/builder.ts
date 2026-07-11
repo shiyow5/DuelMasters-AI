@@ -1,4 +1,4 @@
-import type { Format, DeckEntry } from "@dm-ai/core";
+import { DECK_SIZE, MAX_COPIES, type Format, type DeckEntry } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 
 export interface BuildConstraints {
@@ -35,8 +35,8 @@ export async function autoBuild(
   // 1. 必須カード追加
   if (constraints.requiredCards) {
     for (const name of constraints.requiredCards) {
-      entries.push({ name, count: 4 });
-      totalCards += 4;
+      entries.push({ name, count: MAX_COPIES });
+      totalCards += MAX_COPIES;
     }
   }
 
@@ -67,7 +67,7 @@ export async function autoBuild(
 
   // テーマカードから優先的に採用
   for (const card of themeCards) {
-    if (totalCards >= 40) break;
+    if (totalCards >= DECK_SIZE) break;
     const name = card.name as string;
     if (usedNames.has(name)) continue;
 
@@ -75,7 +75,7 @@ export async function autoBuild(
     const cost = card.cost as number;
 
     // 役割に基づいてカウント決定
-    let count = 4;
+    let count = MAX_COPIES;
     for (const tag of tags) {
       if (roleQuotas[tag] !== undefined && roleQuotas[tag] > 0) {
         count = Math.min(count, roleQuotas[tag]);
@@ -87,7 +87,7 @@ export async function autoBuild(
     // 高コストは枚数を絞る
     if (cost >= 7) count = Math.min(count, 2);
 
-    if (totalCards + count > 40) count = 40 - totalCards;
+    if (totalCards + count > DECK_SIZE) count = DECK_SIZE - totalCards;
     if (count <= 0) continue;
 
     entries.push({ name, count });
@@ -96,7 +96,7 @@ export async function autoBuild(
   }
 
   // 4. 不足分を汎用カードで補充
-  if (totalCards < 40) {
+  if (totalCards < DECK_SIZE) {
     const fillers = await sql`
       SELECT name, cost, tags
       FROM cards
@@ -107,10 +107,10 @@ export async function autoBuild(
     `;
 
     for (const filler of fillers) {
-      if (totalCards >= 40) break;
+      if (totalCards >= DECK_SIZE) break;
       const name = filler.name as string;
       if (usedNames.has(name)) continue;
-      const count = Math.min(4, 40 - totalCards);
+      const count = Math.min(MAX_COPIES, DECK_SIZE - totalCards);
       entries.push({ name, count });
       usedNames.add(name);
       totalCards += count;
@@ -129,7 +129,8 @@ export async function autoBuild(
 function analyzeWeaknesses(entries: DeckEntry[]): string[] {
   const weaknesses: string[] = [];
   const total = entries.reduce((s, e) => s + e.count, 0);
-  if (total < 40) weaknesses.push(`カードが${total}枚しかありません (40枚必要)`);
+  if (total < DECK_SIZE)
+    weaknesses.push(`カードが${total}枚しかありません (${DECK_SIZE}枚必要)`);
   return weaknesses;
 }
 

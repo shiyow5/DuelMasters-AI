@@ -6,9 +6,10 @@ import pdf from "pdf-parse";
 import { embed } from "@dm-ai/core";
 import { getSql, closeDb } from "@dm-ai/db";
 import { chunkRuleText } from "@dm-ai/rag";
+import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
+import { sleep } from "../lib.js";
 
-const RULES_PDF_URL =
-  "https://dm.takaratomy.co.jp/rule/pdf/dm_comprehensive_rules.pdf";
+const RULES_PDF_URL = `${OFFICIAL_SITE_BASE_URL}/rule/pdf/dm_comprehensive_rules.pdf`;
 
 const BATCH_SIZE = 20;
 const VERSION = "1.49";
@@ -31,7 +32,7 @@ async function main() {
 
   // 3. チャンク化
   console.log("チャンク化中...");
-  const chunks = chunkRuleText(parsed.text, "comprehensive_rules", VERSION);
+  const chunks = chunkRuleText(parsed.text);
   console.log(`チャンク数: ${chunks.length}`);
 
   // 4. 既存データ削除 (同バージョン)
@@ -83,10 +84,6 @@ async function main() {
 
   console.log(`=== ルールPDF取り込み完了: ${processed}チャンク ===`);
   await closeDb();
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 main().catch((err) => {

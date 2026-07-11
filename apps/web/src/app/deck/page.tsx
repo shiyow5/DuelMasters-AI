@@ -2,69 +2,9 @@
 
 import { useState } from "react";
 import { apiPost } from "@/lib/api";
-
-interface DeckScore {
-  triggerCount: number;
-  rainbowCount: number;
-  costCurve: { low: number; mid: number; high: number };
-  civilizationBalance: Record<string, number>;
-  openingHandRate: number;
-  roleBalance: Record<string, number>;
-  overall: number;
-  warnings: string[];
-  suggestions: string[];
-}
-
-interface ValidationResult {
-  valid: boolean;
-  errors: string[];
-  warnings: string[];
-}
-
-const CIV_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  fire: {
-    bg: "bg-dm-fire/20",
-    text: "text-dm-fire",
-    dot: "bg-dm-fire shadow-[0_0_8px_rgba(239,68,68,0.6)]",
-  },
-  water: {
-    bg: "bg-dm-water/20",
-    text: "text-dm-water",
-    dot: "bg-dm-water shadow-[0_0_8px_rgba(59,130,246,0.6)]",
-  },
-  nature: {
-    bg: "bg-dm-nature/20",
-    text: "text-dm-nature",
-    dot: "bg-dm-nature shadow-[0_0_8px_rgba(34,197,94,0.6)]",
-  },
-  light: {
-    bg: "bg-dm-light/20",
-    text: "text-dm-light",
-    dot: "bg-dm-light shadow-[0_0_8px_rgba(250,204,21,0.6)]",
-  },
-  darkness: {
-    bg: "bg-dm-darkness/20",
-    text: "text-dm-darkness",
-    dot: "bg-dm-darkness shadow-[0_0_8px_rgba(107,114,128,0.6)]",
-  },
-};
-
-const CIV_LABELS: Record<string, string> = {
-  fire: "Fire",
-  water: "Water",
-  nature: "Nature",
-  light: "Light",
-  darkness: "Darkness",
-};
-
-function scoreGrade(overall: number): string {
-  if (overall >= 90) return "S+";
-  if (overall >= 80) return "S";
-  if (overall >= 70) return "A";
-  if (overall >= 60) return "B";
-  if (overall >= 50) return "C";
-  return "D";
-}
+import { scoreGrade } from "@/lib/format";
+import type { DeckScore, ValidationResult } from "@/lib/types";
+import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";
 
 export default function DeckPage() {
   const [decklist, setDecklist] = useState("");
@@ -413,13 +353,6 @@ export default function DeckPage() {
                         const pct = totalCards
                           ? (count / totalCards) * 100
                           : 0;
-                        const colorMap: Record<string, string> = {
-                          fire: "#ef4444",
-                          water: "#3b82f6",
-                          nature: "#22c55e",
-                          light: "#facc15",
-                          darkness: "#6b7280",
-                        };
                         acc.el.push(
                           <circle
                             key={civ}
@@ -427,7 +360,7 @@ export default function DeckPage() {
                             cy="18"
                             r="15.9155"
                             fill="none"
-                            stroke={colorMap[civ] ?? "#6b7280"}
+                            stroke={CIV_HEX[civ] ?? "#6b7280"}
                             strokeWidth="3"
                             strokeDasharray={`${pct} ${100 - pct}`}
                             strokeDashoffset={`${-acc.offset}`}

@@ -25,4 +25,7 @@ if (!token) {
   process.exit(1);
 }
 
-client.login(token);
+client.login(token).catch((err) => {
+  console.error("Discord へのログインに失敗しました:", err);
+  process.exit(1);
+});

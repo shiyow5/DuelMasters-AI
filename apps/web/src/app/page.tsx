@@ -2,19 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { apiPost } from "@/lib/api";
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  timestamp?: string;
-}
-
-function getTime() {
-  return new Date().toLocaleTimeString("ja-JP", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+import { getTime } from "@/lib/format";
+import type { Message } from "@/lib/types";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);

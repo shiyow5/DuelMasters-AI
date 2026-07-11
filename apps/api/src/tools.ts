@@ -20,9 +20,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: {
         query: { type: "string", description: "検索クエリ" },
-        civilization: { type: "string", description: "文明フィルタ" },
-        max_cost: { type: "number", description: "最大コスト" },
-        type: { type: "string", description: "カード種別" },
       },
       required: ["query"],
     },
@@ -75,7 +72,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           enum: ["original", "advance"],
           description: "フォーマット",
         },
-        period: { type: "string", description: "期間 (例: 2w, 4w)" },
       },
       required: [],
     },

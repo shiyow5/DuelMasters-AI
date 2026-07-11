@@ -80,3 +80,9 @@ export const DOC_TYPES = [
   "faq",
 ] as const;
 export type DocType = (typeof DOC_TYPES)[number];
+
+/** ティア判定閾値 (大会結果からの集計時の使用率) */
+export const TIER_THRESHOLDS = {
+  tier1: 0.15,
+  tier2: 0.08,
+} as const;
