@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { apiPost } from "@/lib/api";
+import { useState, useEffect, useCallback } from "react";
+import { apiPost, apiGet, apiDelete } from "@/lib/api";
 import { scoreGrade } from "@/lib/format";
-import type { DeckScore, ValidationResult } from "@/lib/types";
+import { supabase } from "@/lib/supabase";
+import type {
+  DeckScore,
+  ValidationResult,
+  SavedDeckSummary,
+} from "@/lib/types";
 import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";
 
 export default function DeckPage() {
@@ -14,6 +19,86 @@ export default function DeckPage() {
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [buildResult, setBuildResult] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [title, setTitle] = useState("");
+  const [saveMsg, setSaveMsg] = useState("");
+  const [myDecks, setMyDecks] = useState<SavedDeckSummary[]>([]);
+  const [loggedIn, setLoggedIn] = useState(false);
+
+  const refreshMyDecks = useCallback(async () => {
+    if (!supabase) {
+      setLoggedIn(false);
+      return;
+    }
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) {
+      setLoggedIn(false);
+      setMyDecks([]);
+      return;
+    }
+    setLoggedIn(true);
+    try {
+      const res = await apiGet<{ decks: SavedDeckSummary[] }>("/api/deck/list");
+      setMyDecks(res.decks);
+    } catch {
+      setMyDecks([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMyDecks();
+    if (!supabase) return;
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      refreshMyDecks();
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [refreshMyDecks]);
+
+  async function handleSave() {
+    if (!title.trim() || !score) return;
+    setSaveMsg("");
+    try {
+      await apiPost("/api/deck/save", {
+        title: title.trim(),
+        format,
+        decklist,
+      });
+      setSaveMsg("保存しました");
+      setTitle("");
+      await refreshMyDecks();
+    } catch (err) {
+      setSaveMsg(
+        `保存に失敗しました: ${err instanceof Error ? err.message : "不明"}`
+      );
+    }
+  }
+
+  async function loadDeck(id: number) {
+    try {
+      const deck = await apiGet<{
+        cards: Array<{ name: string; count: number }>;
+      }>(`/api/deck/${id}`);
+      setDecklist(deck.cards.map((c) => `${c.count} ${c.name}`).join("\n"));
+      setScore(null);
+      setValidation(null);
+      setBuildResult("");
+    } catch (err) {
+      alert(
+        `読み込みに失敗しました: ${err instanceof Error ? err.message : "不明"}`
+      );
+    }
+  }
+
+  async function deleteDeck(id: number) {
+    if (!confirm("このデッキを削除しますか?")) return;
+    try {
+      await apiDelete(`/api/deck/${id}`);
+      await refreshMyDecks();
+    } catch (err) {
+      alert(
+        `削除に失敗しました: ${err instanceof Error ? err.message : "不明"}`
+      );
+    }
+  }
 
   async function handleEvaluate(e: React.FormEvent) {
     e.preventDefault();
@@ -173,6 +258,50 @@ export default function DeckPage() {
               <p className="text-xs text-text-muted leading-relaxed relative z-10">
                 {score.suggestions[0]}
               </p>
+            </div>
+          )}
+
+          {/* My Decks (ログイン時のみ) */}
+          {loggedIn && (
+            <div className="bg-bg-surface border border-border-highlight rounded-xl p-4">
+              <h3 className="text-sm font-semibold text-text-muted mb-3">
+                マイデッキ
+              </h3>
+              {myDecks.length === 0 ? (
+                <p className="text-xs text-text-dim">
+                  保存したデッキはありません
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {myDecks.map((d) => (
+                    <li
+                      key={d.id}
+                      className="flex items-center justify-between gap-2 bg-bg-dark rounded-lg px-3 py-2"
+                    >
+                      <button
+                        onClick={() => loadDeck(d.id)}
+                        className="flex flex-col items-start min-w-0 flex-1 text-left"
+                      >
+                        <span className="text-xs text-white truncate w-full">
+                          {d.title}
+                        </span>
+                        <span className="text-[10px] text-text-muted">
+                          {d.format} · {d.overall ?? "--"}点
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => deleteDeck(d.id)}
+                        className="text-text-dim hover:text-dm-fire transition-colors flex-shrink-0"
+                        title="削除"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          delete
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
         </div>
@@ -436,6 +565,41 @@ export default function DeckPage() {
               </div>
             </div>
           </div>
+
+          {/* デッキ保存 (評価後のみ表示) */}
+          {score && (
+            <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-text-muted mb-3">
+                デッキを保存
+              </h3>
+              {loggedIn ? (
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    maxLength={100}
+                    placeholder="デッキ名"
+                    className="w-full bg-bg-dark border border-border-highlight rounded-lg px-3 py-2 text-sm text-text-main placeholder-text-dim/50 focus:border-primary focus:ring-1 focus:ring-primary"
+                  />
+                  <button
+                    onClick={handleSave}
+                    disabled={!title.trim()}
+                    className="py-2 bg-primary/20 text-primary rounded-lg text-sm font-medium hover:bg-primary/30 transition-colors disabled:opacity-50"
+                  >
+                    保存
+                  </button>
+                  {saveMsg && (
+                    <p className="text-xs text-text-muted">{saveMsg}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-text-dim">
+                  ログインすると保存できます
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
