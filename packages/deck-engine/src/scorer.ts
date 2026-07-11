@@ -1,10 +1,17 @@
-import {
-  DECK_GUIDELINES,
-  type DeckScore,
-} from "@dm-ai/core";
+import { DECK_SIZE, DECK_GUIDELINES, type DeckScore } from "@dm-ai/core";
 import type { Card } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import type { ParsedDeck } from "./parser.js";
+
+/** scoreDeck 内部のスコアリング閾値 (DECK_GUIDELINES に無い減点基準) */
+const HAND_SIZE = 5; // 初手枚数
+const OPENING_RATE_TARGET = 0.7; // 初動率の合格ライン
+const TRIGGER_SEVERE_THRESHOLD = 6; // トリガー大幅不足の閾値
+const LOW_COST_SEVERE_THRESHOLD = 5; // 低コスト大幅不足の閾値
+const MULTI_CIV_WARN_THRESHOLD = 4; // 色事故警告の文明数
+const MULTI_CIV_SEVERE_THRESHOLD = 5; // 色事故追加減点の文明数
+const MIN_DEFENSE_CARDS = 4; // 受け札の最低目安
+const MIN_DRAW_CARDS = 4; // ドロー札の最低目安
 
 /**
  * デッキの評価スコアを算出する
@@ -55,7 +62,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
     else costCurve.high++;
   }
 
-  if (costCurve.low < 10) {
+  if (costCurve.low < DECK_GUIDELINES.costCurve.low) {
     warnings.push(
       `低コスト(3以下)が${costCurve.low}枚です (推奨: ${DECK_GUIDELINES.costCurve.low}枚)`
     );
@@ -72,7 +79,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
 
   // 色事故リスク判定
   const civCount = Object.keys(civilizationBalance).length;
-  if (civCount >= 4) {
+  if (civCount >= MULTI_CIV_WARN_THRESHOLD) {
     warnings.push(`${civCount}色デッキです。色事故のリスクがあります`);
     suggestions.push("マナ基盤を安定させるために色を絞るか、多色カードを活用しましょう");
   }
@@ -81,7 +88,11 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   const earlyCards = expandedCards.filter(
     (c) => c.cost >= 2 && c.cost <= 3
   ).length;
-  const openingHandRate = calculateOpeningRate(earlyCards, deck.totalCards, 5);
+  const openingHandRate = calculateOpeningRate(
+    earlyCards,
+    deck.totalCards,
+    HAND_SIZE
+  );
 
   // 役割バランス
   const roleBalance: Record<string, number> = {};
@@ -91,12 +102,12 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
     }
   }
 
-  if ((roleBalance["受け"] ?? 0) < 4) {
+  if ((roleBalance["受け"] ?? 0) < MIN_DEFENSE_CARDS) {
     warnings.push("受け札が少なく、攻撃に弱い構成です");
     suggestions.push("S・トリガーやブロッカーなどの受け札を追加しましょう");
   }
 
-  if ((roleBalance["ドロー"] ?? 0) < 4) {
+  if ((roleBalance["ドロー"] ?? 0) < MIN_DRAW_CARDS) {
     suggestions.push("ドローソースを増やしてリソース確保を安定させましょう");
   }
 
@@ -195,25 +206,25 @@ function calculateOverallScore(params: {
   let score = 100;
 
   // 枚数ペナルティ
-  if (params.totalCards !== 40) score -= 20;
+  if (params.totalCards !== DECK_SIZE) score -= 20;
 
   // トリガーペナルティ
-  if (params.triggerCount < 6) score -= 15;
-  else if (params.triggerCount < 8) score -= 5;
+  if (params.triggerCount < TRIGGER_SEVERE_THRESHOLD) score -= 15;
+  else if (params.triggerCount < DECK_GUIDELINES.triggerCount) score -= 5;
 
   // 多色ペナルティ
-  if (params.rainbowCount > 15) score -= 10;
+  if (params.rainbowCount > DECK_GUIDELINES.rainbowMax) score -= 10;
 
   // コストカーブペナルティ
-  if (params.costCurve.low < 10) score -= 10;
-  if (params.costCurve.low < 5) score -= 10;
+  if (params.costCurve.low < DECK_GUIDELINES.costCurve.low) score -= 10;
+  if (params.costCurve.low < LOW_COST_SEVERE_THRESHOLD) score -= 10;
 
   // 色事故ペナルティ
-  if (params.civCount >= 4) score -= 10;
-  if (params.civCount >= 5) score -= 5;
+  if (params.civCount >= MULTI_CIV_WARN_THRESHOLD) score -= 10;
+  if (params.civCount >= MULTI_CIV_SEVERE_THRESHOLD) score -= 5;
 
   // 初動率ペナルティ
-  if (params.openingHandRate < 0.7) score -= 10;
+  if (params.openingHandRate < OPENING_RATE_TARGET) score -= 10;
 
   // 役割バランスペナルティ
   if ((params.roleBalance["受け"] ?? 0) === 0) score -= 15;
