@@ -4,6 +4,7 @@
  */
 import * as cheerio from "cheerio";
 import { getSql, closeDb } from "@dm-ai/db";
+import { CIVILIZATIONS } from "@dm-ai/core";
 import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
 import { sleep, fetchWithRetry } from "../lib.js";
 
@@ -106,11 +107,9 @@ async function scrapeCardDetail(url: string): Promise<RawCard | null> {
   const civilizations: string[] = [];
   civElements.each((_, el) => {
     const civClass = $(el).attr("class") ?? "";
-    if (civClass.includes("fire")) civilizations.push("fire");
-    if (civClass.includes("water")) civilizations.push("water");
-    if (civClass.includes("nature")) civilizations.push("nature");
-    if (civClass.includes("light")) civilizations.push("light");
-    if (civClass.includes("darkness")) civilizations.push("darkness");
+    for (const civ of CIVILIZATIONS) {
+      if (civClass.includes(civ)) civilizations.push(civ);
+    }
   });
 
   const imageUrl = $(".cardImage img").attr("src") ?? null;
