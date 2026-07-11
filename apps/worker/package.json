@@ -10,6 +10,7 @@
     "ingest:rules": "tsx src/jobs/ingest-rules.ts",
     "ingest:cards": "tsx src/jobs/ingest-cards.ts",
     "ingest:regulations": "tsx src/jobs/ingest-regulations.ts",
+    "fix:card-types": "tsx src/jobs/fix-card-types.ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
