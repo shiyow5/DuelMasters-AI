@@ -167,3 +167,10 @@ export const metaSnapshots = pgTable(
     index("meta_snapshots_period_idx").on(table.period_start, table.period_end),
   ]
 );
+
+/** ユーザー設定 */
+export const userSettings = pgTable("user_settings", {
+  user_id: varchar("user_id", { length: 100 }).primaryKey(),
+  format: varchar("format", { length: 20 }).notNull().default("original"),
+  updated_at: timestamp("updated_at").defaultNow().notNull(),
+});
