@@ -93,7 +93,7 @@ export async function runIngestTags(
   const { ruleTagged, needsLlm } = partitionByRule(cards);
 
   for (const { id, tags } of ruleTagged) {
-    await sql`UPDATE cards SET tags = ${JSON.stringify(tags)}, updated_at = NOW() WHERE id = ${id}`;
+    await sql`UPDATE cards SET tags = ${sql.json(tags)}, updated_at = NOW() WHERE id = ${id}`;
   }
 
   const llmTags = needsLlm.length > 0 ? await tagByLlm(needsLlm) : new Map();
@@ -102,7 +102,7 @@ export async function runIngestTags(
   for (const c of needsLlm) {
     const tags = (llmTags.get(c.id) ?? []) as RoleTag[];
     if (tags.length > 0) {
-      await sql`UPDATE cards SET tags = ${JSON.stringify(tags)}, updated_at = NOW() WHERE id = ${c.id}`;
+      await sql`UPDATE cards SET tags = ${sql.json(tags)}, updated_at = NOW() WHERE id = ${c.id}`;
       llmCount++;
     } else {
       emptyCount++;

@@ -109,7 +109,7 @@ deckRouter.post("/save", requireAuth, async (c) => {
   const sql = getSql();
   const rows = await sql`
     INSERT INTO decks (format, title, cards, user_id, scores)
-    VALUES (${format}, ${title}, ${JSON.stringify(parsed.entries)}, ${userId}, ${JSON.stringify(score)})
+    VALUES (${format}, ${title}, ${sql.json(parsed.entries)}, ${userId}, ${sql.json(score)})
     RETURNING id, title, format, cards, scores
   `;
   const row = rows[0];

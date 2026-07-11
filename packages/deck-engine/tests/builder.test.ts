@@ -25,7 +25,7 @@ describe.skipIf(!hasTestDb)("autoBuild 制約 (統合)", () => {
     ];
     for (const c of cards) {
       await sql`INSERT INTO cards (name, civilizations, cost, type, text, tags, is_shield_trigger)
-        VALUES (${c.name}, ${JSON.stringify(c.civ)}, ${c.cost}, 'creature', 'テスト効果', ${JSON.stringify(c.tags)}, true)`;
+        VALUES (${c.name}, ${sql.json(c.civ)}, ${c.cost}, 'creature', 'テスト効果', ${sql.json(c.tags)}, true)`;
     }
     await sql`INSERT INTO regulations (format, restriction_type, card_name, effective_from) VALUES
       ('original', 'プレミアム殿堂', '禁止札', '2024-01-01'),

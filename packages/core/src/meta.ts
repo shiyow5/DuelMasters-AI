@@ -1,13 +1,18 @@
 import { TIER_THRESHOLDS } from "./constants.js";
 
-/** aggregateTierData の戻り値要素 */
-export interface AggregatedTierEntry {
+/**
+ * aggregateTierData の戻り値要素。
+ * interface ではなく type alias にしているのは、postgres.js の sql.json() が要求する
+ * JSONValue (インデックスシグネチャを持つ構造) へ代入可能にするため (interface は暗黙の
+ * インデックスシグネチャを持たず代入不可になる)。
+ */
+export type AggregatedTierEntry = {
   tier: string;
   archetype: string;
   usage_rate: number;
   win_rate: null;
   sample_decklist: null;
-}
+};
 
 /**
  * 大会結果の集計行 (deck_archetype, count) をティアリストに変換する。

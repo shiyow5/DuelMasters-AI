@@ -159,10 +159,10 @@ async function upsertCard(
       set_code, rarity, updated_at
     ) VALUES (
       ${card.name},
-      ${JSON.stringify(card.civilizations)},
+      ${sql.json(card.civilizations)},
       ${card.cost},
       ${card.type},
-      ${JSON.stringify(card.races)},
+      ${sql.json(card.races)},
       ${card.text},
       ${card.power},
       ${card.is_rainbow},

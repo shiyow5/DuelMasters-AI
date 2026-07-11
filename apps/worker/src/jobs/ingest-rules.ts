@@ -71,7 +71,7 @@ async function main() {
           'comprehensive_rules',
           ${VERSION},
           ${chunk.text},
-          ${JSON.stringify(chunk.meta)},
+          ${sql.json(chunk.meta)},
           ${vecStr}::vector
         )
       `;

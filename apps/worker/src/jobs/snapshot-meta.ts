@@ -37,7 +37,7 @@ export async function runSnapshotMeta(
 
   await sql`
     INSERT INTO meta_snapshots (format, period_start, period_end, tier_data)
-    VALUES (${format}, ${isoDate(periodStart)}, ${isoDate(periodEnd)}, ${JSON.stringify(tierData)})
+    VALUES (${format}, ${isoDate(periodStart)}, ${isoDate(periodEnd)}, ${sql.json(tierData)})
     ON CONFLICT (format, period_start, period_end)
     DO UPDATE SET tier_data = EXCLUDED.tier_data
   `;

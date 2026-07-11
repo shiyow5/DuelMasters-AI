@@ -46,7 +46,7 @@ export async function runIngestFaq(
         const vec = `[${(embeddings[j] ?? []).join(",")}]`;
         await sql`
           INSERT INTO rule_chunks (doc_type, version, chunk_text, chunk_meta, embedding)
-          VALUES (${docType}, ${version}, ${batch[j].text}, ${JSON.stringify(meta)}, ${vec}::vector)
+          VALUES (${docType}, ${version}, ${batch[j].text}, ${sql.json(meta)}, ${vec}::vector)
         `;
         inserted++;
       }
