@@ -12,6 +12,15 @@ interface TierEntry {
   usage_rate: number;
 }
 
+/** Embed の配色 (Tailwind 由来のブランドカラー) */
+const EMBED_COLORS = {
+  info: 0x3182ce, // ルール回答
+  success: 0x38a169, // 高スコア / チェックOK
+  warning: 0xecc94b, // 中スコア
+  danger: 0xe53e3e, // 低スコア / チェックNG
+  accent: 0x6366f1, // 構築・メタ表示
+} as const;
+
 /** ユーザーごとのフォーマット設定 */
 const userFormats = new Map<string, string>();
 
@@ -69,7 +78,7 @@ async function handleRule(
   const embed = new EmbedBuilder()
     .setTitle("ルール回答")
     .setDescription(truncate(res.response, 4000))
-    .setColor(0x3182ce)
+    .setColor(EMBED_COLORS.info)
     .setFooter({ text: "DM-AI | ルール検索" });
 
   await interaction.editReply({ embeds: [embed] });
@@ -109,7 +118,13 @@ async function handleDeck(
           value: `低:${score.costCurve.low} 中:${score.costCurve.mid} 高:${score.costCurve.high}`,
         }
       )
-      .setColor(score.overall >= 70 ? 0x38a169 : score.overall >= 40 ? 0xecc94b : 0xe53e3e);
+      .setColor(
+        score.overall >= 70
+          ? EMBED_COLORS.success
+          : score.overall >= 40
+            ? EMBED_COLORS.warning
+            : EMBED_COLORS.danger
+      );
 
     if (score.warnings.length > 0) {
       embed.addFields({
@@ -133,7 +148,7 @@ async function handleDeck(
     const embed = new EmbedBuilder()
       .setTitle(`自動構築: ${theme}`)
       .setDescription(`\`\`\`\n${truncate(deckText, 3900)}\n\`\`\``)
-      .setColor(0x6366f1);
+      .setColor(EMBED_COLORS.accent);
 
     await interaction.editReply({ embeds: [embed] });
   } else if (sub === "check") {
@@ -151,7 +166,7 @@ async function handleDeck(
     const v = res.validation;
     const embed = new EmbedBuilder()
       .setTitle(v.valid ? "殿堂チェック: OK" : "殿堂チェック: NG")
-      .setColor(v.valid ? 0x38a169 : 0xe53e3e);
+      .setColor(v.valid ? EMBED_COLORS.success : EMBED_COLORS.danger);
 
     if (v.errors.length > 0) {
       embed.addFields({ name: "エラー", value: v.errors.join("\n") });
@@ -185,7 +200,7 @@ async function handleMeta(
 
     const embed = new EmbedBuilder()
       .setTitle(`ティア表 (${format === "original" ? "オリジナル" : "アドバンス"})`)
-      .setColor(0x6366f1);
+      .setColor(EMBED_COLORS.accent);
 
     for (const tier of ["Tier1", "Tier2", "Tier3"]) {
       const entries = res.tier_data.filter((e) => e.tier === tier);
@@ -211,7 +226,7 @@ async function handleMeta(
 
     const embed = new EmbedBuilder()
       .setTitle(res.archetype)
-      .setColor(0x6366f1);
+      .setColor(EMBED_COLORS.accent);
 
     if (res.stats) {
       embed.addFields(
