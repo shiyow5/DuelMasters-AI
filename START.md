@@ -227,6 +227,13 @@ DISCORD_TOKEN=MTIzNDU2Nzg5...
 DISCORD_CLIENT_ID=123456789012345678
 DISCORD_GUILD_ID=987654321098765432
 
+# 内部API認証 (Bot/管理操作 → API。openssl rand -hex 32 等で生成)
+INTERNAL_API_KEY=long_random_string
+
+# Web ログイン用 (値は SUPABASE_URL / SUPABASE_ANON_KEY と同じ)
+NEXT_PUBLIC_SUPABASE_URL=https://abcdefghijk.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
+
 # App (変更不要)
 API_URL=http://localhost:3001
 WEB_URL=http://localhost:3000
@@ -251,19 +258,25 @@ Supabase Dashboard の SQL Editor でテーブルを作成します。
 3. **「New query」** をクリック
 4. `infra/sql/001_init.sql` の内容を **全文コピー** してエディタに貼り付け
 5. **「Run」** をクリック
+6. 同様に `infra/sql/002_cards_official_id_unique.sql`、`infra/sql/003_features.sql` も
+   この順で貼り付けて実行
 
 `Success. No rows returned` と表示されればOKです。
+
+> 002 は `cards.official_id` を UNIQUE 化します(カード取り込みの UPSERT に必須)。
+> 003 は `user_settings` テーブルと重複防止インデックスを追加します。
 
 #### テーブルの確認
 
 1. 左メニュー **「Table Editor」** をクリック
-2. 以下の 6 テーブルが表示されていれば成功:
+2. 以下の 7 テーブルが表示されていれば成功:
    - `cards`
    - `regulations`
    - `rule_chunks`
    - `decks`
    - `tournament_results`
    - `meta_snapshots`
+   - `user_settings`
 
 ### 選択肢 B: ローカル Docker を使う場合
 
@@ -281,7 +294,7 @@ docker compose ps
 # db が "running" と表示されればOK
 ```
 
-> `docker-compose.yml` の設定により、起動時に `001_init.sql` が自動実行されます。
+> `docker-compose.yml` の設定により、起動時に `001`〜`003` の SQL が自動実行されます。
 > ローカル Docker を使う場合、`.env` の `DATABASE_URL` は以下に変更してください:
 >
 > ```env
@@ -306,6 +319,31 @@ Cached:    0 cached, 8 total
 ```
 
 > エラーが出た場合は [トラブルシューティング](#12-トラブルシューティング) を確認してください。
+
+### テストの実行
+
+```bash
+# 単体テスト (DB 不要)
+pnpm test
+
+# カバレッジ付き
+pnpm test -- --coverage
+```
+
+DB を使う統合テストは `TEST_DATABASE_URL` を設定したときのみ実行されます(未設定なら自動スキップ)。
+ローカル Docker の場合:
+
+```bash
+docker compose up db -d   # 001〜003 が自動適用される
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/dm_ai pnpm test
+```
+
+E2E スモーク (Playwright):
+
+```bash
+npx playwright install chromium   # 初回のみ (必要に応じて npx playwright install-deps)
+pnpm --filter @dm-ai/web e2e
+```
 
 ---
 
@@ -357,6 +395,45 @@ pnpm --filter @dm-ai/worker ingest:regulations
 ```
 
 > 数秒で完了します。
+
+### 7-4. カード役割タグの付与
+
+各カードに役割タグ(初動/受け/除去/ドロー/フィニッシャー/メタ/ブースト)を付けます。
+まずキーワードルールで判定し、判定できないカードのみ Gemini で推定します。
+
+```bash
+# tags が空のカードのみ (デフォルト)
+pnpm --filter @dm-ai/worker ingest:tags
+
+# 全カードを対象にする場合
+pnpm --filter @dm-ai/worker ingest:tags --all
+```
+
+### 7-5. FAQ・裁定の取り込み (任意)
+
+FAQ/裁定ページの本文を RAG(rule_chunks)に取り込み、ルール回答に反映させます。
+
+```bash
+pnpm --filter @dm-ai/worker ingest:faq faq <FAQページURL> [URL...]
+pnpm --filter @dm-ai/worker ingest:faq ruling <裁定ページURL>
+```
+
+### 7-6. メタスナップショットの生成 (任意)
+
+`tournament_results` を期間集計して `meta_snapshots` を作り、ティア表に反映します。
+大会結果は `POST /api/meta/ingest/url`(X-Internal-Key 必須)で取り込めます。
+
+```bash
+pnpm --filter @dm-ai/worker snapshot:meta original 4
+```
+
+### (補正) 既存カード種別の正規化
+
+`ingest:cards` 導入前のデータで種別が日本語のままの場合に実行します。
+
+```bash
+pnpm --filter @dm-ai/worker fix:card-types
+```
 
 ### 取り込み確認
 
@@ -643,7 +720,7 @@ pnpm build    # 再ビルド
 ### データベースに接続できない
 
 ```
-Error: SUPABASE_URL and SUPABASE_ANON_KEY are required
+Error: SUPABASE_URL と、SUPABASE_SERVICE_ROLE_KEY または SUPABASE_ANON_KEY が必要です
 ```
 
 `.env` ファイルが存在し、値が正しく設定されているか確認してください。
@@ -730,4 +807,8 @@ pnpm --filter @dm-ai/bot dev
 pnpm --filter @dm-ai/worker ingest:rules
 pnpm --filter @dm-ai/worker ingest:cards
 pnpm --filter @dm-ai/worker ingest:regulations
+pnpm --filter @dm-ai/worker ingest:tags
+pnpm --filter @dm-ai/worker ingest:faq faq <url>
+pnpm --filter @dm-ai/worker snapshot:meta original 4
+pnpm --filter @dm-ai/worker fix:card-types
 ```

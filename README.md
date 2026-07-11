@@ -38,7 +38,7 @@
 |----------|------|
 | LLM | Gemini 2.5 Flash Lite (`@google/genai`) |
 | Embedding | gemini-embedding-001 (768次元) |
-| Web | Next.js 15 (App Router) + Tailwind CSS v4 |
+| Web | Next.js 16 (App Router) + Tailwind CSS v4 |
 | API | Hono (Node.js) |
 | Bot | discord.js v14 |
 | DB | Supabase (PostgreSQL + pgvector) |
@@ -51,7 +51,7 @@
 ```
 dm-ai/
 ├── apps/
-│   ├── web/            # Next.js 15 - Web UI
+│   ├── web/            # Next.js 16 - Web UI
 │   ├── api/            # Hono - REST API
 │   ├── bot/            # discord.js - Discord Bot
 │   └── worker/         # データ取り込みジョブ
@@ -104,6 +104,13 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/dm_ai
 DISCORD_TOKEN=your_discord_bot_token
 DISCORD_CLIENT_ID=your_client_id
 DISCORD_GUILD_ID=your_guild_id  # 開発用サーバーID
+
+# 内部API認証 (Bot/管理操作 → API。ランダムな長い文字列)
+INTERNAL_API_KEY=long_random_string
+
+# Web ログイン用 (値は SUPABASE_URL / SUPABASE_ANON_KEY と同じ)
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 ```
 
 ### 3. データベースの起動・初期化
@@ -112,11 +119,14 @@ DISCORD_GUILD_ID=your_guild_id  # 開発用サーバーID
 # PostgreSQL + pgvector を起動
 docker compose up db -d
 
-# テーブル作成
+# テーブル作成 (001 → 002 → 003 の順で適用)
 psql $DATABASE_URL -f infra/sql/001_init.sql
+psql $DATABASE_URL -f infra/sql/002_cards_official_id_unique.sql
+psql $DATABASE_URL -f infra/sql/003_features.sql
 ```
 
-Supabaseを使う場合は、Supabase DashboardのSQL Editorで `infra/sql/001_init.sql` を実行してください。
+`docker compose up db -d` で起動する場合は 001〜003 が初回に自動適用されます。
+Supabaseを使う場合は、Supabase DashboardのSQL Editorで 001 → 002 → 003 を順に実行してください。
 
 ### 4. データ取り込み
 
@@ -129,6 +139,18 @@ pnpm --filter @dm-ai/worker ingest:cards
 
 # 殿堂レギュレーション取り込み
 pnpm --filter @dm-ai/worker ingest:regulations
+
+# カード役割タグ付与 (ルール → LLM フォールバック。--all で全カード)
+pnpm --filter @dm-ai/worker ingest:tags
+
+# FAQ・裁定取り込み
+pnpm --filter @dm-ai/worker ingest:faq faq <url> [url...]
+
+# メタスナップショット生成 (<original|advance> [weeks])
+pnpm --filter @dm-ai/worker snapshot:meta original 4
+
+# 既存カード種別の正規化 (日本語表記 → CardType enum)
+pnpm --filter @dm-ai/worker fix:card-types
 ```
 
 ### 5. 開発サーバーの起動
@@ -155,6 +177,8 @@ pnpm --filter @dm-ai/bot dev
 
 ## API エンドポイント
 
+一部エンドポイントは認証が必要です。Web は `Authorization: Bearer <Supabaseアクセストークン>`、Bot/内部操作は `X-Internal-Key`(+ `X-User-Id: discord:<id>`)を送ります。
+
 ### チャット
 
 ```
@@ -174,10 +198,14 @@ POST /api/chat
 ### デッキ
 
 ```
-POST /api/deck/parse      # デッキリスト解析
-POST /api/deck/evaluate    # 評価・診断
-POST /api/deck/build       # 自動構築
-POST /api/deck/suggest     # 改善提案
+POST   /api/deck/parse      # デッキリスト解析
+POST   /api/deck/evaluate   # 評価・診断
+POST   /api/deck/build      # 自動構築
+POST   /api/deck/suggest    # 改善提案
+POST   /api/deck/save       # デッキ保存 (要認証)
+GET    /api/deck/list       # マイデッキ一覧 (要認証)
+GET    /api/deck/:id        # デッキ詳細 (要認証)
+DELETE /api/deck/:id        # デッキ削除 (要認証)
 ```
 
 ### メタ
@@ -185,7 +213,14 @@ POST /api/deck/suggest     # 改善提案
 ```
 GET  /api/meta/tier?format=original&period=4w   # ティアリスト
 GET  /api/meta/archetype/:name                   # アーキタイプ詳細
-POST /api/ingest/url                             # URL取り込み
+POST /api/meta/ingest/url                        # 大会結果URL取り込み (X-Internal-Key 必須)
+```
+
+### ユーザー設定
+
+```
+GET /api/user/settings   # フォーマット取得 (要認証)
+PUT /api/user/settings   # フォーマット更新 (要認証)
 ```
 
 ## Discord コマンド
@@ -196,6 +231,7 @@ POST /api/ingest/url                             # URL取り込み
 | `/dm deck rate <リスト>` | デッキ評価 |
 | `/dm deck build <テーマ>` | 自動構築 |
 | `/dm deck check <リスト>` | 殿堂チェック |
+| `/dm deck save <リスト> <名前>` | デッキ保存 (要 INTERNAL_API_KEY) |
 | `/dm meta tier [期間]` | ティア表 |
 | `/dm meta deck <名前>` | アーキタイプ詳細 |
 | `/dm chat <メッセージ>` | 統合チャット |
@@ -235,9 +271,10 @@ docker compose up -d
 | `cards` | カードマスタ (名前, 文明, コスト, テキスト, 役割タグ等) |
 | `regulations` | 殿堂レギュレーション (フォーマット, 制限区分, カード名) |
 | `rule_chunks` | ルールRAG用チャンク (条文テキスト + 768次元ベクトル) |
-| `decks` | デッキ保存 (カードリスト + 評価スコア) |
+| `decks` | デッキ保存 (カードリスト + 評価スコア + user_id) |
 | `tournament_results` | 大会結果 (アーキタイプ, 順位, 参加者数) |
 | `meta_snapshots` | メタ集計スナップショット (ティアデータ) |
+| `user_settings` | ユーザー設定 (フォーマット。Bot/Web 共通) |
 
 ## ライセンス
 
