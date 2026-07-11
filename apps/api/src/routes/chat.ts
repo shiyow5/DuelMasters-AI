@@ -1,7 +1,13 @@
 import { Hono } from "hono";
 import { chat, ChatRequestSchema, type ChatMode } from "@dm-ai/core";
 import { searchRules } from "@dm-ai/rag";
-import { parseDecklist, scoreDeck, validateRegulation } from "@dm-ai/deck-engine";
+import {
+  parseDecklist,
+  scoreDeck,
+  validateRegulation,
+  autoBuild,
+  suggestReplacements,
+} from "@dm-ai/deck-engine";
 import { getSql } from "@dm-ai/db";
 import { TOOL_DEFINITIONS } from "../tools.js";
 
@@ -165,7 +171,6 @@ async function executeToolCall(
       }
 
       case "build_deck": {
-        const { autoBuild } = await import("@dm-ai/deck-engine");
         const result = await autoBuild(
           args.theme as string,
           ((args.format as string) ?? format ?? "original") as "original" | "advance",
@@ -189,7 +194,6 @@ async function executeToolCall(
       }
 
       case "suggest_improvements": {
-        const { suggestReplacements } = await import("@dm-ai/deck-engine");
         const deck = parseDecklist(args.decklist as string);
         const goals = (args.goals as string[]) ?? [];
         const suggestions = await suggestReplacements(deck.entries, goals);
