@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "@dm-ai/core": "workspace:*",
-    "@dm-ai/db": "workspace:*"
+    "@dm-ai/db": "workspace:*",
+    "cheerio": "^1.0.0"
   },
   "devDependencies": {
     "@types/node": "^20",

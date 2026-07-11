@@ -11,6 +11,7 @@
     "ingest:cards": "tsx src/jobs/ingest-cards.ts",
     "ingest:regulations": "tsx src/jobs/ingest-regulations.ts",
     "ingest:tags": "tsx src/jobs/ingest-tags.ts",
+    "ingest:faq": "tsx src/jobs/ingest-faq.ts",
     "fix:card-types": "tsx src/jobs/fix-card-types.ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"

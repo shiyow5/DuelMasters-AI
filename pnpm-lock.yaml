@@ -216,6 +216,9 @@ importers:
       '@dm-ai/db':
         specifier: workspace:*
         version: link:../db
+      cheerio:
+        specifier: ^1.0.0
+        version: 1.2.0
     devDependencies:
       '@types/node':
         specifier: ^20
