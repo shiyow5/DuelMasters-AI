@@ -17,12 +17,10 @@
   },
   "dependencies": {
     "@dm-ai/core": "workspace:*",
-    "@dm-ai/db": "workspace:*",
-    "pdf-parse": "^1.1.1"
+    "@dm-ai/db": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "@types/pdf-parse": "^1.1.4",
     "typescript": "^5.7.0"
   }
 }
