@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { getSql } from "@dm-ai/db";
-import { FORMATS, TIER_THRESHOLDS } from "@dm-ai/core";
+import { FORMATS, TIER_THRESHOLDS, IngestUrlRequestSchema } from "@dm-ai/core";
+import { extractTextFromHtml } from "@dm-ai/rag";
+import { extractTournament } from "../tournament-extract.js";
 
 const metaRouter = new Hono();
 
@@ -172,15 +174,66 @@ metaRouter.get("/archetype/:name", async (c) => {
   }
 });
 
-/** URLオンデマンド取り込み */
+/** 大会結果ページの取り込み (Gemini 汎用抽出)。X-Internal-Key 必須 (I-14 でミドルウェア化) */
 metaRouter.post("/ingest/url", async (c) => {
-  const { url } = await c.req.json<{ url: string }>();
+  const key = c.req.header("x-internal-key");
+  if (!process.env.INTERNAL_API_KEY || key !== process.env.INTERNAL_API_KEY) {
+    return c.json({ error: "内部APIキーが不正です" }, 401);
+  }
 
-  // 現時点ではURLを保存のみ (パース実装は段階的に)
+  const raw = await c.req.json().catch(() => null);
+  const parsed = IngestUrlRequestSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json(
+      {
+        error: "リクエストが不正です",
+        details: parsed.error.issues.map(
+          (i) => `${i.path.join(".")}: ${i.message}`
+        ),
+      },
+      400
+    );
+  }
+  const { url, format } = parsed.data;
+
+  let html: string;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    html = await res.text();
+  } catch (err) {
+    console.error("[api/meta] ページ取得失敗:", err);
+    return c.json({ error: "ページを取得できませんでした" }, 502);
+  }
+
+  let extracted;
+  try {
+    extracted = await extractTournament(extractTextFromHtml(html));
+  } catch (err) {
+    console.error("[api/meta] 大会結果抽出失敗:", err);
+    return c.json({ error: "大会結果を抽出できませんでした" }, 422);
+  }
+
+  const sql = getSql();
+  let inserted = 0;
+  let skipped = 0;
+  for (const r of extracted.results) {
+    const result = await sql`
+      INSERT INTO tournament_results
+        (event_name, event_date, format, participants, deck_archetype, placement, source_url)
+      VALUES (${extracted.event_name}, ${extracted.event_date}, ${format},
+              ${extracted.participants}, ${r.deck_archetype}, ${r.placement}, ${url})
+      ON CONFLICT (event_name, event_date, deck_archetype, placement) DO NOTHING
+    `;
+    if (result.count > 0) inserted++;
+    else skipped++;
+  }
+
   return c.json({
-    message: "URL取り込みは今後のアップデートで実装されます",
-    url,
-    status: "pending",
+    event_name: extracted.event_name,
+    event_date: extracted.event_date,
+    inserted,
+    skipped,
   });
 });
 

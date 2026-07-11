@@ -258,3 +258,26 @@ export const TagExtractionSchema = z.array(
   })
 );
 export type TagExtraction = z.infer<typeof TagExtractionSchema>;
+
+/** 大会結果ページからの抽出結果 (Gemini 構造化出力の検証用) */
+export const TournamentExtractionSchema = z.object({
+  event_name: z.string().min(1),
+  event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  participants: z.number().int().positive().nullable(),
+  results: z
+    .array(
+      z.object({
+        deck_archetype: z.string().min(1),
+        placement: z.number().int().positive(),
+      })
+    )
+    .min(1),
+});
+export type TournamentExtraction = z.infer<typeof TournamentExtractionSchema>;
+
+/** POST /api/meta/ingest/url リクエスト */
+export const IngestUrlRequestSchema = z.object({
+  url: z.string().url(),
+  format: z.enum(FORMATS).default("original"),
+});
+export type IngestUrlRequest = z.infer<typeof IngestUrlRequestSchema>;
