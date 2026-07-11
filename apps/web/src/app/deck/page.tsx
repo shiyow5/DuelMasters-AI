@@ -2,24 +2,8 @@
 
 import { useState } from "react";
 import { apiPost } from "@/lib/api";
-
-interface DeckScore {
-  triggerCount: number;
-  rainbowCount: number;
-  costCurve: { low: number; mid: number; high: number };
-  civilizationBalance: Record<string, number>;
-  openingHandRate: number;
-  roleBalance: Record<string, number>;
-  overall: number;
-  warnings: string[];
-  suggestions: string[];
-}
-
-interface ValidationResult {
-  valid: boolean;
-  errors: string[];
-  warnings: string[];
-}
+import { scoreGrade } from "@/lib/format";
+import type { DeckScore, ValidationResult } from "@/lib/types";
 
 const CIV_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
   fire: {
@@ -56,15 +40,6 @@ const CIV_LABELS: Record<string, string> = {
   light: "Light",
   darkness: "Darkness",
 };
-
-function scoreGrade(overall: number): string {
-  if (overall >= 90) return "S+";
-  if (overall >= 80) return "S";
-  if (overall >= 70) return "A";
-  if (overall >= 60) return "B";
-  if (overall >= 50) return "C";
-  return "D";
-}
 
 export default function DeckPage() {
   const [decklist, setDecklist] = useState("");

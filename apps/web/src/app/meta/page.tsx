@@ -2,21 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { apiGet } from "@/lib/api";
-
-interface TierEntry {
-  tier: string;
-  archetype: string;
-  usage_rate: number;
-  win_rate: number | null;
-}
-
-interface TierData {
-  format: string;
-  period: string;
-  period_start: string;
-  period_end: string;
-  tier_data: TierEntry[];
-}
+import type { TierEntry, TierData } from "@/lib/types";
 
 const TIER_STYLES: Record<
   string,

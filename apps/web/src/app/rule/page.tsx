@@ -2,27 +2,8 @@
 
 import { useState } from "react";
 import { apiPost } from "@/lib/api";
-
-interface Citation {
-  text: string;
-  section?: string;
-  article?: string;
-  url?: string;
-}
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  citations?: Citation[];
-  timestamp?: string;
-}
-
-function getTime() {
-  return new Date().toLocaleTimeString("ja-JP", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+import { getTime } from "@/lib/format";
+import type { Citation, Message } from "@/lib/types";
 
 const COMMON_KEYWORDS = [
   "マッハファイター",
