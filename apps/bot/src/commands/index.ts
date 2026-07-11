@@ -207,6 +207,28 @@ async function handleDeck(
     }
 
     await interaction.editReply({ embeds: [embed] });
+  } else if (sub === "save") {
+    const list = interaction.options.getString("list", true);
+    const name = interaction.options.getString("name", true);
+    await interaction.deferReply();
+    try {
+      const res = await apiPost<{ scores: { overall: number } | null }>(
+        "/api/deck/save",
+        { title: name, format, decklist: list },
+        internalHeaders(interaction.user.id)
+      );
+      const embed = new EmbedBuilder()
+        .setTitle("デッキ保存完了")
+        .setDescription(
+          `「${name}」を保存しました (スコア: ${res.scores?.overall ?? "-"}/100)`
+        )
+        .setColor(EMBED_COLORS.success);
+      await interaction.editReply({ embeds: [embed] });
+    } catch (err) {
+      await interaction.editReply(
+        `保存に失敗しました: ${err instanceof Error ? err.message : "不明"}`
+      );
+    }
   }
 }
 
