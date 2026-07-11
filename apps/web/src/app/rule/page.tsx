@@ -75,11 +75,6 @@ export default function RulePage() {
             Beta
           </span>
         </div>
-        <div className="flex items-center gap-4">
-          <button className="p-2 rounded-full hover:bg-white/5 text-text-muted transition-colors">
-            <span className="material-symbols-outlined">help</span>
-          </button>
-        </div>
       </header>
 
       {/* Split View */}

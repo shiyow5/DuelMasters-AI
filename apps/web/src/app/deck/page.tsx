@@ -312,18 +312,6 @@ export default function DeckPage() {
             <h3 className="text-sm font-semibold text-text-muted">
               {buildResult ? "構築結果" : "デッキ内容"}
             </h3>
-            {/* Civilization Filter */}
-            <div className="flex items-center gap-2">
-              {Object.entries(CIV_COLORS).map(([civ, colors]) => (
-                <button
-                  key={civ}
-                  className={`w-8 h-8 rounded-full ${colors.bg} border border-current flex items-center justify-center hover:opacity-80 transition-colors ${colors.text}`}
-                  title={CIV_LABELS[civ]}
-                >
-                  <span className={`w-3 h-3 rounded-full ${colors.dot}`} />
-                </button>
-              ))}
-            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4">
             {buildResult ? (

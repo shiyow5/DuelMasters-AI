@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { apiGet } from "@/lib/api";
+import { nameToHue } from "@/lib/format";
 import type { TierEntry, TierData } from "@/lib/types";
 
 const TIER_STYLES: Record<
@@ -24,15 +25,6 @@ const TIER_STYLES: Record<
     valueColor: "text-text-muted",
   },
 };
-
-const UNSPLASH_IMAGES = [
-  "https://images.unsplash.com/photo-1642430098075-846d03425028?q=80&w=400&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1614726365723-49cfae968c92?q=80&w=400&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1544829728-e5cb9eedc20e?q=80&w=400&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1590422749842-a392b95b866c?q=80&w=400&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1476900966873-6713e85e5572?q=80&w=400&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?q=80&w=400&auto=format&fit=crop",
-];
 
 export default function MetaPage() {
   const [format, setFormat] = useState<"original" | "advance">("original");
@@ -171,14 +163,7 @@ export default function MetaPage() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {entries.map((entry, i) => (
-                        <DeckCard
-                          key={i}
-                          entry={entry}
-                          tier={tier}
-                          imageUrl={
-                            UNSPLASH_IMAGES[i % UNSPLASH_IMAGES.length]
-                          }
-                        />
+                        <DeckCard key={i} entry={entry} tier={tier} />
                       ))}
                     </div>
                   </div>
@@ -216,16 +201,7 @@ export default function MetaPage() {
                       {data.tier_data
                         .filter((e) => e.tier === "Tier3")
                         .map((entry, i) => (
-                          <DeckCard
-                            key={i}
-                            entry={entry}
-                            tier="Tier3"
-                            imageUrl={
-                              UNSPLASH_IMAGES[
-                                (i + 3) % UNSPLASH_IMAGES.length
-                              ]
-                            }
-                          />
+                          <DeckCard key={i} entry={entry} tier="Tier3" />
                         ))}
                     </div>
                   )}
@@ -253,34 +229,24 @@ export default function MetaPage() {
   );
 }
 
-function DeckCard({
-  entry,
-  tier,
-  imageUrl,
-}: {
-  entry: TierEntry;
-  tier: string;
-  imageUrl: string;
-}) {
+function DeckCard({ entry, tier }: { entry: TierEntry; tier: string }) {
   const style = TIER_STYLES[tier] ?? TIER_STYLES.Tier3;
+  const hue = nameToHue(entry.archetype);
 
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-xl bg-bg-card border border-border-highlight hover:border-primary-purple/50 transition-all cursor-pointer shadow-sm hover:shadow-lg hover:shadow-primary-purple/10">
-      {/* Image Header */}
+      {/* Header: アーキタイプ名から決定的に生成するグラデーション */}
       <div className="h-32 w-full relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-t from-bg-card to-transparent z-10" />
         <div
-          className="w-full h-full bg-cover bg-center group-hover:scale-105 transition-transform duration-500 opacity-80"
-          style={{ backgroundImage: `url('${imageUrl}')` }}
+          className="w-full h-full group-hover:scale-105 transition-transform duration-500 opacity-80"
+          style={{
+            background: `linear-gradient(135deg, hsl(${hue} 60% 35%), hsl(${(hue + 40) % 360} 60% 20%))`,
+          }}
         />
       </div>
 
       <div className="flex flex-col p-4 -mt-12 relative z-20">
-        {/* Civilization dots placeholder */}
-        <div className="flex gap-1 mb-2">
-          <span className="w-3 h-3 rounded-full bg-dm-fire shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
-        </div>
-
         <h3 className="text-lg font-bold text-white mb-1 truncate">
           {entry.archetype}
         </h3>
