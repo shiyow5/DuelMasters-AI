@@ -5,6 +5,7 @@ import { logger } from "hono/logger";
 import { chatRouter } from "./routes/chat.js";
 import { deckRouter } from "./routes/deck.js";
 import { metaRouter } from "./routes/meta.js";
+import { userRouter } from "./routes/user.js";
 import { optionalAuth } from "./middleware/auth.js";
 
 const app = new Hono();
@@ -31,6 +32,7 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 app.route("/api/chat", chatRouter);
 app.route("/api/deck", deckRouter);
 app.route("/api/meta", metaRouter);
+app.route("/api/user", userRouter);
 
 // 予期しない例外の共通ハンドリング (詳細はサーバーログのみに出し、クライアントには汎用文言を返す)
 app.onError((err, c) => {

@@ -258,6 +258,12 @@ export const DeckSaveRequestSchema = z.object({
 });
 export type DeckSaveRequest = z.infer<typeof DeckSaveRequestSchema>;
 
+/** PUT /api/user/settings */
+export const UserSettingsRequestSchema = z.object({
+  format: z.enum(FORMATS),
+});
+export type UserSettingsRequest = z.infer<typeof UserSettingsRequestSchema>;
+
 /** ingest:tags の LLM 出力検証 (カード名 → 役割タグ) */
 export const TagExtractionSchema = z.array(
   z.object({

@@ -25,6 +25,12 @@ if (!token) {
   process.exit(1);
 }
 
+if (!process.env.INTERNAL_API_KEY) {
+  console.warn(
+    "INTERNAL_API_KEY が未設定です。フォーマット保存・デッキ保存コマンドは利用できません"
+  );
+}
+
 client.login(token).catch((err) => {
   console.error("Discord へのログインに失敗しました:", err);
   process.exit(1);

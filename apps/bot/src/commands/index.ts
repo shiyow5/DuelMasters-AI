@@ -21,8 +21,32 @@ const EMBED_COLORS = {
   accent: 0x6366f1, // 構築・メタ表示
 } as const;
 
-/** ユーザーごとのフォーマット設定 */
+/** ユーザーごとのフォーマット設定 (API のキャッシュ) */
 const userFormats = new Map<string, string>();
+
+/** 内部認証ヘッダ (INTERNAL_API_KEY 未設定なら空 = 認証系コマンドは失敗する) */
+function internalHeaders(discordId: string): Record<string, string> {
+  const key = process.env.INTERNAL_API_KEY;
+  return key
+    ? { "X-Internal-Key": key, "X-User-Id": `discord:${discordId}` }
+    : {};
+}
+
+/** フォーマット解決: Map になければ API から取得してキャッシュ */
+async function resolveFormat(discordId: string): Promise<string> {
+  const cached = userFormats.get(discordId);
+  if (cached) return cached;
+  try {
+    const res = await apiGet<{ format: string }>(
+      "/api/user/settings",
+      internalHeaders(discordId)
+    );
+    userFormats.set(discordId, res.format);
+    return res.format;
+  } catch {
+    return "original";
+  }
+}
 
 export async function handleCommand(
   interaction: ChatInputCommandInteraction
@@ -58,10 +82,17 @@ async function handleFormatSet(
   interaction: ChatInputCommandInteraction
 ): Promise<void> {
   const format = interaction.options.getString("type", true);
-  userFormats.set(interaction.user.id, format);
-  await interaction.reply(
-    `フォーマットを **${format === "original" ? "オリジナル" : "アドバンス"}** に設定しました`
-  );
+  const discordId = interaction.user.id;
+  userFormats.set(discordId, format);
+  const label = format === "original" ? "オリジナル" : "アドバンス";
+  try {
+    await apiPut("/api/user/settings", { format }, internalHeaders(discordId));
+    await interaction.reply(`フォーマットを **${label}** に設定しました`);
+  } catch {
+    await interaction.reply(
+      `フォーマットを **${label}** に設定しました(設定の保存に失敗しました。次回再起動まで有効)`
+    );
+  }
 }
 
 async function handleRule(
@@ -88,7 +119,7 @@ async function handleDeck(
   interaction: ChatInputCommandInteraction,
   sub: string
 ): Promise<void> {
-  const format = userFormats.get(interaction.user.id) ?? "original";
+  const format = await resolveFormat(interaction.user.id);
 
   if (sub === "rate") {
     const list = interaction.options.getString("list", true);
@@ -183,7 +214,7 @@ async function handleMeta(
   interaction: ChatInputCommandInteraction,
   sub: string
 ): Promise<void> {
-  const format = userFormats.get(interaction.user.id) ?? "original";
+  const format = await resolveFormat(interaction.user.id);
 
   if (sub === "tier") {
     const period = interaction.options.getString("period") ?? "4w";
@@ -260,18 +291,39 @@ async function handleChat(
 
 // --- helpers ---
 
-async function apiPost<T>(path: string, body: unknown): Promise<T> {
+async function apiPost<T>(
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {}
+): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json() as Promise<T>;
 }
 
-async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`);
+async function apiPut<T>(
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {}
+): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
+async function apiGet<T>(
+  path: string,
+  headers: Record<string, string> = {}
+): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, { headers });
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json() as Promise<T>;
 }
