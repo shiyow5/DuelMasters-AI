@@ -125,41 +125,42 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
 }
 
 /** カード情報をDBから一括取得 */
-async function fetchCardInfo(
-  names: string[]
-): Promise<Map<string, Card>> {
+async function fetchCardInfo(names: string[]): Promise<Map<string, Card>> {
   const map = new Map<string, Card>();
+  const uniqueNames = [...new Set(names)];
+  if (uniqueNames.length === 0) return map;
 
   try {
     const sql = getSql();
-    const uniqueNames = [...new Set(names)];
-
-    for (const name of uniqueNames) {
-      const rows = await sql`
-        SELECT * FROM cards WHERE name = ${name} LIMIT 1
-      `;
-      if (rows.length > 0) {
-        const row = rows[0];
-        map.set(name, {
-          name: row.name as string,
-          civilizations: (row.civilizations ?? []) as Card["civilizations"],
-          cost: (row.cost as number) ?? 0,
-          type: (row.type ?? "creature") as Card["type"],
-          races: (row.races as string[]) ?? [],
-          text: (row.text as string) ?? "",
-          power: (row.power as number) ?? null,
-          is_rainbow: (row.is_rainbow as boolean) ?? false,
-          is_shield_trigger: (row.is_shield_trigger as boolean) ?? false,
-          tags: ((row.tags as string[]) ?? []) as Card["tags"],
-          card_image_url: (row.card_image_url as string) ?? null,
-          official_id: (row.official_id as string) ?? null,
-          set_code: (row.set_code as string) ?? null,
-          rarity: (row.rarity as string) ?? null,
-        });
-      }
+    const rows = await sql`
+      SELECT * FROM cards WHERE name IN ${sql(uniqueNames)}
+    `;
+    for (const row of rows) {
+      const name = row.name as string;
+      if (map.has(name)) continue; // 同名複数行は最初の1行を採用 (変更前の LIMIT 1 相当)
+      map.set(name, {
+        name,
+        civilizations: (row.civilizations ?? []) as Card["civilizations"],
+        cost: (row.cost as number) ?? 0,
+        type: (row.type ?? "creature") as Card["type"],
+        races: (row.races as string[]) ?? [],
+        text: (row.text as string) ?? "",
+        power: (row.power as number) ?? null,
+        is_rainbow: (row.is_rainbow as boolean) ?? false,
+        is_shield_trigger: (row.is_shield_trigger as boolean) ?? false,
+        tags: ((row.tags as string[]) ?? []) as Card["tags"],
+        card_image_url: (row.card_image_url as string) ?? null,
+        official_id: (row.official_id as string) ?? null,
+        set_code: (row.set_code as string) ?? null,
+        rarity: (row.rarity as string) ?? null,
+      });
     }
-  } catch {
-    // DB未接続時は空マップを返す
+  } catch (err) {
+    // DB未接続時はカード情報なしで評価を続行する (劣化動作は仕様として維持)
+    console.warn(
+      "カード情報の取得に失敗したため、カード情報なしで評価します:",
+      err instanceof Error ? err.message : err
+    );
   }
 
   return map;
