@@ -42,7 +42,13 @@ const ROLE_TAG_DESC = `役割タグの定義:
 /** needs-llm カードを LLM でタグ推定する (バッチ、name → tags) */
 async function tagByLlm(cards: TaggingCard[]): Promise<Map<number, RoleTag[]>> {
   const result = new Map<number, RoleTag[]>();
-  const idByName = new Map(cards.map((c) => [c.name, c.id]));
+  // 同名リプリント対策: name → 全 id のリストを保持し、LLM 結果を同名の全カードに適用する
+  const idsByName = new Map<string, number[]>();
+  for (const c of cards) {
+    const ids = idsByName.get(c.name);
+    if (ids) ids.push(c.id);
+    else idsByName.set(c.name, [c.id]);
+  }
 
   for (let i = 0; i < cards.length; i += LLM_BATCH_SIZE) {
     const batch = cards.slice(i, i + LLM_BATCH_SIZE);
@@ -60,8 +66,10 @@ async function tagByLlm(cards: TaggingCard[]): Promise<Map<number, RoleTag[]>> {
       temperature: 0,
     });
     for (const item of extracted) {
-      const id = idByName.get(item.name);
-      if (id !== undefined) result.set(id, item.tags);
+      const ids = idsByName.get(item.name);
+      if (ids) {
+        for (const id of ids) result.set(id, item.tags);
+      }
     }
     if (i + LLM_BATCH_SIZE < cards.length) await sleep(500);
   }

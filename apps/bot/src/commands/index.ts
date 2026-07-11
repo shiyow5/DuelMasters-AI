@@ -119,11 +119,12 @@ async function handleDeck(
   interaction: ChatInputCommandInteraction,
   sub: string
 ): Promise<void> {
+  // API 呼び出し (resolveFormat 含む) の前に defer し、Discord の初期応答3秒枠切れを防ぐ
+  await interaction.deferReply();
   const format = await resolveFormat(interaction.user.id);
 
   if (sub === "rate") {
     const list = interaction.options.getString("list", true);
-    await interaction.deferReply();
 
     const res = await apiPost<{
       score: DeckScore;
@@ -167,7 +168,6 @@ async function handleDeck(
     await interaction.editReply({ embeds: [embed] });
   } else if (sub === "build") {
     const theme = interaction.options.getString("theme", true);
-    await interaction.deferReply();
 
     const res = await apiPost<{
       entries: Array<{ name: string; count: number }>;
@@ -184,7 +184,6 @@ async function handleDeck(
     await interaction.editReply({ embeds: [embed] });
   } else if (sub === "check") {
     const list = interaction.options.getString("list", true);
-    await interaction.deferReply();
 
     const res = await apiPost<{
       score: DeckScore;
@@ -210,7 +209,6 @@ async function handleDeck(
   } else if (sub === "save") {
     const list = interaction.options.getString("list", true);
     const name = interaction.options.getString("name", true);
-    await interaction.deferReply();
     try {
       const res = await apiPost<{ scores: { overall: number } | null }>(
         "/api/deck/save",
@@ -236,11 +234,12 @@ async function handleMeta(
   interaction: ChatInputCommandInteraction,
   sub: string
 ): Promise<void> {
+  // API 呼び出し (resolveFormat 含む) の前に defer し、Discord の初期応答3秒枠切れを防ぐ
+  await interaction.deferReply();
   const format = await resolveFormat(interaction.user.id);
 
   if (sub === "tier") {
     const period = interaction.options.getString("period") ?? "4w";
-    await interaction.deferReply();
 
     const res = await apiGet<{ tier_data: TierEntry[] }>(
       `/api/meta/tier?format=${format}&period=${period}`
@@ -270,7 +269,6 @@ async function handleMeta(
     await interaction.editReply({ embeds: [embed] });
   } else if (sub === "deck") {
     const name = interaction.options.getString("name", true);
-    await interaction.deferReply();
 
     const res = await apiGet<{
       archetype: string;

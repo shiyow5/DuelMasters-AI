@@ -19,6 +19,9 @@ app.use(
       "http://localhost:3000",
       process.env.WEB_URL ?? "",
     ].filter(Boolean),
+    // 許可ヘッダ/メソッドを明示 (Hono の既定エコー挙動に頼らず堅牢化する)
+    allowHeaders: ["Content-Type", "Authorization", "X-Internal-Key", "X-User-Id"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   })
 );
 // 認証 (無認証でも通す。userId を設定するだけ)

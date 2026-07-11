@@ -12,6 +12,48 @@ function isoDate(d: Date): string {
   return d.toISOString().split("T")[0];
 }
 
+/** IPv4 のプライベート/ループバック/リンクローカル/メタデータ宛先を判定する */
+function isPrivateIPv4(host: string): boolean {
+  if (/^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
+  if (host === "0.0.0.0") return true;
+  return false;
+}
+
+/**
+ * IPv6 の "::ffff:a.b.c.d" (IPv4-mapped) から埋め込み IPv4 を取り出す。
+ * WHATWG URL の hostname 正規化後は "::ffff:7f00:1" のように16進2グループ表記になるため両形式に対応する。
+ */
+function extractMappedIPv4(ip: string): string | null {
+  const dotted = ip.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
+  if (dotted) return dotted[1];
+  const hex = ip.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (!hex) return null;
+  const high = parseInt(hex[1], 16);
+  const low = parseInt(hex[2], 16);
+  return [(high >> 8) & 0xff, high & 0xff, (low >> 8) & 0xff, low & 0xff].join(
+    "."
+  );
+}
+
+/** IPv6 のループバック/未指定/ユニークローカル/リンクローカル/IPv4-mapped プライベートを判定する */
+function isPrivateIPv6(ip: string): boolean {
+  if (ip === "::1" || ip === "::") return true; // ループバック・未指定
+
+  const mappedV4 = extractMappedIPv4(ip);
+  if (mappedV4) return isPrivateIPv4(mappedV4); // 埋め込み IPv4 側の判定を流用
+
+  // 先頭グループの数値でユニークローカル/リンクローカルを判定する
+  // (16進文字列の先頭一致では "00fc::1"(=0x00fc) のような桁落ちで誤判定しうるため数値化する)
+  const firstGroup = ip.split(":")[0];
+  if (/^[0-9a-f]{1,4}$/i.test(firstGroup)) {
+    const val = parseInt(firstGroup, 16);
+    if (val >= 0xfc00 && val <= 0xfdff) return true; // ユニークローカル fc00::/7
+    if (val >= 0xfe80 && val <= 0xfebf) return true; // リンクローカル fe80::/10
+  }
+  return false;
+}
+
 /**
  * SSRF 対策: http(s) かつプライベート/ループバック/リンクローカル/メタデータ宛先でないことを確認する。
  * (DNS リバインディングまでは防げないため、公開運用では解決後 IP の再チェックも検討)
@@ -24,11 +66,20 @@ function isPublicHttpUrl(raw: string): boolean {
     return false;
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-  const host = u.hostname.toLowerCase();
+
+  // IPv6 リテラルは hostname が "[::1]" のように角括弧付きで返るため剥がして正規化する
+  let host = u.hostname.toLowerCase();
+  if (host.startsWith("[") && host.endsWith("]")) {
+    host = host.slice(1, -1);
+  }
+
   if (host === "localhost" || host.endsWith(".localhost")) return false;
-  if (/^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(host)) return false;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
-  if (host === "0.0.0.0" || host === "::1" || host === "[::1]") return false;
+
+  if (host.includes(":")) {
+    if (isPrivateIPv6(host)) return false;
+  } else {
+    if (isPrivateIPv4(host)) return false;
+  }
   return true;
 }
 
@@ -216,7 +267,7 @@ metaRouter.post("/ingest/url", requireInternal, async (c) => {
         (event_name, event_date, format, participants, deck_archetype, placement, source_url)
       VALUES (${extracted.event_name}, ${extracted.event_date}, ${format},
               ${extracted.participants}, ${r.deck_archetype}, ${r.placement}, ${url})
-      ON CONFLICT (event_name, event_date, deck_archetype, placement) DO NOTHING
+      ON CONFLICT (event_name, event_date, format, deck_archetype, placement) DO NOTHING
     `;
     if (result.count > 0) inserted++;
     else skipped++;

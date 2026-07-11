@@ -5,7 +5,7 @@
 import { pathToFileURL } from "node:url";
 import { getSql, closeDb } from "@dm-ai/db";
 import { embed } from "@dm-ai/core";
-import { chunkFaqText, extractTextFromHtml } from "@dm-ai/rag";
+import { chunkFaqText, extractTextFromHtml, type Chunk } from "@dm-ai/rag";
 import { fetchWithRetry } from "../lib.js";
 
 const BATCH_SIZE = 20;
@@ -35,22 +35,37 @@ export async function runIngestFaq(
       continue;
     }
 
-    // 同一 URL の既存チャンクを削除してから挿入 (冪等)
-    await sql`DELETE FROM rule_chunks WHERE doc_type = ${docType} AND chunk_meta->>'url' = ${url}`;
-
+    // 埋め込みは削除の前に全チャンク分を生成しておく。
+    // embed/生成の途中で失敗しても DELETE 前なので既存データは消えない。
+    const rows: Array<{
+      text: string;
+      meta: Chunk["meta"] & { url: string };
+      vec: string;
+    }> = [];
     for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
       const batch = chunks.slice(i, i + BATCH_SIZE);
       const embeddings = await embed(batch.map((c) => c.text));
       for (let j = 0; j < batch.length; j++) {
         const meta = { ...batch[j].meta, url };
         const vec = `[${(embeddings[j] ?? []).join(",")}]`;
-        await sql`
-          INSERT INTO rule_chunks (doc_type, version, chunk_text, chunk_meta, embedding)
-          VALUES (${docType}, ${version}, ${batch[j].text}, ${sql.json(meta)}, ${vec}::vector)
-        `;
-        inserted++;
+        rows.push({ text: batch[j].text, meta, vec });
       }
     }
+
+    // 削除と挿入を1トランザクションにまとめ、失敗時に旧チャンクが消えたままになるのを防ぐ (冪等)。
+    // postgres.js の TransactionSql 型は Omit の制約でタグ付きテンプレートの呼び出しシグネチャが
+    // 落ちてしまう既知の型定義上の制約があるため、実体は同一の sql と同じ形なので型を合わせてキャストする。
+    await sql.begin(async (tx) => {
+      const txSql = tx as unknown as typeof sql;
+      await txSql`DELETE FROM rule_chunks WHERE doc_type = ${docType} AND chunk_meta->>'url' = ${url}`;
+      for (const row of rows) {
+        await txSql`
+          INSERT INTO rule_chunks (doc_type, version, chunk_text, chunk_meta, embedding)
+          VALUES (${docType}, ${version}, ${row.text}, ${sql.json(row.meta)}, ${row.vec}::vector)
+        `;
+      }
+    });
+    inserted += rows.length;
     console.log(`取り込み: ${url} (${chunks.length}チャンク)`);
   }
 

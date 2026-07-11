@@ -86,8 +86,10 @@ export default function DeckPage() {
     try {
       const deck = await apiGet<{
         cards: Array<{ name: string; count: number }>;
+        format: "original" | "advance";
       }>(`/api/deck/${id}`);
       setDecklist(deck.cards.map((c) => `${c.count} ${c.name}`).join("\n"));
+      setFormat(deck.format);
       setScore(null);
       setValidation(null);
       setBuildResult("");
