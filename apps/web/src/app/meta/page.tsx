@@ -135,7 +135,7 @@ export default function MetaPage() {
           )}
 
           {error && (
-            <div className="rounded-xl border border-dm-fire/30 bg-dm-fire/10 p-4 text-sm text-dm-fire">
+            <div className="rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
               {error}
             </div>
           )}

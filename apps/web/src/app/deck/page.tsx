@@ -352,8 +352,8 @@ export default function DeckPage() {
               </pre>
             ) : validation && !validation.valid ? (
               <div className="space-y-3">
-                <div className="rounded-xl border border-dm-fire/30 bg-dm-fire/10 p-4">
-                  <h4 className="text-sm font-medium text-dm-fire mb-2">
+                <div className="rounded-xl border border-danger/30 bg-danger/10 p-4">
+                  <h4 className="text-sm font-medium text-danger mb-2">
                     レギュレーション違反
                   </h4>
                   <ul className="space-y-1">
@@ -365,8 +365,8 @@ export default function DeckPage() {
                   </ul>
                 </div>
                 {validation.warnings.length > 0 && (
-                  <div className="rounded-xl border border-dm-light/30 bg-dm-light/10 p-4">
-                    <h4 className="text-sm font-medium text-dm-light mb-2">
+                  <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
+                    <h4 className="text-sm font-medium text-warning mb-2">
                       警告
                     </h4>
                     <ul className="space-y-1">
@@ -384,7 +384,7 @@ export default function DeckPage() {
                 {score.warnings.map((w, i) => (
                   <div
                     key={i}
-                    className="p-3 rounded-lg bg-dm-fire/10 border border-dm-fire/20 text-sm text-text-muted"
+                    className="p-3 rounded-lg bg-danger/10 border border-danger/20 text-sm text-text-muted"
                   >
                     {w}
                   </div>
