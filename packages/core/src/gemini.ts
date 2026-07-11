@@ -1,4 +1,8 @@
 import { GoogleGenAI, type Content, type Part } from "@google/genai";
+import { z } from "zod";
+
+/** @google/genai の Type enum を再エクスポート (responseSchema 構築用) */
+export { Type } from "@google/genai";
 
 let _client: GoogleGenAI | null = null;
 
@@ -124,6 +128,50 @@ export async function embed(texts: string[]): Promise<number[][]> {
 export async function embedSingle(text: string): Promise<number[]> {
   const results = await embed([text]);
   return results[0] ?? [];
+}
+
+export interface StructuredOptions {
+  /** @google/genai の Schema (OpenAPI サブセット。Type enum を使用) */
+  responseSchema: Record<string, unknown>;
+  systemPrompt?: string;
+  temperature?: number;
+}
+
+/**
+ * JSON 強制出力 + Zod 検証付きの生成。
+ * Zod 検証に失敗した場合は1回だけ再試行し、それでも失敗なら例外を投げる。
+ */
+export async function generateStructured<T>(
+  prompt: string,
+  zodSchema: z.ZodType<T>,
+  options: StructuredOptions
+): Promise<T> {
+  const client = getClient();
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const config: Record<string, unknown> = {
+      responseMimeType: "application/json",
+      responseSchema: options.responseSchema,
+    };
+    if (options.systemPrompt) config.systemInstruction = options.systemPrompt;
+    if (options.temperature !== undefined) config.temperature = options.temperature;
+
+    const response = await client.models.generateContent({
+      model: CHAT_MODEL,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config,
+    });
+    const text =
+      response.candidates?.[0]?.content?.parts
+        ?.map((p) => p.text ?? "")
+        .join("") ?? "";
+    try {
+      return zodSchema.parse(JSON.parse(text));
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw new Error(`構造化出力の検証に失敗しました: ${String(lastError)}`);
 }
 
 export { CHAT_MODEL, EMBEDDING_MODEL, EMBEDDING_DIMENSIONS };
