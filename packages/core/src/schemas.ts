@@ -250,6 +250,14 @@ export const DeckSuggestRequestSchema = z.object({
 });
 export type DeckSuggestRequest = z.infer<typeof DeckSuggestRequestSchema>;
 
+/** POST /api/deck/save */
+export const DeckSaveRequestSchema = z.object({
+  title: z.string().min(1, "title は必須です").max(100),
+  format: z.enum(FORMATS).default("original"),
+  decklist: z.string().min(1, "decklist は必須です"),
+});
+export type DeckSaveRequest = z.infer<typeof DeckSaveRequestSchema>;
+
 /** ingest:tags の LLM 出力検証 (カード名 → 役割タグ) */
 export const TagExtractionSchema = z.array(
   z.object({
