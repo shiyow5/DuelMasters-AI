@@ -3,9 +3,9 @@
  */
 import * as cheerio from "cheerio";
 import { getSql, closeDb } from "@dm-ai/db";
+import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
 
-const REGULATION_URL =
-  "https://dm.takaratomy.co.jp/rule/regulation/";
+const REGULATION_URL = `${OFFICIAL_SITE_BASE_URL}/rule/regulation/`;
 
 /** 施行日はスクレイピング元から取得していない (既知の制限。仕様変更はしない) */
 const EFFECTIVE_FROM = "2024-01-01";

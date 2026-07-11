@@ -4,8 +4,10 @@
  */
 import * as cheerio from "cheerio";
 import { getSql, closeDb } from "@dm-ai/db";
+import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
+import { sleep, fetchWithRetry } from "../lib.js";
 
-const BASE_URL = "https://dm.takaratomy.co.jp";
+const BASE_URL = OFFICIAL_SITE_BASE_URL;
 const CARD_LIST_URL = `${BASE_URL}/card/`;
 const CONCURRENT_LIMIT = 3;
 const DELAY_MS = 1000;
@@ -179,24 +181,6 @@ async function upsertCard(
       rarity = EXCLUDED.rarity,
       updated_at = NOW()
   `;
-}
-
-async function fetchWithRetry(url: string, retries = 3): Promise<string> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.text();
-    } catch (err) {
-      if (i === retries - 1) throw err;
-      await sleep(1000 * (i + 1));
-    }
-  }
-  throw new Error("unreachable");
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 main().catch((err) => {
