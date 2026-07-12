@@ -9,9 +9,11 @@ async function main() {
     case "rules":
       await import("./jobs/ingest-rules.js");
       break;
-    case "cards":
-      await import("./jobs/ingest-cards.js");
+    case "cards": {
+      const { runIngestCards, parseCardsArgs } = await import("./jobs/ingest-cards.js");
+      await runIngestCards(parseCardsArgs(process.argv.slice(3)));
       break;
+    }
     case "regulations": {
       const { runIngestRegulations } = await import("./jobs/ingest-regulations.js");
       await runIngestRegulations();
