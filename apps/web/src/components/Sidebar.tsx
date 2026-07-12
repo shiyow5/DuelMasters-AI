@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import AuthPanel from "./AuthPanel";
 import { useSidebar } from "./SidebarContext";
 
@@ -16,19 +17,35 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { open, closeSidebar } = useSidebar();
 
+  // ページレイアウトは lg で desktop 構成に切り替わるため、常設サイドバーも lg 以上。
+  // lg 未満 (モバイル/タブレット) はオフキャンバス。
+  const [offCanvas, setOffCanvas] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const update = () => setOffCanvas(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  // オフキャンバスで閉じている間は、画面外の nav をタブ順・支援技術から除外する。
+  const hiddenOffCanvas = offCanvas && !open;
+
   return (
     <>
-      {/* モバイル: オフキャンバス表示中の背景オーバーレイ */}
+      {/* モバイル/タブレット: オフキャンバス表示中の背景オーバーレイ */}
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
           onClick={closeSidebar}
           aria-hidden="true"
         />
       )}
 
       <nav
-        className={`fixed inset-y-0 left-0 z-50 w-64 flex-shrink-0 flex flex-col justify-between bg-bg-surface border-r border-border-subtle h-full transform transition-transform duration-300 ease-in-out md:static md:z-auto md:translate-x-0 ${
+        inert={hiddenOffCanvas || undefined}
+        aria-hidden={hiddenOffCanvas || undefined}
+        className={`fixed inset-y-0 left-0 z-50 w-64 flex-shrink-0 flex flex-col justify-between bg-bg-surface border-r border-border-subtle h-full transform transition-transform duration-300 ease-in-out lg:static lg:z-auto lg:translate-x-0 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -41,7 +58,7 @@ export default function Sidebar() {
             </Link>
             <button
               onClick={closeSidebar}
-              className="md:hidden -mr-2 p-1 rounded-lg text-text-muted hover:text-white hover:bg-white/5 transition-colors"
+              className="lg:hidden -mr-2 p-1 rounded-lg text-text-muted hover:text-white hover:bg-white/5 transition-colors"
               aria-label="メニューを閉じる"
             >
               <span className="material-symbols-outlined">close</span>

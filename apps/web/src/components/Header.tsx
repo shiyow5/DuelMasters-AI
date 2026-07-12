@@ -20,7 +20,7 @@ export default function Header({
       <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={openSidebar}
-          className="md:hidden -ml-1 p-2 rounded-lg text-text-muted hover:text-white hover:bg-white/5 transition-colors"
+          className="lg:hidden -ml-1 p-2 rounded-lg text-text-muted hover:text-white hover:bg-white/5 transition-colors"
           aria-label="メニューを開く"
         >
           <span className="material-symbols-outlined">menu</span>
