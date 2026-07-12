@@ -46,9 +46,15 @@ async function evalItem(item: GoldenItem, noJudge: boolean): Promise<ItemResult>
     }
     if (item.expectedFacts) res.factCoverage = factCoverage(item.expectedFacts, out.response);
     if (item.rubric && !noJudge) {
-      const j = await judgeAnswer(item.question, item.rubric, out.response);
-      res.judgeScore = j.score;
-      res.judgeReason = j.reason;
+      // judge 失敗 (構造化出力/quota/一時エラー) を item 全体の失敗にせず、
+      // 既算出の tool/fact/citation 指標を保持する (judge 障害を agent 失敗に見せない)。
+      try {
+        const j = await judgeAnswer(item.question, item.rubric, out.response);
+        res.judgeScore = j.score;
+        res.judgeReason = j.reason;
+      } catch (err) {
+        res.judgeReason = `judge失敗: ${(err as Error).message}`;
+      }
     }
     return res;
   } catch (err) {

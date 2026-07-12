@@ -54,8 +54,11 @@ export async function fetchRulingList(limit?: number): Promise<RulingItem[]> {
     let arr: Array<{ id: number; title: { rendered: string }; link: string }>;
     try {
       arr = JSON.parse(await fetchWithRetry(url));
-    } catch {
-      break; // ページ超過などで API がエラーを返したら終端
+    } catch (err) {
+      // WP は総ページ超過時に 400 (rest_post_invalid_page_number) を返す=正常終端。
+      // それ以外 (500/429/ネットワーク/JSON 破損) はサイレントな部分取込を避けるため job を失敗させる。
+      if (err instanceof Error && /HTTP 400\b/.test(err.message)) break;
+      throw err;
     }
     if (!Array.isArray(arr) || arr.length === 0) break;
     for (const p of arr) {
