@@ -48,9 +48,7 @@ export function getSupabase(): SupabaseClient {
   if (!_supabase) {
     const url = _config.supabaseUrl ?? process.env.SUPABASE_URL;
     const key =
-      _config.supabaseKey ??
-      process.env.SUPABASE_SERVICE_ROLE_KEY ??
-      process.env.SUPABASE_ANON_KEY;
+      _config.supabaseKey ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY;
     if (!url || !key) {
       throw new Error(
         "SUPABASE_URL と、SUPABASE_SERVICE_ROLE_KEY または SUPABASE_ANON_KEY が必要です",

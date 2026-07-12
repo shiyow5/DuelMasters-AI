@@ -1,0 +1,21 @@
+{
+  // DM-AI API (Hono) — Cloudflare Workers 設定
+  // Hyperdrive: Supabase Postgres (Session pooler) への接続をプールする。
+  // 機密 (INTERNAL_API_KEY / GEMINI_API_KEY / SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY /
+  //   SUPABASE_ANON_KEY) は `wrangler secret put` で設定する。WEB_URL は非機密 vars。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dm-ai-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "55a1ac39d35b4142b36e2c068dd68a4c",
+    },
+  ],
+  "vars": {
+    "WEB_URL": "",
+  },
+}
