@@ -115,7 +115,9 @@ describe("chat モデルフォールバック", () => {
 
   it("非リトライ系(400)はフォールバックせず即失敗", async () => {
     const { chat } = await import("../src/gemini.js");
-    generateContentMock.mockRejectedValueOnce(Object.assign(new Error("bad request"), { status: 400 }));
+    generateContentMock.mockRejectedValueOnce(
+      Object.assign(new Error("bad request"), { status: 400 }),
+    );
     await expect(chat([{ role: "user", content: "hi" }])).rejects.toThrow("bad request");
     expect(generateContentMock).toHaveBeenCalledTimes(1);
   });
