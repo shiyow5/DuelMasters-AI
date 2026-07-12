@@ -98,8 +98,19 @@ export async function runTool(
       }
 
       case "build_deck": {
+        // 文明・最大コストは autoBuild の制約に渡す。自然文の theme だけでは
+        // 「火文明中心の速攻」等の意図が ILIKE に載らず文明無視のデッキになるため、
+        // モデルが抽出した civilizations / max_cost を構造化制約として明示的に渡す。
+        const civs = Array.isArray(args.civilizations)
+          ? (args.civilizations as string[]).filter((c): c is string =>
+              CIVILIZATIONS.includes(c as never),
+            )
+          : undefined;
+        const maxCost = typeof args.max_cost === "number" ? args.max_cost : undefined;
         const result = await autoBuild(args.theme as string, resolveFormat(args.format, format), {
           requiredCards: args.required_cards as string[],
+          civilizations: civs && civs.length > 0 ? civs : undefined,
+          maxCost,
         });
         return { text: JSON.stringify(result, null, 2) };
       }
@@ -167,11 +178,17 @@ export const AGENT_TOOLS = [
   }),
   tool(async (a: Record<string, unknown>) => (await runTool("build_deck", a)).text, {
     name: "build_deck",
-    description: "テーマに基づいてデッキを自動構築します",
+    description:
+      "テーマに基づいてデッキを自動構築します。文明指定(例: 火文明中心)は civilizations に、速攻など低コスト寄せは max_cost に必ず反映してください。",
     schema: z.object({
       theme: z.string().describe("デッキテーマ"),
       format: z.enum(["original", "advance"]).optional().describe("フォーマット"),
       required_cards: z.array(z.string()).optional().describe("必須カード名リスト"),
+      civilizations: z
+        .array(z.enum(CIVILIZATIONS))
+        .optional()
+        .describe('中心となる文明の内部コード配列 (例: ["fire"] や ["fire","nature"])'),
+      max_cost: z.number().optional().describe("最大コスト。速攻なら低め(例: 5)を指定"),
     }),
   }),
   tool(async (a: Record<string, unknown>) => (await runTool("get_tier_list", a)).text, {
