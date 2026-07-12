@@ -37,4 +37,6 @@ COPY --from=builder /app/package.json ./
 
 ENV NODE_ENV=production
 EXPOSE 3001
-CMD ["node", "apps/api/dist/index.js"]
+# index.js は Cloudflare Workers 用に fetch ハンドラを export するだけで serve() を呼ばない。
+# Docker/Node で HTTP サーバーを起動するエントリは node-server.js。
+CMD ["node", "apps/api/dist/node-server.js"]
