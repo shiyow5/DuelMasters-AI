@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  format:
+    name: Format Check (prettier)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting (prettier --check)
+        run: pnpm format:check
+
+  lint:
+    name: Lint (eslint via turbo)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # turbo の lint タスクは dependsOn: ["^build"] のため、
+      # 依存パッケージ (core/db/rag/deck-engine) のビルドを自動的に先行実行する。
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+  test:
+    name: Test (vitest, real DB)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dm_ai
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dm_ai
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install postgresql-client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Apply DB schema (001 → 002 → 003, in order)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for f in infra/sql/001_init.sql infra/sql/002_cards_official_id_unique.sql infra/sql/003_features.sql; do
+            echo "Applying $f"
+            psql -h localhost -U postgres -d dm_ai -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      # ワークスペースパッケージ (@dm-ai/core, @dm-ai/db, ...) は
+      # main/exports が dist/*.js を指すため、ビルドしないと
+      # vitest から解決できない (`pnpm test` 単体では失敗する)。
+      - name: Build workspace packages
+        run: pnpm build
+
+      - name: Run tests (unit + DB integration, real Postgres)
+        run: pnpm test
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # playwright.config.ts の webServer は api(3001) を
+      # `pnpm --filter @dm-ai/api dev` (tsx watch) で起動する。
+      # api は @dm-ai/core / @dm-ai/db / @dm-ai/deck-engine / @dm-ai/rag に
+      # 依存しており、これらは dist ビルド済みでないと解決できない。
+      - name: Build workspace packages
+        run: pnpm build
+
+      - name: Install Playwright browsers (chromium only; no other projects configured)
+        run: pnpm --filter @dm-ai/web exec playwright install --with-deps chromium
+
+      # env は付けない: DB/Gemini 無しの劣化動作をスモークする設計
+      # (smoke.spec.ts の「30/100 固定スコア」テストが前提とする挙動)。
+      - name: Run Playwright e2e smoke tests
+        run: pnpm --filter @dm-ai/web e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
