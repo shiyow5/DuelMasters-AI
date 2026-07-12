@@ -15,6 +15,11 @@ async function main() {
     case "regulations":
       await import("./jobs/ingest-regulations.js");
       break;
+    case "rulings": {
+      const { runIngestRulings, parseRulingsArgs } = await import("./jobs/ingest-rulings.js");
+      await runIngestRulings(parseRulingsArgs(process.argv.slice(3)));
+      break;
+    }
     case "tags": {
       const { runIngestTags } = await import("./jobs/ingest-tags.js");
       await runIngestTags({ onlyEmpty: !process.argv.includes("--all") });

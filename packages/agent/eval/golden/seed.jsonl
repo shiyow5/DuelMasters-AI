@@ -1,0 +1,12 @@
+{"id":"rule-strigger-basic","question":"S・トリガーとは何ですか？簡潔に説明してください。","mode":"rule","expectedFacts":["シールド","ブレイク","コスト","唱える"],"rubric":"シールドがブレイクされた時に手札に加わる際、そのカードをコストを支払わずに使える能力である旨を正しく説明していれば高評価。"}
+{"id":"rule-strigger-block","question":"S・トリガーで唱えた呪文はブロックされますか？","mode":"rule","expectedFacts":["ブロックされない"],"rubric":"呪文はそもそもブロックされない(ブロックはクリーチャーの攻撃に対するもの)点を正しく述べていれば高評価。誤ってブロックされると答えたら最低評価。"}
+{"id":"rule-blocker","question":"ブロッカーはどのように機能しますか？","mode":"rule","expectedFacts":["攻撃","ブロック","バトル"],"rubric":"相手クリーチャーの攻撃に対しブロッカーを持つクリーチャーで割り込み、攻撃先を変えてバトルする旨を説明していれば高評価。"}
+{"id":"rule-win-condition","question":"デュエル・マスターズの勝利条件を教えてください。","mode":"rule","expectedFacts":["シールド","ダイレクトアタック"],"rubric":"相手のシールドを全てブレイクした後、シールドの無い相手にダイレクトアタックを通すと勝ち、という基本を正しく説明していれば高評価。"}
+{"id":"rule-cip","question":"「バトルゾーンに出た時」の能力(cip)はどのタイミングで発動しますか？","mode":"rule","expectedFacts":["出た時"],"rubric":"クリーチャーがバトルゾーンに出たことをトリガーに誘発する点を正しく述べていれば高評価。"}
+{"id":"rule-mana","question":"マナゾーンのカードはどのように使いますか？","mode":"rule","expectedFacts":["マナ","タップ","コスト"],"rubric":"マナゾーンのカードをタップしてコストを支払い、クリーチャーや呪文を使う旨を説明していれば高評価。"}
+{"id":"rule-turn-flow","question":"1ターンの流れを順番に教えてください。","mode":"rule","expectedFacts":["マナ","攻撃"],"rubric":"開始→マナチャージ→カード使用→攻撃といった主要フェイズの流れを概ね正しい順で説明していれば高評価。"}
+{"id":"integrated-search-card","question":"「ボルシャック」という名前を含むカードを検索してください。","mode":"integrated","expectedTools":["search_cards"],"rubric":"カード検索ツールを使って該当カードを提示しようとしていれば高評価(データ未整備で空でも、ツール選択が正しければ可)。"}
+{"id":"deck-build","question":"火文明中心の速攻デッキを作ってください。","mode":"deck","expectedTools":["build_deck"],"rubric":"自動構築ツールを用いてデッキを提案しようとしていれば高評価。速攻の方針(低コスト中心)に言及があればなお良い。"}
+{"id":"deck-evaluate","question":"次のデッキを評価してください: ボルシャック・ドラゴン 4枚、火の呪文 10枚、その他 26枚","mode":"deck","expectedTools":["evaluate_deck"],"rubric":"デッキ評価ツールを使って診断しようとしていれば高評価。3原則(S・トリガー/コストカーブ/文明バランス)への言及があればなお良い。"}
+{"id":"meta-tier","question":"現在の環境のティアリストを教えてください。","mode":"meta","expectedTools":["get_tier_list"],"rubric":"ティアリスト取得ツールを使おうとしていれば高評価(データ未整備で空でもツール選択が正しければ可)。"}
+{"id":"rule-shield-trigger-timing","question":"シールドをブレイクされた時、S・トリガーはいつ使えますか？","mode":"rule","expectedFacts":["ブレイク","手札"],"rubric":"シールドがブレイクされ手札に加わる際にS・トリガーを使うか選べる旨を正しく述べていれば高評価。"}
