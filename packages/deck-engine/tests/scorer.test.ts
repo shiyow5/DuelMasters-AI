@@ -5,7 +5,7 @@ import { scoreDeck } from "../src/scorer.js";
 describe("scoreDeck 特性テスト (DB無し = 全カード情報なしの劣化動作)", () => {
   it("40枚デッキ・カード情報なし", async () => {
     const deck = parseDecklist(
-      Array.from({ length: 10 }, (_, i) => `4 テストカード${i + 1}`).join("\n")
+      Array.from({ length: 10 }, (_, i) => `4 テストカード${i + 1}`).join("\n"),
     );
     const score = await scoreDeck(deck);
     expect(score).toEqual({

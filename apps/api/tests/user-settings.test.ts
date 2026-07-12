@@ -1,11 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { Hono } from "hono";
-import {
-  getTestSql,
-  hasTestDb,
-  enableAppDb,
-  truncateAll,
-} from "../../../tests/helpers/db.js";
+import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/helpers/db.js";
 import { optionalAuth } from "../src/middleware/auth.js";
 import { userRouter } from "../src/routes/user.js";
 

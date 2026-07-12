@@ -5,10 +5,7 @@ import { apiGet } from "@/lib/api";
 import { nameToHue } from "@/lib/format";
 import type { TierEntry, TierData } from "@/lib/types";
 
-const TIER_STYLES: Record<
-  string,
-  { accent: string; badge: string; valueColor: string }
-> = {
+const TIER_STYLES: Record<string, { accent: string; badge: string; valueColor: string }> = {
   Tier1: {
     accent: "bg-gradient-to-b from-primary-purple to-primary-purple-light",
     badge: "bg-bg-card text-primary-purple-light",
@@ -57,13 +54,9 @@ export default function MetaPage() {
       <header className="border-b border-border-highlight bg-bg-dark px-10 py-3 sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="w-8 h-8 rounded-full bg-primary-purple flex items-center justify-center">
-            <span className="material-symbols-outlined text-white text-[20px]">
-              playing_cards
-            </span>
+            <span className="material-symbols-outlined text-white text-[20px]">playing_cards</span>
           </div>
-          <h2 className="text-lg font-bold leading-tight tracking-tight text-white">
-            環境分析
-          </h2>
+          <h2 className="text-lg font-bold leading-tight tracking-tight text-white">環境分析</h2>
           <span className="px-2 py-1 rounded bg-primary-purple/20 text-primary-purple text-xs font-bold uppercase tracking-wider border border-primary-purple/30">
             Beta
           </span>
@@ -116,9 +109,7 @@ export default function MetaPage() {
                 <span className="material-symbols-outlined text-[18px] text-text-muted">
                   calendar_today
                 </span>
-                <span className="text-sm font-medium">
-                  過去{p.replace("w", "週間")}
-                </span>
+                <span className="text-sm font-medium">過去{p.replace("w", "週間")}</span>
               </button>
             ))}
             {data && (
@@ -128,11 +119,7 @@ export default function MetaPage() {
             )}
           </div>
 
-          {loading && (
-            <div className="py-12 text-center text-text-muted">
-              読み込み中...
-            </div>
-          )}
+          {loading && <div className="py-12 text-center text-text-muted">読み込み中...</div>}
 
           {error && (
             <div className="rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
@@ -149,13 +136,9 @@ export default function MetaPage() {
                 return (
                   <div key={tier} className="flex flex-col gap-4">
                     <div className="flex items-center gap-3">
-                      <div
-                        className={`h-8 w-1 rounded-full ${style.accent}`}
-                      />
+                      <div className={`h-8 w-1 rounded-full ${style.accent}`} />
                       <h2 className="text-2xl font-bold text-white">{tier}</h2>
-                      <span
-                        className={`text-sm font-medium px-2 py-0.5 rounded ${style.badge}`}
-                      >
+                      <span className={`text-sm font-medium px-2 py-0.5 rounded ${style.badge}`}>
                         使用率{" "}
                         {/* 閾値は apps/api の TIER_THRESHOLDS (15% / 8%) と一致させること */}
                         {tier === "Tier1" ? "15%以上" : "8% - 15%"}
@@ -179,15 +162,9 @@ export default function MetaPage() {
                   >
                     <div className="flex items-center gap-3">
                       <div className="h-6 w-1 bg-text-dim rounded-full" />
-                      <h2 className="text-lg font-bold text-white">
-                        Tier 3 / その他
-                      </h2>
+                      <h2 className="text-lg font-bold text-white">Tier 3 / その他</h2>
                       <span className="text-sm text-text-muted">
-                        {
-                          data.tier_data.filter((e) => e.tier === "Tier3")
-                            .length
-                        }{" "}
-                        デッキタイプ
+                        {data.tier_data.filter((e) => e.tier === "Tier3").length} デッキタイプ
                       </span>
                     </div>
                     <span
@@ -215,9 +192,7 @@ export default function MetaPage() {
               <span className="material-symbols-outlined text-5xl text-text-dim mb-4 block">
                 monitoring
               </span>
-              <p className="text-text-muted">
-                この期間のデータはまだありません
-              </p>
+              <p className="text-text-muted">この期間のデータはまだありません</p>
               <p className="mt-2 text-sm text-text-dim">
                 大会結果を登録するとティアリストが生成されます
               </p>
@@ -247,17 +222,13 @@ function DeckCard({ entry, tier }: { entry: TierEntry; tier: string }) {
       </div>
 
       <div className="flex flex-col p-4 -mt-12 relative z-20">
-        <h3 className="text-lg font-bold text-white mb-1 truncate">
-          {entry.archetype}
-        </h3>
+        <h3 className="text-lg font-bold text-white mb-1 truncate">{entry.archetype}</h3>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-3 gap-2 py-3 border-t border-border-highlight/50 mt-2">
           <div className="flex flex-col">
             <span className="text-xs text-text-muted">使用率</span>
-            <span className={`text-lg font-bold ${style.valueColor}`}>
-              {entry.usage_rate}%
-            </span>
+            <span className={`text-lg font-bold ${style.valueColor}`}>{entry.usage_rate}%</span>
           </div>
           <div className="flex flex-col">
             <span className="text-xs text-text-muted">勝率</span>

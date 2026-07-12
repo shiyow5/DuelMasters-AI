@@ -46,6 +46,7 @@ apps/worker (取り込みジョブ) ──▶ @dm-ai/core, @dm-ai/db, @dm-ai/rag
 ```
 
 重要な事実:
+
 - **apps/web はワークスペースパッケージに一切依存しない**(HTTP 経由のみ)。そのため web 内に
   API レスポンス型のコピーが存在する(後述の作業項目で web 内ローカル lib に集約するが、
   `@dm-ai/core` への依存追加は行わない。Next.js の transpile 設定追加が必要になりリスクが高いため)。
@@ -55,32 +56,32 @@ apps/worker (取り込みジョブ) ──▶ @dm-ai/core, @dm-ai/db, @dm-ai/rag
 
 ### 1.3 主要ファイルの役割
 
-| ファイル | 行数 | 役割 |
-|---|---|---|
-| `packages/core/src/constants.ts` | 82 | フォーマット・文明・カード種別等の定数、`DECK_SIZE=40`、`MAX_COPIES=4`、`DECK_GUIDELINES`(評価目安値) |
-| `packages/core/src/schemas.ts` | 198 | Zod スキーマ(Card/Deck/Regulation/RuleChunk/DeckScore 等)。**現状、実行時バリデーションには一切使われておらず型の供給源としてのみ機能** |
-| `packages/core/src/gemini.ts` | 129 | Gemini クライアント(遅延初期化)。`chat()`(Function Calling対応)と `embed()`/`embedSingle()` |
-| `packages/db/src/client.ts` | 58 | `getSupabase`/`getDb`(Drizzle)/`getSql`(postgres.js)/`closeDb`。全て遅延初期化・モジュール変数キャッシュ |
-| `packages/db/src/schema.ts` | 168 | Drizzle テーブル定義(未使用)+ pgvector 用 customType |
-| `packages/rag/src/chunker.ts` | 119 | ルール PDF テキストの条文単位チャンク化(`chunkRuleText`)、FAQ 分割、サイズ分割 |
-| `packages/rag/src/search.ts` | 143 | ハイブリッド検索 `searchRules`(キーワード LIKE + pgvector cosine、スコアマージ) |
-| `packages/deck-engine/src/parser.ts` | 61 | デッキリストのテキストパース(`4 カード名` / `カード名 x4` 等4形式) |
-| `packages/deck-engine/src/validator.ts` | 86 | 枚数・同名制限・殿堂チェック(DB接続不可時は警告を出してスキップ) |
-| `packages/deck-engine/src/scorer.ts` | 223 | デッキ評価(トリガー数/多色/コストカーブ/文明/初動率/役割 → 100点満点)。DB接続不可時は「全カード情報なし」として評価続行 |
-| `packages/deck-engine/src/builder.ts` | 172 | テーマ検索ベースの自動構築 `autoBuild` と改善提案 `suggestReplacements`(`format` 引数と `constraints` の大半は**未実装で無視される**) |
-| `apps/api/src/index.ts` | 36 | Hono 起動、CORS、/health |
-| `apps/api/src/routes/chat.ts` | 206 | チャット本体。モード別システムプロンプト、ツール実行ループ(`executeToolCall`)、rule モードの RAG 付加 |
-| `apps/api/src/routes/deck.ts` | 73 | /parse /evaluate /build /suggest |
-| `apps/api/src/routes/meta.ts` | 151 | /tier(スナップショット→無ければ大会結果から集計、Tier閾値 15%/8%)、/archetype/:name、/ingest/url(未実装スタブ) |
-| `apps/api/src/tools.ts` | 99 | Gemini Function Calling のツール定義(6種) |
-| `apps/bot/src/commands/index.ts` | 257 | 全スラッシュコマンドのハンドラ+API クライアント(`apiPost`/`apiGet`) |
-| `apps/bot/src/deploy-commands.ts` | 134 | コマンド定義の Discord 登録スクリプト |
-| `apps/worker/src/jobs/ingest-rules.ts` | 95 | ルールPDF → pdf-parse → チャンク化 → embed → rule_chunks 格納 |
-| `apps/worker/src/jobs/ingest-cards.ts` | 201 | 公式カードDBスクレイピング → cards upsert(**ON CONFLICT が現状動かない。R-04 参照**) |
-| `apps/worker/src/jobs/ingest-regulations.ts` | 66 | 殿堂ページスクレイピング → regulations 全削除→再投入 |
-| `apps/web/src/app/page.tsx` ほか4ページ | 281-510 | チャット/ルール/デッキ/メタの各画面(クライアントコンポーネント) |
-| `apps/web/src/lib/api.ts` | 33 | fetch ラッパー(bot 側にほぼ同一の複製あり) |
-| `infra/sql/001_init.sql` | 104 | 全テーブル DDL(docker-compose 起動時に自動適用) |
+| ファイル                                     | 行数    | 役割                                                                                                                                    |
+| -------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core/src/constants.ts`             | 82      | フォーマット・文明・カード種別等の定数、`DECK_SIZE=40`、`MAX_COPIES=4`、`DECK_GUIDELINES`(評価目安値)                                   |
+| `packages/core/src/schemas.ts`               | 198     | Zod スキーマ(Card/Deck/Regulation/RuleChunk/DeckScore 等)。**現状、実行時バリデーションには一切使われておらず型の供給源としてのみ機能** |
+| `packages/core/src/gemini.ts`                | 129     | Gemini クライアント(遅延初期化)。`chat()`(Function Calling対応)と `embed()`/`embedSingle()`                                             |
+| `packages/db/src/client.ts`                  | 58      | `getSupabase`/`getDb`(Drizzle)/`getSql`(postgres.js)/`closeDb`。全て遅延初期化・モジュール変数キャッシュ                                |
+| `packages/db/src/schema.ts`                  | 168     | Drizzle テーブル定義(未使用)+ pgvector 用 customType                                                                                    |
+| `packages/rag/src/chunker.ts`                | 119     | ルール PDF テキストの条文単位チャンク化(`chunkRuleText`)、FAQ 分割、サイズ分割                                                          |
+| `packages/rag/src/search.ts`                 | 143     | ハイブリッド検索 `searchRules`(キーワード LIKE + pgvector cosine、スコアマージ)                                                         |
+| `packages/deck-engine/src/parser.ts`         | 61      | デッキリストのテキストパース(`4 カード名` / `カード名 x4` 等4形式)                                                                      |
+| `packages/deck-engine/src/validator.ts`      | 86      | 枚数・同名制限・殿堂チェック(DB接続不可時は警告を出してスキップ)                                                                        |
+| `packages/deck-engine/src/scorer.ts`         | 223     | デッキ評価(トリガー数/多色/コストカーブ/文明/初動率/役割 → 100点満点)。DB接続不可時は「全カード情報なし」として評価続行                 |
+| `packages/deck-engine/src/builder.ts`        | 172     | テーマ検索ベースの自動構築 `autoBuild` と改善提案 `suggestReplacements`(`format` 引数と `constraints` の大半は**未実装で無視される**)   |
+| `apps/api/src/index.ts`                      | 36      | Hono 起動、CORS、/health                                                                                                                |
+| `apps/api/src/routes/chat.ts`                | 206     | チャット本体。モード別システムプロンプト、ツール実行ループ(`executeToolCall`)、rule モードの RAG 付加                                   |
+| `apps/api/src/routes/deck.ts`                | 73      | /parse /evaluate /build /suggest                                                                                                        |
+| `apps/api/src/routes/meta.ts`                | 151     | /tier(スナップショット→無ければ大会結果から集計、Tier閾値 15%/8%)、/archetype/:name、/ingest/url(未実装スタブ)                          |
+| `apps/api/src/tools.ts`                      | 99      | Gemini Function Calling のツール定義(6種)                                                                                               |
+| `apps/bot/src/commands/index.ts`             | 257     | 全スラッシュコマンドのハンドラ+API クライアント(`apiPost`/`apiGet`)                                                                     |
+| `apps/bot/src/deploy-commands.ts`            | 134     | コマンド定義の Discord 登録スクリプト                                                                                                   |
+| `apps/worker/src/jobs/ingest-rules.ts`       | 95      | ルールPDF → pdf-parse → チャンク化 → embed → rule_chunks 格納                                                                           |
+| `apps/worker/src/jobs/ingest-cards.ts`       | 201     | 公式カードDBスクレイピング → cards upsert(**ON CONFLICT が現状動かない。R-04 参照**)                                                    |
+| `apps/worker/src/jobs/ingest-regulations.ts` | 66      | 殿堂ページスクレイピング → regulations 全削除→再投入                                                                                    |
+| `apps/web/src/app/page.tsx` ほか4ページ      | 281-510 | チャット/ルール/デッキ/メタの各画面(クライアントコンポーネント)                                                                         |
+| `apps/web/src/lib/api.ts`                    | 33      | fetch ラッパー(bot 側にほぼ同一の複製あり)                                                                                              |
+| `infra/sql/001_init.sql`                     | 104     | 全テーブル DDL(docker-compose 起動時に自動適用)                                                                                         |
 
 ### 1.4 データフロー(代表2つ)
 
@@ -161,13 +162,13 @@ pnpm typecheck  # 期待: 7パッケージすべて成功 (exit 0)
 {
   "scripts": {
     // 既存はそのまま、以下を追加
-    "test": "vitest run"
+    "test": "vitest run",
   },
   "devDependencies": {
     "turbo": "^2.4.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"   // 追加。これが本計画で唯一許可される新規依存
-  }
+    "vitest": "^3.0.0", // 追加。これが本計画で唯一許可される新規依存
+  },
 }
 ```
 
@@ -257,8 +258,7 @@ import { validateRegulation } from "../src/validator.js";
 
 // DATABASE_URL 無しで実行される前提 (vitest.config.ts で強制)。
 // 殿堂チェックはスキップされ、固定の警告文が返る。
-const DB_SKIP_WARNING =
-  "殿堂データベースに接続できないため、殿堂チェックをスキップしました";
+const DB_SKIP_WARNING = "殿堂データベースに接続できないため、殿堂チェックをスキップしました";
 
 function list(n: number, prefix = "カード"): string {
   const lines: string[] = [];
@@ -313,7 +313,7 @@ import { scoreDeck } from "../src/scorer.js";
 describe("scoreDeck 特性テスト (DB無し = 全カード情報なしの劣化動作)", () => {
   it("40枚デッキ・カード情報なし", async () => {
     const deck = parseDecklist(
-      Array.from({ length: 10 }, (_, i) => `4 テストカード${i + 1}`).join("\n")
+      Array.from({ length: 10 }, (_, i) => `4 テストカード${i + 1}`).join("\n"),
     );
     const score = await scoreDeck(deck);
     expect(score).toEqual({
@@ -460,7 +460,8 @@ const chunks = chunkRuleText(parsed.text, "comprehensive_rules", VERSION);
 const chunks = chunkRuleText(parsed.text);
 ```
 
-  テスト `chunker.test.ts` の呼び出しも `chunkRuleText(rule)` に変更する(期待値は変更しない)。
+テスト `chunker.test.ts` の呼び出しも `chunkRuleText(rule)` に変更する(期待値は変更しない)。
+
 - **完了条件**: 共通完了条件(テスト11件 PASS のまま)。
 - **リスク**: 低。呼び出し元は ingest-rules.ts とテストの2箇所のみ(grep で確認済み)。
 - **依存**: 項目0
@@ -481,13 +482,13 @@ DROP INDEX IF EXISTS cards_official_id_idx;
 CREATE UNIQUE INDEX IF NOT EXISTS cards_official_id_uidx ON cards (official_id);
 ```
 
-  (2) `docker-compose.yml` の db サービスの volumes に追記(001 の直後の行):
+(2) `docker-compose.yml` の db サービスの volumes に追記(001 の直後の行):
 
 ```yaml
-      - ./infra/sql/002_cards_official_id_unique.sql:/docker-entrypoint-initdb.d/002_cards_official_id_unique.sql
+- ./infra/sql/002_cards_official_id_unique.sql:/docker-entrypoint-initdb.d/002_cards_official_id_unique.sql
 ```
 
-  (3) `packages/db/src/schema.ts` — インデックス定義を UNIQUE に合わせる:
+(3) `packages/db/src/schema.ts` — インデックス定義を UNIQUE に合わせる:
 
 ```ts
 // 変更前 (65行目付近)
@@ -496,18 +497,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS cards_official_id_uidx ON cards (official_id);
     uniqueIndex("cards_official_id_uidx").on(table.official_id),
 ```
 
-  (4) `apps/worker/src/jobs/ingest-cards.ts` — official_id が空のカードは取り込みをスキップする
-  (空文字のまま UNIQUE 化すると全ての「ID不明カード」が1行に上書き合成されてしまうため):
+(4) `apps/worker/src/jobs/ingest-cards.ts` — official_id が空のカードは取り込みをスキップする
+(空文字のまま UNIQUE 化すると全ての「ID不明カード」が1行に上書き合成されてしまうため):
 
 ```ts
 // 変更前 (115行目)
-  const officialId = new URL(url).searchParams.get("id") ?? "";
+const officialId = new URL(url).searchParams.get("id") ?? "";
 // 変更後
-  const officialId = new URL(url).searchParams.get("id");
-  if (!officialId) {
-    console.warn(`official_id が取得できないためスキップ: ${url}`);
-    return null;
-  }
+const officialId = new URL(url).searchParams.get("id");
+if (!officialId) {
+  console.warn(`official_id が取得できないためスキップ: ${url}`);
+  return null;
+}
 ```
 
 - **完了条件**: 共通完了条件。加えてローカルDBで適用確認(Docker が使える場合のみ。使えない場合はスキップ可):
@@ -534,7 +535,7 @@ async function searchByKeyword(
   sql: ReturnType<typeof getSql>,
   query: string,
   topK: number,
-  docType?: string
+  docType?: string,
 ): Promise<ChunkResult[]> {
   const keywords = query
     .split(/[\s　、。,.]/)
@@ -573,7 +574,7 @@ async function searchByVector(
   sql: ReturnType<typeof getSql>,
   query: string,
   topK: number,
-  docType?: string
+  docType?: string,
 ): Promise<ChunkResult[]> {
   const embedding = await embedSingle(query);
   const vecParam = `[${embedding.join(",")}]`;
@@ -596,7 +597,8 @@ async function searchByVector(
 }
 ```
 
-  ファイル末尾の `escapeSql` 関数(140-143行)は削除する。`searchRules` と `mergeResults` は変更しない。
+ファイル末尾の `escapeSql` 関数(140-143行)は削除する。`searchRules` と `mergeResults` は変更しない。
+
 - **完了条件**: 共通完了条件。加えて `grep -n "unsafe\|escapeSql" packages/rag/src/search.ts` が0件。
 - **リスク**: 中。この関数は DB 接続がないと実行確認できない(Gemini の embedding も必要)。
   実行時の最終確認は本項目では行わず、コード上の同値性(SELECT 対象・WHERE 条件・ORDER・LIMIT が
@@ -633,16 +635,14 @@ export function getDb(): PostgresJsDatabase<typeof schema> {
 }
 ```
 
-  注意: `getDb` の定義位置を `getSql` の後に移動する必要はない(hoisting される関数宣言のため)。
-  エラーメッセージは以下に変更:
+注意: `getDb` の定義位置を `getSql` の後に移動する必要はない(hoisting される関数宣言のため)。
+エラーメッセージは以下に変更:
 
 ```ts
 // 変更前 (17行)
-      throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY are required");
+throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY are required");
 // 変更後
-      throw new Error(
-        "SUPABASE_URL と、SUPABASE_SERVICE_ROLE_KEY または SUPABASE_ANON_KEY が必要です"
-      );
+throw new Error("SUPABASE_URL と、SUPABASE_SERVICE_ROLE_KEY または SUPABASE_ANON_KEY が必要です");
 ```
 
 - **完了条件**: 共通完了条件。
@@ -682,20 +682,22 @@ async function main() {
   }> = [];
 
   for (const section of sections) {
-    $(section.selector).find("li, .card-name, tr").each((_, el) => {
-      const cardName = $(el).text().trim();
-      if (!cardName || cardName.length > 100) return;
-      regulations.push({
-        format: "original",
-        restriction_type: section.type,
-        card_name: cardName,
+    $(section.selector)
+      .find("li, .card-name, tr")
+      .each((_, el) => {
+        const cardName = $(el).text().trim();
+        if (!cardName || cardName.length > 100) return;
+        regulations.push({
+          format: "original",
+          restriction_type: section.type,
+          card_name: cardName,
+        });
       });
-    });
   }
 
   if (regulations.length === 0) {
     throw new Error(
-      "殿堂レギュレーションを1件も取得できませんでした。ページ構造が変わった可能性があります。既存データは変更せず中断します"
+      "殿堂レギュレーションを1件も取得できませんでした。ページ構造が変わった可能性があります。既存データは変更せず中断します",
     );
   }
 
@@ -716,7 +718,8 @@ async function main() {
 }
 ```
 
-  末尾のモジュールレベル `const regulations` 宣言(57-61行)は削除する。`main().catch(...)` は変更しない。
+末尾のモジュールレベル `const regulations` 宣言(57-61行)は削除する。`main().catch(...)` は変更しない。
+
 - **完了条件**: 共通完了条件(このジョブは DB とサイトが必要なため実行確認はしない。目視で「DELETE に WHERE format = 'original' が付いたこと」「0件時に DELETE 前で throw すること」を確認)。
 - **リスク**: 低。**挙動変更(バグ修正)**: 0件時に DB を消さず異常終了するようになる。advance の既存行が保持されるようになる。
 - **依存**: 項目0
@@ -763,7 +766,7 @@ async function fetchCardInfo(names: string[]): Promise<Map<string, Card>> {
     // DB未接続時はカード情報なしで評価を続行する (劣化動作は仕様として維持)
     console.warn(
       "カード情報の取得に失敗したため、カード情報なしで評価します:",
-      err instanceof Error ? err.message : err
+      err instanceof Error ? err.message : err,
     );
   }
 
@@ -821,7 +824,8 @@ const MIN_DRAW_CARDS = 4;                  // ドロー札の最低目安
   if (params.openingHandRate < OPENING_RATE_TARGET) score -= 10;          // 0.7
 ```
 
-  減点幅の数値(20/15/5/10/…)は変更しない。役割バランスの減点(受け0で-15、フィニッシャー0で-10)も数値は変更しない。
+減点幅の数値(20/15/5/10/…)は変更しない。役割バランスの減点(受け0で-15、フィニッシャー0で-10)も数値は変更しない。
+
 - **完了条件**: 共通完了条件。**scorer.test.ts が期待値の変更なしで PASS** すること(low=0 は新旧どちらの閾値でも警告・減点対象のため)。
 - **リスク**: 低〜中。low が10〜14枚のデッキのスコアと警告が変わる(意図した修正)。web/bot は
   スコアを表示するだけなので追随修正は不要。
@@ -845,7 +849,7 @@ export const ChatRequestSchema = z.object({
       z.object({
         role: z.enum(["user", "assistant"]),
         content: z.string(),
-      })
+      }),
     )
     .default([]),
   format: z.enum(FORMATS).optional(),
@@ -888,7 +892,8 @@ export const DeckSuggestRequestSchema = z.object({
 export type DeckSuggestRequest = z.infer<typeof DeckSuggestRequestSchema>;
 ```
 
-  注意: `history` の要素で timestamp 等の未知キーは Zod が既定で除去する(現状 web が timestamp 付きで送っており、除去後の形は API が Gemini に渡している形と同一のため挙動互換)。
+注意: `history` の要素で timestamp 等の未知キーは Zod が既定で除去する(現状 web が timestamp 付きで送っており、除去後の形は API が Gemini に渡している形と同一のため挙動互換)。
+
 - **完了条件**: 共通完了条件。
 - **リスク**: なし(追記のみ。この時点では未使用)。
 - **依存**: 項目0
@@ -955,10 +960,11 @@ chatRouter.post("/", async (c) => {
   const useTools = mode === "integrated";
 ```
 
-  これに伴い、ハンドラ内の `body.message` → `message`、`body.format` → `format` に置換する
-  (57-61行の `executeToolCall(toolCall.name, toolCall.args, body.format)` と 87行の
-  `searchRules(body.message)` の2箇所)。import に `ChatRequestSchema` を追加する
-  (`import { chat, ChatRequestSchema, type ChatMode } from "@dm-ai/core";`)。
+これに伴い、ハンドラ内の `body.message` → `message`、`body.format` → `format` に置換する
+(57-61行の `executeToolCall(toolCall.name, toolCall.args, body.format)` と 87行の
+`searchRules(body.message)` の2箇所)。import に `ChatRequestSchema` を追加する
+(`import { chat, ChatRequestSchema, type ChatMode } from "@dm-ai/core";`)。
+
 - **完了条件**: 共通完了条件。加えて API 起動状態で:
 
 ```bash
@@ -995,7 +1001,7 @@ import type { z } from "zod";
 /** ボディを検証し、失敗時は 400 レスポンスを返す */
 async function parseBody<S extends z.ZodTypeAny>(
   c: Context,
-  schema: S
+  schema: S,
 ): Promise<{ ok: true; data: z.infer<S> } | { ok: false; res: Response }> {
   const raw = await c.req.json().catch(() => null);
   const parsed = schema.safeParse(raw);
@@ -1007,7 +1013,7 @@ async function parseBody<S extends z.ZodTypeAny>(
           error: "リクエストが不正です",
           details: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
         },
-        400
+        400,
       ),
     };
   }
@@ -1015,7 +1021,7 @@ async function parseBody<S extends z.ZodTypeAny>(
 }
 ```
 
-  各ハンドラ(例: /evaluate):
+各ハンドラ(例: /evaluate):
 
 ```ts
 // 変更前
@@ -1028,9 +1034,10 @@ deckRouter.post("/evaluate", async (c) => {
   const { decklist, format } = body.data;
 ```
 
-  /parse は `DeckParseRequestSchema`、/build は `DeckBuildRequestSchema`(`theme`,`format`,`constraints` を取り出す)、/suggest は `DeckSuggestRequestSchema`(`decklist`,`goals`)で同様に置き換える。ハンドラ本体のロジック(parseDecklist / scoreDeck / validateRegulation / autoBuild / suggestReplacements の呼び出しと応答形状)は変更しない。
+/parse は `DeckParseRequestSchema`、/build は `DeckBuildRequestSchema`(`theme`,`format`,`constraints` を取り出す)、/suggest は `DeckSuggestRequestSchema`(`decklist`,`goals`)で同様に置き換える。ハンドラ本体のロジック(parseDecklist / scoreDeck / validateRegulation / autoBuild / suggestReplacements の呼び出しと応答形状)は変更しない。
 
-  注意: `zod` は apps/api の直接依存に無いが、型 `z.ZodTypeAny` の参照は `@dm-ai/core` の型宣言経由では書けないため、apps/api の package.json の dependencies に `"zod": "^3.24.0"` を追加する(core と同じ指定。**新規バージョン導入ではなく、既にワークスペースに存在する依存の明示化**)。`pnpm install` で lockfile を更新しコミットに含める。
+注意: `zod` は apps/api の直接依存に無いが、型 `z.ZodTypeAny` の参照は `@dm-ai/core` の型宣言経由では書けないため、apps/api の package.json の dependencies に `"zod": "^3.24.0"` を追加する(core と同じ指定。**新規バージョン導入ではなく、既にワークスペースに存在する依存の明示化**)。`pnpm install` で lockfile を更新しコミットに含める。
+
 - **完了条件**: 共通完了条件。加えて API 起動状態で(DB 無しで確認可能):
 
 ```bash
@@ -1078,7 +1085,8 @@ import { FORMATS } from "@dm-ai/core";
     console.error("[api/meta] archetype 取得に失敗 (フォールバック応答を返します):", err);
 ```
 
-  **フォールバックのレスポンス形状(200 + 空データ)は変更しない**(web/bot がこの形に依存しているため。「DB 無しでも動く」設計は維持する)。
+**フォールバックのレスポンス形状(200 + 空データ)は変更しない**(web/bot がこの形に依存しているため。「DB 無しでも動く」設計は維持する)。
+
 - **完了条件**: 共通完了条件。加えて API 起動状態で:
 
 ```bash
@@ -1119,8 +1127,9 @@ import {
 } from "@dm-ai/deck-engine";
 ```
 
-  167行の `const { autoBuild } = await import("@dm-ai/deck-engine");` と
-  191行の `const { suggestReplacements } = await import("@dm-ai/deck-engine");` を削除する。
+167行の `const { autoBuild } = await import("@dm-ai/deck-engine");` と
+191行の `const { suggestReplacements } = await import("@dm-ai/deck-engine");` を削除する。
+
 - **完了条件**: 共通完了条件。`grep -n "await import" apps/api/src/routes/chat.ts` が0件。
 - **リスク**: なし。
 - **依存**: R-12(同一ファイルの変更が先に確定していること)
@@ -1138,7 +1147,7 @@ async function chatWithToolResults(
   toolCalls: NonNullable<ChatResponse["toolCalls"]>,
   systemPrompt: string,
   responseText: string,
-  format?: string
+  format?: string,
 ): Promise<string> {
   const toolResults: string[] = [];
   for (const toolCall of toolCalls) {
@@ -1154,7 +1163,7 @@ async function chatWithToolResults(
         content: `ツール実行結果:\n${toolResults.join("\n\n")}\n\nこの結果を踏まえてユーザーの質問に回答してください。`,
       },
     ],
-    { systemPrompt, temperature: 0.3 }
+    { systemPrompt, temperature: 0.3 },
   );
   return followUp.text;
 }
@@ -1163,15 +1172,12 @@ async function chatWithToolResults(
 async function chatWithRuleContext(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   query: string,
-  systemPrompt: string
+  systemPrompt: string,
 ): Promise<{ text: string; citations: Array<Record<string, unknown>> } | null> {
   const searchResult = await searchRules(query);
   if (searchResult.chunks.length === 0) return null;
   const context = searchResult.chunks
-    .map(
-      (ch, i) =>
-        `[${i + 1}] ${ch.meta.article ? `条${ch.meta.article}: ` : ""}${ch.text}`
-    )
+    .map((ch, i) => `[${i + 1}] ${ch.meta.article ? `条${ch.meta.article}: ` : ""}${ch.text}`)
     .join("\n\n");
   const ragResponse = await chat(
     [
@@ -1181,7 +1187,7 @@ async function chatWithRuleContext(
         content: `以下のルール条文を参考に回答してください:\n\n${context}`,
       },
     ],
-    { systemPrompt, temperature: 0.2 }
+    { systemPrompt, temperature: 0.2 },
   );
   return {
     text: ragResponse.text,
@@ -1193,33 +1199,38 @@ async function chatWithRuleContext(
 }
 ```
 
-  ハンドラ本体は検証(R-12)+以下に縮小する:
+ハンドラ本体は検証(R-12)+以下に縮小する:
 
 ```ts
-  const response = await chat(messages, {
+const response = await chat(messages, {
+  systemPrompt,
+  tools: useTools ? TOOL_DEFINITIONS : undefined,
+  temperature: 0.3,
+});
+
+if (response.toolCalls && response.toolCalls.length > 0) {
+  const text = await chatWithToolResults(
+    messages,
+    response.toolCalls,
     systemPrompt,
-    tools: useTools ? TOOL_DEFINITIONS : undefined,
-    temperature: 0.3,
-  });
+    response.text,
+    format,
+  );
+  return c.json({ response: text, toolCalls: response.toolCalls, mode });
+}
 
-  if (response.toolCalls && response.toolCalls.length > 0) {
-    const text = await chatWithToolResults(
-      messages, response.toolCalls, systemPrompt, response.text, format
-    );
-    return c.json({ response: text, toolCalls: response.toolCalls, mode });
+if (mode === "rule") {
+  const rag = await chatWithRuleContext(messages, message, systemPrompt);
+  if (rag) {
+    return c.json({ response: rag.text, citations: rag.citations, mode });
   }
+}
 
-  if (mode === "rule") {
-    const rag = await chatWithRuleContext(messages, message, systemPrompt);
-    if (rag) {
-      return c.json({ response: rag.text, citations: rag.citations, mode });
-    }
-  }
-
-  return c.json({ response: response.text, mode });
+return c.json({ response: response.text, mode });
 ```
 
-  `ChatResponse` 型は `import type { ChatResponse } from "@dm-ai/core";` を追加して参照する。
+`ChatResponse` 型は `import type { ChatResponse } from "@dm-ai/core";` を追加して参照する。
+
 - **完了条件**: 共通完了条件。加えて R-12 の curl 4本を再実行し、同じ結果になること(回帰確認)。
 - **リスク**: 中(Gemini 応答経路はローカルで完全には確認できない)。応答 JSON のキー名
   (`response` / `toolCalls` / `citations` / `mode`)が変わっていないことを diff で必ず確認する。
@@ -1241,15 +1252,15 @@ export const TIER_THRESHOLDS = {
 } as const;
 ```
 
-  (2) `meta.ts` の 31-39 行の集計 SQL の SELECT 句を以下に変更する(COUNT を int にキャスト。
-  上記(5)の修正。WHERE / GROUP BY / ORDER BY は変更しない):
+(2) `meta.ts` の 31-39 行の集計 SQL の SELECT 句を以下に変更する(COUNT を int にキャスト。
+上記(5)の修正。WHERE / GROUP BY / ORDER BY は変更しない):
 
 ```sql
         SELECT deck_archetype, COUNT(*)::int as count,
                (COUNT(*) FILTER (WHERE placement <= 8))::int as top8_count
 ```
 
-  (3) `meta.ts` にヘルパーを抽出し、直値を置換:
+(3) `meta.ts` にヘルパーを抽出し、直値を置換:
 
 ```ts
 import { FORMATS, TIER_THRESHOLDS } from "@dm-ai/core";
@@ -1260,9 +1271,7 @@ function isoDate(d: Date): string {
 }
 
 /** 大会結果の集計行をティアリストに変換する */
-function aggregateTierData(
-  results: Array<Record<string, unknown>>
-): Array<{
+function aggregateTierData(results: Array<Record<string, unknown>>): Array<{
   tier: string;
   archetype: string;
   usage_rate: number;
@@ -1289,19 +1298,25 @@ function aggregateTierData(
 }
 ```
 
-  ハンドラ内の該当箇所(51-67行)を `const tierData = aggregateTierData(results);` に、
-  `periodStart.toISOString().split("T")[0]` / `periodEnd.toISOString().split("T")[0]` の
-  全出現(6箇所)を `isoDate(periodStart)` / `isoDate(periodEnd)` に置換する。
-  応答 JSON の形状・値は不変であること。
+ハンドラ内の該当箇所(51-67行)を `const tierData = aggregateTierData(results);` に、
+`periodStart.toISOString().split("T")[0]` / `periodEnd.toISOString().split("T")[0]` の
+全出現(6箇所)を `isoDate(periodStart)` / `isoDate(periodEnd)` に置換する。
+応答 JSON の形状・値は不変であること。
 
-  (4) `apps/web/src/app/meta/page.tsx:182` の表示文言を実装に合わせる:
+(4) `apps/web/src/app/meta/page.tsx:182` の表示文言を実装に合わせる:
 
 ```tsx
 // 変更前
-{tier === "Tier1" ? "15%以上" : "5% - 15%"}
+{
+  tier === "Tier1" ? "15%以上" : "5% - 15%";
+}
 // 変更後 (API 実装 (TIER_THRESHOLDS.tier2 = 8%) と整合させる。web は core 非依存のため直値+根拠コメント)
-{/* 閾値は apps/api の TIER_THRESHOLDS (15% / 8%) と一致させること */}
-{tier === "Tier1" ? "15%以上" : "8% - 15%"}
+{
+  /* 閾値は apps/api の TIER_THRESHOLDS (15% / 8%) と一致させること */
+}
+{
+  tier === "Tier1" ? "15%以上" : "8% - 15%";
+}
 ```
 
 - **完了条件**: 共通完了条件。加えて API 起動状態で `curl -s 'http://localhost:3001/api/meta/tier'` が R-14 と同じ 200 応答(DB 無し時は tier_data: [])。`pnpm --filter @dm-ai/web build` 成功。
@@ -1318,8 +1333,9 @@ function aggregateTierData(
 import { DECK_SIZE, MAX_COPIES, type Format, type DeckEntry } from "@dm-ai/core";
 ```
 
-  置換対象(値の変更はしない): 38-40行 `count: 4` → `count: MAX_COPIES` / `totalCards += 4` → `+= MAX_COPIES`、70行 `totalCards >= 40` → `>= DECK_SIZE`、78行 `let count = 4` → `= MAX_COPIES`、88行の `if (cost >= 7) count = Math.min(count, 2);` は**そのまま**(7コスト・2枚はデッキ上限とは別概念のため変更しない)、90-91行 `totalCards + count > 40` → `> DECK_SIZE` / `40 - totalCards` → `DECK_SIZE - totalCards`、99行 `totalCards < 40` → `< DECK_SIZE`、110行 `totalCards >= 40` → `>= DECK_SIZE`、113行 `Math.min(4, 40 - totalCards)` → `Math.min(MAX_COPIES, DECK_SIZE - totalCards)`、132行 `total < 40` → `< DECK_SIZE`(メッセージ内の「40枚必要」は `${DECK_SIZE}枚必要` に変更してよい)。
-  autoBuild の関数分割は行わない(テストで守れないため。§4 参照)。
+置換対象(値の変更はしない): 38-40行 `count: 4` → `count: MAX_COPIES` / `totalCards += 4` → `+= MAX_COPIES`、70行 `totalCards >= 40` → `>= DECK_SIZE`、78行 `let count = 4` → `= MAX_COPIES`、88行の `if (cost >= 7) count = Math.min(count, 2);` は**そのまま**(7コスト・2枚はデッキ上限とは別概念のため変更しない)、90-91行 `totalCards + count > 40` → `> DECK_SIZE` / `40 - totalCards` → `DECK_SIZE - totalCards`、99行 `totalCards < 40` → `< DECK_SIZE`、110行 `totalCards >= 40` → `>= DECK_SIZE`、113行 `Math.min(4, 40 - totalCards)` → `Math.min(MAX_COPIES, DECK_SIZE - totalCards)`、132行 `total < 40` → `< DECK_SIZE`(メッセージ内の「40枚必要」は `${DECK_SIZE}枚必要` に変更してよい)。
+autoBuild の関数分割は行わない(テストで守れないため。§4 参照)。
+
 - **完了条件**: 共通完了条件。`grep -n " 40\|(40\|>40\|<40" packages/deck-engine/src/builder.ts` で「デッキ枚数の意味の40」が残っていないことを目視確認。
 - **リスク**: 低(数値は同一。機械的置換)。
 - **依存**: 項目0
@@ -1332,24 +1348,27 @@ import { DECK_SIZE, MAX_COPIES, type Format, type DeckEntry } from "@dm-ai/core"
 
 ```ts
 /** DB行 → Card 変換 (fetchCardInfo から抽出) */
-function rowToCard(row: Record<string, unknown>): Card { /* R-08 の map.set の中身 */ }
+function rowToCard(row: Record<string, unknown>): Card {
+  /* R-08 の map.set の中身 */
+}
 
 /** デッキエントリをカード情報で展開 (カード×枚数) */
-function expandCards(entries: DeckEntry[], cardInfo: Map<string, Card>): Card[]
+function expandCards(entries: DeckEntry[], cardInfo: Map<string, Card>): Card[];
 
 /** コストカーブ集計 */
-function computeCostCurve(cards: Card[]): { low: number; mid: number; high: number }
+function computeCostCurve(cards: Card[]): { low: number; mid: number; high: number };
 
 /** 文明比率集計 */
-function computeCivilizationBalance(cards: Card[]): Record<string, number>
+function computeCivilizationBalance(cards: Card[]): Record<string, number>;
 
 /** 役割タグ集計 */
-function computeRoleBalance(cards: Card[]): Record<string, number>
+function computeRoleBalance(cards: Card[]): Record<string, number>;
 ```
 
-  `import type { DeckEntry } from "@dm-ai/core";` を追加。scoreDeck は「取得 → 各 compute 呼び出し →
-  警告/提案の組み立て → calculateOverallScore」のオーケストレーションに縮小する。警告・提案の
-  push 順序は現状のコード順(トリガー → 多色 → 低コスト → 色事故 → 受け → ドロー)を厳守する。
+`import type { DeckEntry } from "@dm-ai/core";` を追加。scoreDeck は「取得 → 各 compute 呼び出し →
+警告/提案の組み立て → calculateOverallScore」のオーケストレーションに縮小する。警告・提案の
+push 順序は現状のコード順(トリガー → 多色 → 低コスト → 色事故 → 受け → ドロー)を厳守する。
+
 - **完了条件**: 共通完了条件。**scorer.test.ts が期待値の変更なしで PASS**(これが出力不変の証明)。
 - **リスク**: 低(特性テストが完全一致で守っている)。
 - **依存**: R-08, R-09
@@ -1367,7 +1386,7 @@ function computeRoleBalance(cards: Card[]): Record<string, number>
 export const OFFICIAL_SITE_BASE_URL = "https://dm.takaratomy.co.jp";
 ```
 
-  `apps/worker/src/lib.ts`(ingest-cards.ts から**移動**。実装は変えない):
+`apps/worker/src/lib.ts`(ingest-cards.ts から**移動**。実装は変えない):
 
 ```ts
 export function sleep(ms: number): Promise<void> {
@@ -1379,12 +1398,13 @@ export async function fetchWithRetry(url: string, retries = 3): Promise<string> 
 }
 ```
 
-  各ジョブの変更: ingest-cards は `BASE_URL` 定義を `const BASE_URL = OFFICIAL_SITE_BASE_URL;` に
-  変更し、ローカルの sleep / fetchWithRetry 定義を削除して import に置換。ingest-rules は
-  `RULES_PDF_URL` を `` `${OFFICIAL_SITE_BASE_URL}/rule/pdf/dm_comprehensive_rules.pdf` `` に変更し、
-  ローカル sleep を削除して import。ingest-regulations は `REGULATION_URL` を
-  `` `${OFFICIAL_SITE_BASE_URL}/rule/regulation/` `` に変更する。
-  **fetchWithRetry を rules / regulations の生 fetch に適用することはしない**(リトライ付与は挙動変更のため)。
+各ジョブの変更: ingest-cards は `BASE_URL` 定義を `const BASE_URL = OFFICIAL_SITE_BASE_URL;` に
+変更し、ローカルの sleep / fetchWithRetry 定義を削除して import に置換。ingest-rules は
+`RULES_PDF_URL` を `` `${OFFICIAL_SITE_BASE_URL}/rule/pdf/dm_comprehensive_rules.pdf` `` に変更し、
+ローカル sleep を削除して import。ingest-regulations は `REGULATION_URL` を
+`` `${OFFICIAL_SITE_BASE_URL}/rule/regulation/` `` に変更する。
+**fetchWithRetry を rules / regulations の生 fetch に適用することはしない**(リトライ付与は挙動変更のため)。
+
 - **完了条件**: 共通完了条件。`grep -rn "takaratomy" apps/worker/src/jobs/` が0件(constants.ts のみに存在)。`grep -c "function sleep" apps/worker/src/jobs/*.ts` が全ファイル0。
 - **リスク**: 低(定義の移動と文字列合成のみ。URL の最終値が変更前と同一であることを目視確認)。
 - **依存**: R-04, R-07(同一ファイル群の変更が先に確定していること)
@@ -1400,22 +1420,22 @@ export async function fetchWithRetry(url: string, retries = 3): Promise<string> 
 import { CIVILIZATIONS } from "@dm-ai/core";
 
 // 変更前 (105-112行)
-  civElements.each((_, el) => {
-    const civClass = $(el).attr("class") ?? "";
-    if (civClass.includes("fire")) civilizations.push("fire");
-    if (civClass.includes("water")) civilizations.push("water");
-    if (civClass.includes("nature")) civilizations.push("nature");
-    if (civClass.includes("light")) civilizations.push("light");
-    if (civClass.includes("darkness")) civilizations.push("darkness");
-  });
+civElements.each((_, el) => {
+  const civClass = $(el).attr("class") ?? "";
+  if (civClass.includes("fire")) civilizations.push("fire");
+  if (civClass.includes("water")) civilizations.push("water");
+  if (civClass.includes("nature")) civilizations.push("nature");
+  if (civClass.includes("light")) civilizations.push("light");
+  if (civClass.includes("darkness")) civilizations.push("darkness");
+});
 
 // 変更後 (判定順は CIVILIZATIONS の定義順 = 変更前と同一)
-  civElements.each((_, el) => {
-    const civClass = $(el).attr("class") ?? "";
-    for (const civ of CIVILIZATIONS) {
-      if (civClass.includes(civ)) civilizations.push(civ);
-    }
-  });
+civElements.each((_, el) => {
+  const civClass = $(el).attr("class") ?? "";
+  for (const civ of CIVILIZATIONS) {
+    if (civClass.includes(civ)) civilizations.push(civ);
+  }
+});
 ```
 
 - **完了条件**: 共通完了条件。
@@ -1463,7 +1483,7 @@ async function apiGet<T>(path: string): Promise<T> {
 }
 ```
 
-  呼び出し側に型引数を与える。ファイル冒頭に追記:
+呼び出し側に型引数を与える。ファイル冒頭に追記:
 
 ```ts
 import type { DeckScore, ValidationResult } from "@dm-ai/core";
@@ -1475,12 +1495,13 @@ interface TierEntry {
 }
 ```
 
-  各呼び出し: `handleRule`/`handleChat` → `apiPost<{ response: string }>`、
-  `handleDeck` rate/check → `apiPost<{ score: DeckScore; validation: ValidationResult }>`、
-  build → `apiPost<{ entries: Array<{ name: string; count: number }> }>`(`.map` の引数
-  `(e: {...})` の注釈は不要になるため削除可)、
-  tier → `apiGet<{ tier_data: TierEntry[] }>`(`.filter` の `(e: {...})` 注釈も削除可)、
-  archetype → `apiGet<{ archetype: string; stats: { total_entries: number; wins: number; top8: number } | null }>`
+各呼び出し: `handleRule`/`handleChat` → `apiPost<{ response: string }>`、
+`handleDeck` rate/check → `apiPost<{ score: DeckScore; validation: ValidationResult }>`、
+build → `apiPost<{ entries: Array<{ name: string; count: number }> }>`(`.map` の引数
+`(e: {...})` の注釈は不要になるため削除可)、
+tier → `apiGet<{ tier_data: TierEntry[] }>`(`.filter` の `(e: {...})` 注釈も削除可)、
+archetype → `apiGet<{ archetype: string; stats: { total_entries: number; wins: number; top8: number } | null }>`
+
 - **完了条件**: 共通完了条件(bot の typecheck が通ること)。Discord への接続確認は不要(トークン無しでは不可能なため)。
 - **リスク**: 低〜中。型引数の付け間違いは typecheck で検出される。実行時挙動は login の
   エラーハンドリング以外不変。
@@ -1495,15 +1516,16 @@ interface TierEntry {
 ```ts
 /** Embed の配色 (Tailwind 由来のブランドカラー) */
 const EMBED_COLORS = {
-  info: 0x3182ce,    // ルール回答
+  info: 0x3182ce, // ルール回答
   success: 0x38a169, // 高スコア / チェックOK
   warning: 0xecc94b, // 中スコア
-  danger: 0xe53e3e,  // 低スコア / チェックNG
-  accent: 0x6366f1,  // 構築・メタ表示
+  danger: 0xe53e3e, // 低スコア / チェックNG
+  accent: 0x6366f1, // 構築・メタ表示
 } as const;
 ```
 
-  置換: 65行 `0x3182ce` → `EMBED_COLORS.info`、102行 `score.overall >= 70 ? 0x38a169 : score.overall >= 40 ? 0xecc94b : 0xe53e3e` → `score.overall >= 70 ? EMBED_COLORS.success : score.overall >= 40 ? EMBED_COLORS.warning : EMBED_COLORS.danger`、124行 `0x6366f1` → `EMBED_COLORS.accent`、139行 `v.valid ? 0x38a169 : 0xe53e3e` → `v.valid ? EMBED_COLORS.success : EMBED_COLORS.danger`、173行・203行 `0x6366f1` → `EMBED_COLORS.accent`。
+置換: 65行 `0x3182ce` → `EMBED_COLORS.info`、102行 `score.overall >= 70 ? 0x38a169 : score.overall >= 40 ? 0xecc94b : 0xe53e3e` → `score.overall >= 70 ? EMBED_COLORS.success : score.overall >= 40 ? EMBED_COLORS.warning : EMBED_COLORS.danger`、124行 `0x6366f1` → `EMBED_COLORS.accent`、139行 `v.valid ? 0x38a169 : 0xe53e3e` → `v.valid ? EMBED_COLORS.success : EMBED_COLORS.danger`、173行・203行 `0x6366f1` → `EMBED_COLORS.accent`。
+
 - **完了条件**: 共通完了条件。`grep -n "0x[0-9a-f]\{6\}" apps/bot/src/commands/index.ts` の出現が EMBED_COLORS 定義内の5件のみ。
 - **リスク**: なし(値は同一)。
 - **依存**: R-23(同一ファイルの変更が先に確定していること)
@@ -1567,7 +1589,7 @@ export interface TierData {
 }
 ```
 
-  `apps/web/src/lib/format.ts`:
+`apps/web/src/lib/format.ts`:
 
 ```ts
 /** 現在時刻の "HH:MM" 表記 (チャットのタイムスタンプ用) */
@@ -1589,12 +1611,13 @@ export function scoreGrade(overall: number): string {
 }
 ```
 
-  各ページの変更: page.tsx は `Message`(citations 無し版)と `getTime` のローカル定義を削除し
-  `import { getTime } from "@/lib/format"; import type { Message } from "@/lib/types";` を追加
-  (page.tsx の Message は citations を使わないが、optional のため共通型で代替可能)。
-  rule/page.tsx は `Citation`/`Message`/`getTime` を削除して import。deck/page.tsx は
-  `DeckScore`/`ValidationResult`/`scoreGrade` を削除して import。meta/page.tsx は
-  `TierEntry`/`TierData` を削除して import。JSX・ロジックは一切変更しない。
+各ページの変更: page.tsx は `Message`(citations 無し版)と `getTime` のローカル定義を削除し
+`import { getTime } from "@/lib/format"; import type { Message } from "@/lib/types";` を追加
+(page.tsx の Message は citations を使わないが、optional のため共通型で代替可能)。
+rule/page.tsx は `Citation`/`Message`/`getTime` を削除して import。deck/page.tsx は
+`DeckScore`/`ValidationResult`/`scoreGrade` を削除して import。meta/page.tsx は
+`TierEntry`/`TierData` を削除して import。JSX・ロジックは一切変更しない。
+
 - **完了条件**: 共通完了条件。加えて `grep -rn "interface Message\|interface DeckScore\|interface TierEntry\|function getTime\|function scoreGrade" apps/web/src/app/` が0件。`pnpm --filter @dm-ai/web build` 成功。
 - **リスク**: 低。型の移動と import 置換のみで実行時挙動は不変。
 - **依存**: R-18(meta/page.tsx の変更が先に確定していること)
@@ -1612,9 +1635,7 @@ export const CIV_COLORS: Record<string, { bg: string; text: string; dot: string 
 };
 
 /** 文明の英語表示ラベル */
-export const CIV_LABELS: Record<string, string> = {
-  /* deck/page.tsx 52-58行をそのまま移動 */
-};
+export const CIV_LABELS: Record<string, string> = {/* deck/page.tsx 52-58行をそのまま移動 */};
 
 /** 文明ごとの16進カラー (SVG 描画用。CIV_COLORS の dot と同色) */
 export const CIV_HEX: Record<string, string> = {
@@ -1626,7 +1647,8 @@ export const CIV_HEX: Record<string, string> = {
 };
 ```
 
-  deck/page.tsx はローカル定義を削除して `import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";` を追加し、JSX 内 reduce の `const colorMap ... = {...}` を削除して `stroke={colorMap[civ] ?? "#6b7280"}` を `stroke={CIV_HEX[civ] ?? "#6b7280"}` に置換する。
+deck/page.tsx はローカル定義を削除して `import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";` を追加し、JSX 内 reduce の `const colorMap ... = {...}` を削除して `stroke={colorMap[civ] ?? "#6b7280"}` を `stroke={CIV_HEX[civ] ?? "#6b7280"}` に置換する。
+
 - **完了条件**: 共通完了条件。`pnpm --filter @dm-ai/web build` 成功。`grep -n "colorMap" apps/web/src/app/deck/page.tsx` が0件。
 - **リスク**: 低。値は同一のまま移動のみ。
 - **依存**: R-25

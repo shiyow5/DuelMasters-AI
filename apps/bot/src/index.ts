@@ -1,9 +1,4 @@
-import {
-  Client,
-  GatewayIntentBits,
-  Events,
-  type Interaction,
-} from "discord.js";
+import { Client, GatewayIntentBits, Events, type Interaction } from "discord.js";
 import { handleCommand } from "./commands/index.js";
 
 const client = new Client({
@@ -27,7 +22,7 @@ if (!token) {
 
 if (!process.env.INTERNAL_API_KEY) {
   console.warn(
-    "INTERNAL_API_KEY が未設定です。フォーマット保存・デッキ保存コマンドは利用できません"
+    "INTERNAL_API_KEY が未設定です。フォーマット保存・デッキ保存コマンドは利用できません",
   );
 }
 

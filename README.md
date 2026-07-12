@@ -5,46 +5,51 @@
 ## 機能一覧
 
 ### ルール確認
+
 - 公式総合ルール(PDF)をRAGで検索
 - 条文番号付きの引用で正確に回答
 - 不確実な場合は「ジャッジに確認」を推奨
 
 ### デッキ構築支援
+
 - デッキリストの解析・評価（100点満点スコアリング）
 - 殿堂レギュレーションチェック
 - テーマ指定による自動構築
 - 改善提案
 
 **評価指標:**
-| 指標 | 目安 |
-|------|------|
-| S・トリガー | 8枚 |
-| 多色カード | 8〜15枚 |
+
+| 指標                    | 目安    |
+| ----------------------- | ------- |
+| S・トリガー             | 8枚     |
+| 多色カード              | 8〜15枚 |
 | コストカーブ (低/中/高) | 15/11/6 |
-| 初動率 (2-3コスト) | 70%以上 |
+| 初動率 (2-3コスト)      | 70%以上 |
 
 ### 環境分析
+
 - 大会結果に基づくティアリスト生成
 - アーキタイプ別の使用率・入賞率
 - 期間指定での集計（2週/4週/8週）
 
 ### 統合チャット
+
 - Gemini Function Callingによる意図分類
 - ルール・カード検索・デッキ評価・メタ分析を自動ルーティング
 
 ## 技術スタック
 
-| レイヤー | 技術 |
-|----------|------|
-| LLM | Gemini 2.5 Flash Lite (`@google/genai`) |
-| Embedding | gemini-embedding-001 (768次元) |
-| Web | Next.js 16 (App Router) + Tailwind CSS v4 |
-| API | Hono (Node.js) |
-| Bot | discord.js v14 |
-| DB | Supabase (PostgreSQL + pgvector) |
-| ORM | Drizzle ORM |
-| Monorepo | pnpm workspaces + Turborepo |
-| Deploy | Vercel (Web) / Cloud Run (API, Bot, Worker) |
+| レイヤー  | 技術                                        |
+| --------- | ------------------------------------------- |
+| LLM       | Gemini 2.5 Flash Lite (`@google/genai`)     |
+| Embedding | gemini-embedding-001 (768次元)              |
+| Web       | Next.js 16 (App Router) + Tailwind CSS v4   |
+| API       | Hono (Node.js)                              |
+| Bot       | discord.js v14                              |
+| DB        | Supabase (PostgreSQL + pgvector)            |
+| ORM       | Drizzle ORM                                 |
+| Monorepo  | pnpm workspaces + Turborepo                 |
+| Deploy    | Vercel (Web) / Cloud Run (API, Bot, Worker) |
 
 ## プロジェクト構成
 
@@ -160,10 +165,10 @@ pnpm --filter @dm-ai/worker fix:card-types
 pnpm dev
 ```
 
-| アプリ | URL |
-|--------|-----|
-| Web | http://localhost:3000 |
-| API | http://localhost:3001 |
+| アプリ | URL                   |
+| ------ | --------------------- |
+| Web    | http://localhost:3000 |
+| API    | http://localhost:3001 |
 
 ### 6. Discord Bot のセットアップ
 
@@ -225,17 +230,17 @@ PUT /api/user/settings   # フォーマット更新 (要認証)
 
 ## Discord コマンド
 
-| コマンド | 説明 |
-|----------|------|
-| `/dm rule <質問>` | ルール質問 |
-| `/dm deck rate <リスト>` | デッキ評価 |
-| `/dm deck build <テーマ>` | 自動構築 |
-| `/dm deck check <リスト>` | 殿堂チェック |
+| コマンド                        | 説明                             |
+| ------------------------------- | -------------------------------- |
+| `/dm rule <質問>`               | ルール質問                       |
+| `/dm deck rate <リスト>`        | デッキ評価                       |
+| `/dm deck build <テーマ>`       | 自動構築                         |
+| `/dm deck check <リスト>`       | 殿堂チェック                     |
 | `/dm deck save <リスト> <名前>` | デッキ保存 (要 INTERNAL_API_KEY) |
-| `/dm meta tier [期間]` | ティア表 |
-| `/dm meta deck <名前>` | アーキタイプ詳細 |
-| `/dm chat <メッセージ>` | 統合チャット |
-| `/dm format set <type>` | フォーマット切替 |
+| `/dm meta tier [期間]`          | ティア表                         |
+| `/dm meta deck <名前>`          | アーキタイプ詳細                 |
+| `/dm chat <メッセージ>`         | 統合チャット                     |
+| `/dm format set <type>`         | フォーマット切替                 |
 
 ## ビルド
 
@@ -266,15 +271,15 @@ docker compose up -d
 
 ## DB テーブル構成
 
-| テーブル | 用途 |
-|----------|------|
-| `cards` | カードマスタ (名前, 文明, コスト, テキスト, 役割タグ等) |
-| `regulations` | 殿堂レギュレーション (フォーマット, 制限区分, カード名) |
-| `rule_chunks` | ルールRAG用チャンク (条文テキスト + 768次元ベクトル) |
-| `decks` | デッキ保存 (カードリスト + 評価スコア + user_id) |
-| `tournament_results` | 大会結果 (アーキタイプ, 順位, 参加者数) |
-| `meta_snapshots` | メタ集計スナップショット (ティアデータ) |
-| `user_settings` | ユーザー設定 (フォーマット。Bot/Web 共通) |
+| テーブル             | 用途                                                    |
+| -------------------- | ------------------------------------------------------- |
+| `cards`              | カードマスタ (名前, 文明, コスト, テキスト, 役割タグ等) |
+| `regulations`        | 殿堂レギュレーション (フォーマット, 制限区分, カード名) |
+| `rule_chunks`        | ルールRAG用チャンク (条文テキスト + 768次元ベクトル)    |
+| `decks`              | デッキ保存 (カードリスト + 評価スコア + user_id)        |
+| `tournament_results` | 大会結果 (アーキタイプ, 順位, 参加者数)                 |
+| `meta_snapshots`     | メタ集計スナップショット (ティアデータ)                 |
+| `user_settings`      | ユーザー設定 (フォーマット。Bot/Web 共通)               |
 
 ## ライセンス
 

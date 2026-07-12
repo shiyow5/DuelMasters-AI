@@ -2,11 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: [
-      "packages/**/tests/**/*.test.ts",
-      "apps/**/tests/**/*.test.ts",
-      "tests/**/*.test.ts",
-    ],
+    include: ["packages/**/tests/**/*.test.ts", "apps/**/tests/**/*.test.ts", "tests/**/*.test.ts"],
     environment: "node",
     // 統合テストは単一の共有 DB に対して各ファイルの beforeEach で truncateAll() する。
     // ファイル並列実行だと別ファイルの TRUNCATE が実行中テストの行を消して競合するため、

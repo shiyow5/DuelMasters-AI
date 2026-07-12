@@ -1,18 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeAll,
-  beforeEach,
-  afterAll,
-} from "vitest";
-import {
-  getTestSql,
-  hasTestDb,
-  enableAppDb,
-  truncateAll,
-} from "../../../tests/helpers/db.js";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest";
+import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/helpers/db.js";
 
 // generateStructured のみモック (getSql 等は実物を使う)
 vi.mock("@dm-ai/core", async (importOriginal) => {

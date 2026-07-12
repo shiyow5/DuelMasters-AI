@@ -12,7 +12,7 @@ interface SearchOptions {
  */
 export async function searchRules(
   query: string,
-  options: SearchOptions = {}
+  options: SearchOptions = {},
 ): Promise<SearchResult> {
   const { topK = 8, docType } = options;
   const sql = getSql();
@@ -44,7 +44,7 @@ async function searchByKeyword(
   sql: ReturnType<typeof getSql>,
   query: string,
   topK: number,
-  docType?: string
+  docType?: string,
 ): Promise<ChunkResult[]> {
   const keywords = query
     .split(/[\s　、。,.]/)
@@ -83,7 +83,7 @@ async function searchByVector(
   sql: ReturnType<typeof getSql>,
   query: string,
   topK: number,
-  docType?: string
+  docType?: string,
 ): Promise<ChunkResult[]> {
   const embedding = await embedSingle(query);
   const vecParam = `[${embedding.join(",")}]`;
@@ -109,7 +109,7 @@ async function searchByVector(
 function mergeResults(
   keyword: ChunkResult[],
   vector: ChunkResult[],
-  topK: number
+  topK: number,
 ): Array<{ text: string; score: number; meta: Record<string, unknown> }> {
   const seen = new Map<number, ChunkResult>();
 

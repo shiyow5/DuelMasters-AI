@@ -86,11 +86,7 @@ export function chunkFaqText(fullText: string): Chunk[] {
 /**
  * 汎用テキスト分割 (サイズベース + オーバーラップ)
  */
-export function chunkBySize(
-  text: string,
-  maxChunkSize = 500,
-  overlap = 50
-): Chunk[] {
+export function chunkBySize(text: string, maxChunkSize = 500, overlap = 50): Chunk[] {
   const chunks: Chunk[] = [];
   const sentences = text.split(/(?<=[。．\.\n])/);
   let buffer = "";

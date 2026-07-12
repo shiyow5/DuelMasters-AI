@@ -1,10 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
-import {
-  getTestSql,
-  hasTestDb,
-  enableAppDb,
-  truncateAll,
-} from "../../../tests/helpers/db.js";
+import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/helpers/db.js";
 import { executeToolCall } from "../src/routes/chat.js";
 
 describe("executeToolCall search_cards バリデーション (単体)", () => {

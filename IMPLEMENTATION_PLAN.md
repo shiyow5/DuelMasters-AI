@@ -13,30 +13,30 @@
 
 2026-07-11 にオーナーへ確認し、以下が決定している。実行者はこれを覆さないこと。
 
-| 論点 | 決定 |
-|---|---|
-| スコープ | **A. データパイプライン完成 / B. デッキ機能API完成 / C. Web UIプレースホルダー解消 / D. Discord Bot拡張 — すべて実施** |
-| 大会結果の取り込み方式 | **Gemini 汎用抽出**(URL の HTML から構造化抽出。特定サイト非依存) |
-| カード役割タグの付与 | **ルール → LLM ハイブリッド**(キーワードルールで大半を付与、判定不能カードのみ Gemini) |
-| デッキ保存・認証 | **Supabase Auth 込み**(Web はログイン+ユーザー別デッキ管理まで) |
+| 論点                   | 決定                                                                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| スコープ               | **A. データパイプライン完成 / B. デッキ機能API完成 / C. Web UIプレースホルダー解消 / D. Discord Bot拡張 — すべて実施** |
+| 大会結果の取り込み方式 | **Gemini 汎用抽出**(URL の HTML から構造化抽出。特定サイト非依存)                                                      |
+| カード役割タグの付与   | **ルール → LLM ハイブリッド**(キーワードルールで大半を付与、判定不能カードのみ Gemini)                                 |
+| デッキ保存・認証       | **Supabase Auth 込み**(Web はログイン+ユーザー別デッキ管理まで)                                                        |
 
 ### 1.1 解消する未実装・プレースホルダー一覧
 
-| # | 現状 | 対応項目 |
-|---|---|---|
-| 1 | `tournament_results` への書き込み手段が無い(`POST /api/meta/ingest/url` はスタブ) | I-09 |
-| 2 | `meta_snapshots` の生成ジョブが無い(ティア表のスナップショット経路が死んでいる) | I-10 |
-| 3 | FAQ・裁定の RAG 取り込みが無い(`chunkFaqText`・`doc_type: faq/ruling` が未使用) | I-08 |
-| 4 | カードの役割タグ(`cards.tags`)が常に空 → scorer の役割評価・autoBuild のクォータが機能しない | I-06, I-07 |
-| 5 | `ingest-cards` がカード種別を日本語のまま格納(`CardType` enum と不整合) | I-05 |
-| 6 | `autoBuild` が `format`(殿堂)・`excludeCards`・`civilizations`・`maxCost` を無視 | I-11 |
-| 7 | `suggestReplacements` が「簡易版」(`original: ""` のまま入替提案になっていない) | I-12 |
-| 8 | `search_cards` の文明/コスト/種別フィルタ・`get_tier_list` の period が未実装(R-15 で宣言を撤去済み) | I-13 |
-| 9 | `decks` テーブルが完全に未使用(保存 API も UI も無い) | I-15, I-17, I-19 |
-| 10 | 認証が無い(Sidebar の「Guest User / Free Plan」は飾り) | I-14, I-16 |
-| 11 | Bot のフォーマット設定が再起動で消える(in-memory Map) | I-18 |
-| 12 | Web チャットの「デッキリスト読込/カード検索/裁定確認/Export/Delete」ボタンが飾り | I-20 |
-| 13 | meta 画面の Unsplash 仮画像・文明ドット固定・deck 画面の飾りフィルタ・rule 画面の help ボタン | I-21 |
+| #   | 現状                                                                                                 | 対応項目         |
+| --- | ---------------------------------------------------------------------------------------------------- | ---------------- |
+| 1   | `tournament_results` への書き込み手段が無い(`POST /api/meta/ingest/url` はスタブ)                    | I-09             |
+| 2   | `meta_snapshots` の生成ジョブが無い(ティア表のスナップショット経路が死んでいる)                      | I-10             |
+| 3   | FAQ・裁定の RAG 取り込みが無い(`chunkFaqText`・`doc_type: faq/ruling` が未使用)                      | I-08             |
+| 4   | カードの役割タグ(`cards.tags`)が常に空 → scorer の役割評価・autoBuild のクォータが機能しない         | I-06, I-07       |
+| 5   | `ingest-cards` がカード種別を日本語のまま格納(`CardType` enum と不整合)                              | I-05             |
+| 6   | `autoBuild` が `format`(殿堂)・`excludeCards`・`civilizations`・`maxCost` を無視                     | I-11             |
+| 7   | `suggestReplacements` が「簡易版」(`original: ""` のまま入替提案になっていない)                      | I-12             |
+| 8   | `search_cards` の文明/コスト/種別フィルタ・`get_tier_list` の period が未実装(R-15 で宣言を撤去済み) | I-13             |
+| 9   | `decks` テーブルが完全に未使用(保存 API も UI も無い)                                                | I-15, I-17, I-19 |
+| 10  | 認証が無い(Sidebar の「Guest User / Free Plan」は飾り)                                               | I-14, I-16       |
+| 11  | Bot のフォーマット設定が再起動で消える(in-memory Map)                                                | I-18             |
+| 12  | Web チャットの「デッキリスト読込/カード検索/裁定確認/Export/Delete」ボタンが飾り                     | I-20             |
+| 13  | meta 画面の Unsplash 仮画像・文明ドット固定・deck 画面の飾りフィルタ・rule 画面の help ボタン        | I-21             |
 
 ---
 
@@ -94,13 +94,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS meta_snapshots_period_uidx
 
 ### 2.5 新規依存(この一覧以外の追加は禁止)
 
-| パッケージ | 追加先 | 用途 |
-|---|---|---|
-| `@vitest/coverage-v8` | ルート devDependencies | カバレッジ計測(I-02)。**必ず `@^3.0.0` を明示指定**(ルートの vitest ^3 とメジャーを揃える。無指定だと v4 系が入り不一致で失敗する) |
-| `postgres` | ルート devDependencies | 統合テストハーネスの DB 接続(I-02)。`packages/db` と同じ `^3.4.0` を指定(ワークスペース既存依存の明示化) |
-| `cheerio` | packages/rag dependencies | HTML→テキスト抽出 `extractTextFromHtml`(I-08)。`apps/worker` と同じ `^1.0.0` を指定(ワークスペース既存依存の明示化) |
-| `@supabase/supabase-js` | apps/web dependencies | Web のログイン(I-16)。バージョンは `packages/db` と同じ `^2.49.0` を指定 |
-| `@playwright/test` | apps/web devDependencies | E2E スモーク(I-22) |
+| パッケージ              | 追加先                    | 用途                                                                                                                               |
+| ----------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `@vitest/coverage-v8`   | ルート devDependencies    | カバレッジ計測(I-02)。**必ず `@^3.0.0` を明示指定**(ルートの vitest ^3 とメジャーを揃える。無指定だと v4 系が入り不一致で失敗する) |
+| `postgres`              | ルート devDependencies    | 統合テストハーネスの DB 接続(I-02)。`packages/db` と同じ `^3.4.0` を指定(ワークスペース既存依存の明示化)                           |
+| `cheerio`               | packages/rag dependencies | HTML→テキスト抽出 `extractTextFromHtml`(I-08)。`apps/worker` と同じ `^1.0.0` を指定(ワークスペース既存依存の明示化)                |
+| `@supabase/supabase-js` | apps/web dependencies     | Web のログイン(I-16)。バージョンは `packages/db` と同じ `^2.49.0` を指定                                                           |
+| `@playwright/test`      | apps/web devDependencies  | E2E スモーク(I-22)                                                                                                                 |
 
 ### 2.6 新規環境変数(I-01 で .env.example に追記)
 
@@ -180,11 +180,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: [
-      "packages/**/tests/**/*.test.ts",
-      "apps/**/tests/**/*.test.ts",
-      "tests/**/*.test.ts",
-    ],
+    include: ["packages/**/tests/**/*.test.ts", "apps/**/tests/**/*.test.ts", "tests/**/*.test.ts"],
     environment: "node",
     env: { DATABASE_URL: "" },
     coverage: {
@@ -196,7 +192,7 @@ export default defineConfig({
 });
 ```
 
-  3. 統合テスト用ヘルパー `tests/helpers/db.ts`(リポジトリルート直下 `tests/`):
+3. 統合テスト用ヘルパー `tests/helpers/db.ts`(リポジトリルート直下 `tests/`):
 
 ```ts
 import postgres from "postgres";
@@ -227,7 +223,7 @@ export async function truncateAll(sql: ReturnType<typeof postgres>) {
 }
 ```
 
-  統合テストの書き方(以後の項目で共通):
+統合テストの書き方(以後の項目で共通):
 
 ```ts
 import { describe, beforeAll, beforeEach, afterAll } from "vitest";
@@ -236,18 +232,21 @@ import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/
 
 describe.skipIf(!hasTestDb)("...", () => {
   const sql = getTestSql()!;
-  beforeAll(() => enableAppDb());          // アプリコードの getSql() をテストDBへ向ける
+  beforeAll(() => enableAppDb()); // アプリコードの getSql() をテストDBへ向ける
   beforeEach(async () => truncateAll(sql));
-  afterAll(async () => { await closeDb(); await sql.end(); });
+  afterAll(async () => {
+    await closeDb();
+    await sql.end();
+  });
   // fixture INSERT → アプリ関数呼び出し → 検証
 });
 ```
 
-  **重要**: vitest 設定の `env: { DATABASE_URL: "" }` はそのまま維持する
-  (既存の特性テストは「DB に接続できない劣化動作」を固定しているため、グローバルに
-  DATABASE_URL をブリッジしてはならない。接続が必要な統合テストだけが
-  `enableAppDb()` でファイル内ローカルに切り替える)。
-  ローカルでの統合テスト実行手順(README 化は I-23):
+**重要**: vitest 設定の `env: { DATABASE_URL: "" }` はそのまま維持する
+(既存の特性テストは「DB に接続できない劣化動作」を固定しているため、グローバルに
+DATABASE_URL をブリッジしてはならない。接続が必要な統合テストだけが
+`enableAppDb()` でファイル内ローカルに切り替える)。
+ローカルでの統合テスト実行手順(README 化は I-23):
 
 ```bash
 docker compose up -d db
@@ -256,10 +255,11 @@ docker compose exec -T db psql -U postgres -d dm_ai < infra/sql/003_features.sql
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/dm_ai pnpm test
 ```
 
-  注意: `tests/helpers/db.ts` は `postgres` パッケージを直接参照する
-  (`@dm-ai/db` の `getSql` は DATABASE_URL 前提かつ接続をモジュールキャッシュするため
-  テストハーネスには不向き)。そのため**ルート devDependencies に `postgres@^3.4.0` を追加する**
-  (§2.5 の許可リストに含まれている)。
+注意: `tests/helpers/db.ts` は `postgres` パッケージを直接参照する
+(`@dm-ai/db` の `getSql` は DATABASE_URL 前提かつ接続をモジュールキャッシュするため
+テストハーネスには不向き)。そのため**ルート devDependencies に `postgres@^3.4.0` を追加する**
+(§2.5 の許可リストに含まれている)。
+
 - **テスト先行**: ハーネス自体の動作確認として `tests/helpers/db.test.ts` を書く
   (`hasTestDb` が false のとき getTestSql() が null / true のとき接続して `SELECT 1` が返る)。
 - **完了条件**: 共通条件。`pnpm test -- --coverage` がカバレッジ表を出力して成功。
@@ -282,8 +282,9 @@ export const userSettings = pgTable("user_settings", {
 });
 ```
 
-  **注意**: `tournament_results_dedup_uidx` は既存データに重複があると作成に失敗する。
-  失敗した場合は中断して報告(手動での重複整理が必要)。
+**注意**: `tournament_results_dedup_uidx` は既存データに重複があると作成に失敗する。
+失敗した場合は中断して報告(手動での重複整理が必要)。
+
 - **テスト先行**: 統合テスト `packages/db/tests/migration.test.ts`(skipIf(!hasTestDb)):
   user_settings への INSERT/SELECT、tournament_results に同一行を2回 INSERT すると
   2回目が unique violation になること。
@@ -314,7 +315,7 @@ export interface StructuredOptions {
 export async function generateStructured<T>(
   prompt: string,
   zodSchema: z.ZodType<T>,
-  options: StructuredOptions
+  options: StructuredOptions,
 ): Promise<T> {
   const client = getClient();
   let lastError: unknown;
@@ -329,9 +330,7 @@ export async function generateStructured<T>(
         ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
       },
     });
-    const text = response.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text ?? "")
-      .join("") ?? "";
+    const text = response.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
     try {
       return zodSchema.parse(JSON.parse(text));
     } catch (err) {
@@ -375,7 +374,7 @@ import type { CardType } from "@dm-ai/core";
 /** 公式サイト表記 → CardType。前方一致で判定する (「進化クリーチャー」等の派生を吸収) */
 const TYPE_PATTERNS: Array<[pattern: RegExp, type: CardType]> = [
   [/スター進化クリーチャー/, "star_evolution_creature"],
-  [/クリーチャー/, "creature"],          // 「進化クリーチャー」等もここに落ちる
+  [/クリーチャー/, "creature"], // 「進化クリーチャー」等もここに落ちる
   [/呪文/, "spell"],
   [/クロスギア/, "cross_gear"],
   [/城/, "castle"],
@@ -393,13 +392,13 @@ export function normalizeCardType(raw: string): CardType | null {
 }
 ```
 
-  2. `scrapeCardDetail` で `type: typeText` を
-     `const type = normalizeCardType(typeText);` に変更。null の場合は
-     `console.warn(\`未知のカード種別 "${typeText}" のため creature として格納: ${url}\`)` を出して
-     `"creature"` にフォールバック(スキップはしない — 種別不明でもカード自体は有用なため)。
-  3. 既存データの補正スクリプト `fix-card-types.ts`(scripts に `"fix:card-types"` を追加):
-     `SELECT id, type FROM cards` → `normalizeCardType` で変換できた行だけ UPDATE。
-     変換不能行は件数と値を console.warn で列挙して残す。
+2. `scrapeCardDetail` で `type: typeText` を
+   `const type = normalizeCardType(typeText);` に変更。null の場合は
+   `console.warn(\`未知のカード種別 "${typeText}" のため creature として格納: ${url}\`)`を出して`"creature"` にフォールバック(スキップはしない — 種別不明でもカード自体は有用なため)。
+3. 既存データの補正スクリプト `fix-card-types.ts`(scripts に `"fix:card-types"` を追加):
+   `SELECT id, type FROM cards` → `normalizeCardType` で変換できた行だけ UPDATE。
+   変換不能行は件数と値を console.warn で列挙して残す。
+
 - **テスト先行**: `apps/worker/tests/card-type-map.test.ts`(単体):
   「クリーチャー」→ creature、「進化クリーチャー」→ creature、
   「スター進化クリーチャー」→ star_evolution_creature、「呪文」→ spell、
@@ -503,9 +502,8 @@ export function inferTagsByRule(card: Card): RoleTag[] {
   `packages/rag/src/index.ts`(export 追加)、`packages/rag/package.json`(cheerio 追加)、
   新規 `apps/worker/src/jobs/ingest-faq.ts`、`apps/worker/src/index.ts`、
   `apps/worker/package.json`(`"ingest:faq": "tsx src/jobs/ingest-faq.ts"`)
-- **内容**:
-  0. **HTML→テキスト抽出は `packages/rag/src/html.ts` に実装する**(I-09 の api 側からも
-     使うため。worker 内には置かない):
+- **内容**: 0. **HTML→テキスト抽出は `packages/rag/src/html.ts` に実装する**(I-09 の api 側からも
+  使うため。worker 内には置かない):
 
 ```ts
 import * as cheerio from "cheerio";
@@ -514,24 +512,29 @@ import * as cheerio from "cheerio";
 export function extractTextFromHtml(html: string): string {
   const $ = cheerio.load(html);
   $("script, style, nav, header, footer").remove();
-  return $("body").text().replace(/\n{3,}/g, "\n\n").trim();
+  return $("body")
+    .text()
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 ```
 
      `packages/rag/package.json` に `"cheerio": "^1.0.0"` を追加(§2.5 の許可リストどおり)し、
      rag の index.ts から export。`pnpm install` で lockfile 更新をコミットに含める。
-  1. ジョブは CLI 引数で doc_type と URL を受け取る:
-     `tsx src/jobs/ingest-faq.ts <faq|ruling> <url> [url...]`
-     引数検証(doc_type が faq/ruling 以外、URL 0件なら使用法を出して exit 1)
-  2. 各 URL: `fetchWithRetry` で HTML 取得 → `extractTextFromHtml`(`@dm-ai/rag` から import)→
-     `chunkFaqText` でチャンク化 → チャンク 0 件ならその URL はスキップして warn(既存データは消さない)
-  3. チャンクの `meta.url` に取り込み元 URL を設定
-  4. 同一 URL の既存チャンクを削除してから挿入(冪等):
-     `DELETE FROM rule_chunks WHERE doc_type = ${docType} AND chunk_meta->>'url' = ${url}`
-  5. `embed()` でバッチ埋め込み(BATCH_SIZE=20、`ingest-rules.ts` と同じパターン)→ INSERT
-     (version には取り込み日 `YYYY-MM-DD` を入れる)
-  - 検索側(`searchRules`)は doc_type フィルタ無しで全 doc_type を横断するため、
-    **取り込むだけで rule モードの回答に FAQ が混ざるようになる**(コード変更不要)。
+
+1. ジョブは CLI 引数で doc_type と URL を受け取る:
+   `tsx src/jobs/ingest-faq.ts <faq|ruling> <url> [url...]`
+   引数検証(doc_type が faq/ruling 以外、URL 0件なら使用法を出して exit 1)
+2. 各 URL: `fetchWithRetry` で HTML 取得 → `extractTextFromHtml`(`@dm-ai/rag` から import)→
+   `chunkFaqText` でチャンク化 → チャンク 0 件ならその URL はスキップして warn(既存データは消さない)
+3. チャンクの `meta.url` に取り込み元 URL を設定
+4. 同一 URL の既存チャンクを削除してから挿入(冪等):
+   `DELETE FROM rule_chunks WHERE doc_type = ${docType} AND chunk_meta->>'url' = ${url}`
+5. `embed()` でバッチ埋め込み(BATCH_SIZE=20、`ingest-rules.ts` と同じパターン)→ INSERT
+   (version には取り込み日 `YYYY-MM-DD` を入れる)
+
+- 検索側(`searchRules`)は doc_type フィルタ無しで全 doc_type を横断するため、
+  **取り込むだけで rule モードの回答に FAQ が混ざるようになる**(コード変更不要)。
 - **テスト先行**:
   - 単体 `packages/rag/tests/html.test.ts`: `extractTextFromHtml` に script/style/nav 入りの
     HTML を渡して本文だけが残ること、3連続以上の改行が圧縮されることを検証。
@@ -562,7 +565,7 @@ export const TournamentExtractionSchema = z.object({
       z.object({
         deck_archetype: z.string().min(1),
         placement: z.number().int().positive(),
-      })
+      }),
     )
     .min(1),
 });
@@ -575,8 +578,8 @@ export const IngestUrlRequestSchema = z.object({
 });
 ```
 
-  2. `apps/api/src/tournament-extract.ts`: HTML を受け取り Gemini で抽出する関数
-     (route から分離してテスト可能にする):
+2. `apps/api/src/tournament-extract.ts`: HTML を受け取り Gemini で抽出する関数
+   (route から分離してテスト可能にする):
 
 ```ts
 /** HTML テキストから大会結果を構造化抽出する。抽出不能なら例外 */
@@ -591,18 +594,19 @@ export async function extractTournament(pageText: string): Promise<TournamentExt
 }
 ```
 
-  3. ルート実装(`/ingest/url`。**X-Internal-Key 必須**(I-14 前なので暫定でこの項目内に
-     キー検証を直書きし、I-14 でミドルウェアに置換する):
+3. ルート実装(`/ingest/url`。**X-Internal-Key 必須**(I-14 前なので暫定でこの項目内に
+   キー検証を直書きし、I-14 でミドルウェアに置換する):
 
-     - `INTERNAL_API_KEY` 未設定 or ヘッダ不一致 → 401 `{error}`
-     - ボディを `IngestUrlRequestSchema` で検証(400)
-     - URL fetch(失敗 → 502 `{error: "ページを取得できませんでした"}`)
-     - `extractTextFromHtml`(I-08 で `packages/rag/src/html.ts` に実装済み。
-       `@dm-ai/rag` から import する — api は既に rag に依存している)
-     - `extractTournament` → 失敗は 422 `{error: "大会結果を抽出できませんでした"}`
-     - 各 results 行を INSERT: `ON CONFLICT ON CONSTRAINT なし` → 003 の unique index に対し
-       `ON CONFLICT (event_name, event_date, deck_archetype, placement) DO NOTHING`
-     - 応答: `{ event_name, event_date, inserted: n, skipped: m }`(skipped = conflict 件数)
+   - `INTERNAL_API_KEY` 未設定 or ヘッダ不一致 → 401 `{error}`
+   - ボディを `IngestUrlRequestSchema` で検証(400)
+   - URL fetch(失敗 → 502 `{error: "ページを取得できませんでした"}`)
+   - `extractTextFromHtml`(I-08 で `packages/rag/src/html.ts` に実装済み。
+     `@dm-ai/rag` から import する — api は既に rag に依存している)
+   - `extractTournament` → 失敗は 422 `{error: "大会結果を抽出できませんでした"}`
+   - 各 results 行を INSERT: `ON CONFLICT ON CONSTRAINT なし` → 003 の unique index に対し
+     `ON CONFLICT (event_name, event_date, deck_archetype, placement) DO NOTHING`
+   - 応答: `{ event_name, event_date, inserted: n, skipped: m }`(skipped = conflict 件数)
+
 - **テスト先行**(`apps/api/tests/ingest-url.test.ts`。Hono は `app.request()` でハンドラを
   直接テストできる。`extractTournament` はモジュールモック(vi.mock)、fetch は
   `vi.stubGlobal("fetch", vi.fn())` でスタブする):
@@ -619,8 +623,9 @@ curl -s -o /dev/null -w '%{http_code}' -X POST localhost:3001/api/meta/ingest/ur
   -H 'Content-Type: application/json' -H 'X-Internal-Key: test-key' -d '{}'       # 400
 ```
 
-  **手動確認**(DB + GEMINI_API_KEY がある環境): 実在の大会結果ページ URL で 200 と
-  inserted > 0 を確認し、`GET /api/meta/tier` に反映されること。
+**手動確認**(DB + GEMINI_API_KEY がある環境): 実在の大会結果ページ URL で 200 と
+inserted > 0 を確認し、`GET /api/meta/tier` に反映されること。
+
 - **リスク**: 抽出精度はページに依存(Zod で形式は保証、内容の正しさは手動確認)。
   README の記載パスは `/api/ingest/url` だが実体は `/api/meta/ingest/url`(現状どおり)。
   I-23 で README を実体に合わせる。
@@ -675,13 +680,15 @@ export interface RegulationSets {
 
 /** regulations の行を分類する (「プレミアム殿堂コンビ」は autoBuild では制約しない) */
 export function classifyRegulations(
-  rows: Array<{ card_name: string; restriction_type: string }>
-): RegulationSets { /* banned/limited の Set を作る */ }
+  rows: Array<{ card_name: string; restriction_type: string }>,
+): RegulationSets {
+  /* banned/limited の Set を作る */
+}
 
 /** 必須カードに殿堂制約を適用する */
 export function applyRegulationToRequired(
   requiredCards: string[],
-  reg: RegulationSets
+  reg: RegulationSets,
 ): { adopted: Array<{ name: string; count: number }>; warnings: string[] } {
   // banned → 採用せず warnings に「「X」はプレミアム殿堂のため採用できません」
   // limited → count 1 で採用 / それ以外 → count 4 (MAX_COPIES) で採用
@@ -692,23 +699,22 @@ export function applyRegulationToRequired(
      `SELECT card_name, restriction_type FROM regulations WHERE format = ${format}` を取得して
      `classifyRegulations` に渡し、テーマ候補・補充候補の採用時に
      banned はスキップ / limited は count 1 に制限する。
-  2. **excludeCards**: テーマ検索・補充クエリの両方で `AND name NOT IN ${sql(excludeCards)}`
-     (空配列のときは条件を付けない)
-  3. **civilizations**: 指定時、テーマ検索・補充クエリに
-     `AND civilizations ?| ${sql.array(constraints.civilizations)}::text[]`
-     (jsonb の「いずれかの要素を含む」演算子)。統合テストでこのバインドが動かない場合は
-     `?|` の代替として
-     `EXISTS (SELECT 1 FROM jsonb_array_elements_text(civilizations) c WHERE c = ANY(${sql.array(civs)}))`
-     を使う(**代替側も必ず `sql.array()` でラップする**。素の JS 配列を渡すと
-     postgres.js が波括弧なしの文字列にシリアライズし malformed array literal になる)。
-  4. **maxCost**: `AND cost <= ${maxCost}`
-  5. DB クエリ以外の採用ロジック(役割クォータ・40枚充填)は変更しない。
+
+2. **excludeCards**: テーマ検索・補充クエリの両方で `AND name NOT IN ${sql(excludeCards)}`
+(空配列のときは条件を付けない) 3. **civilizations**: 指定時、テーマ検索・補充クエリに
+`AND civilizations ?| ${sql.array(constraints.civilizations)}::text[]`
+(jsonb の「いずれかの要素を含む」演算子)。統合テストでこのバインドが動かない場合は
+`?|` の代替として
+`EXISTS (SELECT 1 FROM jsonb_array_elements_text(civilizations) c WHERE c = ANY(${sql.array(civs)}))`
+を使う(**代替側も必ず `sql.array()` でラップする**。素の JS 配列を渡すと
+postgres.js が波括弧なしの文字列にシリアライズし malformed array literal になる)。4. **maxCost**: `AND cost <= ${maxCost}` 5. DB クエリ以外の採用ロジック(役割クォータ・40枚充填)は変更しない。
+
 - **テスト先行**:
   - 単体 `packages/deck-engine/tests/regulation-rules.test.ts`(DB 不要):
     a. classifyRegulations: 3種の restriction_type が banned/limited に正しく分類され、
-       「プレミアム殿堂コンビ」はどちらにも入らない
+    「プレミアム殿堂コンビ」はどちらにも入らない
     b. applyRegulationToRequired: banned → 不採用+警告文言 / limited → count 1 /
-       通常 → count 4 / 空配列 → 空結果
+    通常 → count 4 / 空配列 → 空結果
   - 統合 `packages/deck-engine/tests/builder.test.ts`(skipIf(!hasTestDb)。fixture: カード12枚
     (火/水/自然、コスト帯・タグをばらす)+ regulations 2件(プレミアム殿堂1・殿堂入り1)):
     1. format 指定でプレミアム殿堂カードが結果に含まれない
@@ -755,16 +761,19 @@ export function pickReplacements(input: SuggestInput): Array<{
   original: string;
   replacement: string;
   reason: string;
-}> { /* 上記ルールを実装 */ }
+}> {
+  /* 上記ルールを実装 */
+}
 ```
 
-  DB 部(builder.ts 内の suggestReplacements):
-  - deck entries のカード情報を `cards` から一括取得(name IN)
-  - goal ごとに候補検索: goal が `ROLE_TAGS` に含まれる場合は
-    `EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) t WHERE t = ${goal})`、
-    含まれない自由語の場合は従来どおり `text ILIKE %goal%`。
-    いずれも `AND name NOT IN ${sql(deckNames)} ORDER BY cost ASC LIMIT 5`
-  - `pickReplacements` に渡して返す(戻り値型は既存と同一)
+DB 部(builder.ts 内の suggestReplacements):
+
+- deck entries のカード情報を `cards` から一括取得(name IN)
+- goal ごとに候補検索: goal が `ROLE_TAGS` に含まれる場合は
+  `EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) t WHERE t = ${goal})`、
+  含まれない自由語の場合は従来どおり `text ILIKE %goal%`。
+  いずれも `AND name NOT IN ${sql(deckNames)} ORDER BY cost ASC LIMIT 5`
+- `pickReplacements` に渡して返す(戻り値型は既存と同一)
 - **テスト先行**(`suggest.test.ts`、純粋部の単体テスト):
   1. goal タグを持たない高コスト4枚積みカードが最初の original に選ばれる
   2. 全カードが goal に寄与している → 提案 0 件(original:"" を返さない)
@@ -783,7 +792,7 @@ export function pickReplacements(input: SuggestInput): Array<{
   1. `search_cards`: `civilization`(CIVILIZATIONS の値)・`max_cost`・`type`(CARD_TYPES の値)を
      SQL に反映。args は Gemini 出力なので**必ず検証してから使う**
      (`z.object({ query: z.string(), civilization: z.enum(CIVILIZATIONS).optional(),
-     max_cost: z.number().optional(), type: z.enum(CARD_TYPES).optional() })` を
+max_cost: z.number().optional(), type: z.enum(CARD_TYPES).optional() })` を
      ルートファイル内に定義し safeParse。不正なら該当フィルタを黙って無視するのではなく
      `"ツール引数が不正です: ..."` を結果文字列として返す)。
      フィルタ SQL: `AND civilizations ? ${civilization}`(jsonb に要素が含まれる)、
@@ -847,12 +856,13 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
 };
 ```
 
-  適用: `app.use("*", optionalAuth)` を index.ts の cors の後に追加。
-  `requireAuth` は I-15/I-18 の該当ルートで個別適用。
-  I-09 の `/ingest/url` は「X-Internal-Key 必須」=
-  `if (!c.req.header("x-internal-key")) return 401` + optionalAuth の検証に統一
-  (専用の `requireInternal` ミドルウェアを同ファイルに追加してよい。仕様: X-Internal-Key が
-  正しくなければ 401)。
+適用: `app.use("*", optionalAuth)` を index.ts の cors の後に追加。
+`requireAuth` は I-15/I-18 の該当ルートで個別適用。
+I-09 の `/ingest/url` は「X-Internal-Key 必須」=
+`if (!c.req.header("x-internal-key")) return 401` + optionalAuth の検証に統一
+(専用の `requireInternal` ミドルウェアを同ファイルに追加してよい。仕様: X-Internal-Key が
+正しくなければ 401)。
+
 - **テスト先行**(`auth.test.ts`。`getSupabase` を vi.mock):
   1. ヘッダ無し → userId null で通過
   2. X-Internal-Key 一致 + X-User-Id → userId が discord:... になる
@@ -875,20 +885,20 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
   新規 `apps/api/tests/deck-crud.test.ts`
 - **内容**: 以下の4エンドポイント(すべて `requireAuth`):
 
-| メソッド/パス | リクエスト | レスポンス |
-|---|---|---|
-| `POST /api/deck/save` | `{ title: string(1..100), format, decklist: string }` | 201 `{ id, title, format, cards, scores }` |
-| `GET /api/deck/list` | - | 200 `{ decks: [{ id, title, format, overall, created_at }] }`(自分のもののみ、created_at 降順、最大50件) |
-| `GET /api/deck/:id` | - | 200 `{ id, title, format, cards, scores, created_at }` / 他人・不存在は 404 |
-| `DELETE /api/deck/:id` | - | 200 `{ deleted: true }` / 他人・不存在は 404 |
+| メソッド/パス          | リクエスト                                            | レスポンス                                                                                               |
+| ---------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `POST /api/deck/save`  | `{ title: string(1..100), format, decklist: string }` | 201 `{ id, title, format, cards, scores }`                                                               |
+| `GET /api/deck/list`   | -                                                     | 200 `{ decks: [{ id, title, format, overall, created_at }] }`(自分のもののみ、created_at 降順、最大50件) |
+| `GET /api/deck/:id`    | -                                                     | 200 `{ id, title, format, cards, scores, created_at }` / 他人・不存在は 404                              |
+| `DELETE /api/deck/:id` | -                                                     | 200 `{ deleted: true }` / 他人・不存在は 404                                                             |
 
-  - save の処理: `parseDecklist` → entries が 0 件なら 400 → `scoreDeck` を実行し
-    `decks (format, title, cards, user_id, scores)` に INSERT(cards = entries、
-    scores = DeckScore をそのまま jsonb)。**バリデーション(殿堂)が NG でも保存は許可**
-    (下書き保存の用途を妨げない)。
-  - core に `DeckSaveRequestSchema` を追記(title/format/decklist。z.string().min(1).max(100))。
-  - `:id` は `z.coerce.number().int().positive()` で検証(不正は 404)。
-  - 所有チェック: `WHERE id = ${id} AND user_id = ${userId}`(他人のものは存在しない扱い=404)。
+- save の処理: `parseDecklist` → entries が 0 件なら 400 → `scoreDeck` を実行し
+  `decks (format, title, cards, user_id, scores)` に INSERT(cards = entries、
+  scores = DeckScore をそのまま jsonb)。**バリデーション(殿堂)が NG でも保存は許可**
+  (下書き保存の用途を妨げない)。
+- core に `DeckSaveRequestSchema` を追記(title/format/decklist。z.string().min(1).max(100))。
+- `:id` は `z.coerce.number().int().positive()` で検証(不正は 404)。
+- 所有チェック: `WHERE id = ${id} AND user_id = ${userId}`(他人のものは存在しない扱い=404)。
 - **テスト先行**(`deck-crud.test.ts`。認証はテスト用に
   `X-Internal-Key` + `X-User-Id: discord:test-user` で通す。統合 skipIf(!hasTestDb)):
   1. 無認証で save → 401
@@ -926,16 +936,16 @@ const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 export const supabase = url && anonKey ? createClient(url, anonKey) : null;
 ```
 
-  2. `AuthPanel.tsx`(クライアントコンポーネント): Sidebar 下部に置く。
-     - `supabase === null` → 何も表示しない(未設定環境では従来 UI から Guest 表示を消すだけ)
-     - 未ログイン → メールアドレス+パスワードの小型フォームと「ログイン / 新規登録」ボタン
-       (`signInWithPassword` / `signUp`。エラーは赤字表示。signUp 後は
-       「確認メールを送信しました(メール確認が有効な場合)」を表示)
-     - ログイン済み → メールアドレスと「ログアウト」(`signOut`)
-     - `supabase.auth.onAuthStateChange` で表示を同期
-  3. `Sidebar.tsx`: 「Guest User / Free Plan」ブロックを `<AuthPanel />` に置換。
-     「設定」リンク(href="#")は**削除**(I-21 と整合)。
-  4. `lib/api.ts`: `apiPost`/`apiGet` の冒頭で
+2. `AuthPanel.tsx`(クライアントコンポーネント): Sidebar 下部に置く。
+   - `supabase === null` → 何も表示しない(未設定環境では従来 UI から Guest 表示を消すだけ)
+   - 未ログイン → メールアドレス+パスワードの小型フォームと「ログイン / 新規登録」ボタン
+     (`signInWithPassword` / `signUp`。エラーは赤字表示。signUp 後は
+     「確認メールを送信しました(メール確認が有効な場合)」を表示)
+   - ログイン済み → メールアドレスと「ログアウト」(`signOut`)
+   - `supabase.auth.onAuthStateChange` で表示を同期
+3. `Sidebar.tsx`: 「Guest User / Free Plan」ブロックを `<AuthPanel />` に置換。
+   「設定」リンク(href="#")は**削除**(I-21 と整合)。
+4. `lib/api.ts`: `apiPost`/`apiGet` の冒頭で
 
 ```ts
 async function authHeaders(): Promise<Record<string, string>> {
@@ -945,7 +955,8 @@ async function authHeaders(): Promise<Record<string, string>> {
 }
 ```
 
-  を合成してヘッダに付ける(未ログイン時は付けない=既存動作と同一)。
+を合成してヘッダに付ける(未ログイン時は付けない=既存動作と同一)。
+
 - **テスト先行**: UI の自動テストは I-22(E2E)に委ねる。ここでは
   `apps/web` に単体テスト基盤が無いため **ビルドと手動確認を完了条件にする**
   (vitest の web への導入はスコープ外。§6)。
@@ -1070,10 +1081,10 @@ export function nameToHue(name: string): number {
 ```
 
      DeckCard 側: `style={{ background: \`linear-gradient(135deg, hsl(${hue} 60% 35%), hsl(${(hue + 40) % 360} 60% 20%))\` }}`
-  2. **文明ドット(固定の fire 1個)を削除**(`{/* Civilization dots placeholder */}` のブロック)。
-     sample_decklist からの文明推定はデータが無いため行わない(§6)。
-  3. **deck 画面の文明フィルタボタン(飾り)を削除**(中央カラムヘッダの5ボタン)。
-  4. **rule 画面の help ボタン(飾り)を削除**。
+
+2. **文明ドット(固定の fire 1個)を削除**(`{/* Civilization dots placeholder */}` のブロック)。
+sample_decklist からの文明推定はデータが無いため行わない(§6)。3. **deck 画面の文明フィルタボタン(飾り)を削除**(中央カラムヘッダの5ボタン)。4. **rule 画面の help ボタン(飾り)を削除**。
+
 - **テスト先行**: なし(見た目の整理)。E2E スモークで画面表示は担保。
 - **完了条件**: 共通条件 + web build。`grep -rn "unsplash" apps/web/src` が0件。
   手動確認: meta 画面(データ有り環境ならカード表示、無ければ空表示)が崩れない。

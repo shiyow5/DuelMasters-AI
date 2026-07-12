@@ -20,7 +20,7 @@ function today(): string {
 export async function runIngestFaq(
   docType: FaqDocType,
   urls: string[],
-  version = today()
+  version = today(),
 ): Promise<{ inserted: number; skipped: string[] }> {
   const sql = getSql();
   let inserted = 0;
@@ -70,16 +70,14 @@ export async function runIngestFaq(
   }
 
   console.log(
-    `=== FAQ/裁定取り込み完了: ${inserted}チャンク挿入 / ${skipped.length}URLスキップ ===`
+    `=== FAQ/裁定取り込み完了: ${inserted}チャンク挿入 / ${skipped.length}URLスキップ ===`,
   );
   await closeDb();
   return { inserted, skipped };
 }
 
 /** CLI 引数を検証する */
-export function parseFaqArgs(
-  argv: string[]
-): { docType: FaqDocType; urls: string[] } | null {
+export function parseFaqArgs(argv: string[]): { docType: FaqDocType; urls: string[] } | null {
   const docType = argv[0];
   const urls = argv.slice(1).filter(Boolean);
   if (!VALID_DOC_TYPES.includes(docType as FaqDocType) || urls.length === 0) {
@@ -91,9 +89,7 @@ export function parseFaqArgs(
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const parsed = parseFaqArgs(process.argv.slice(2));
   if (!parsed) {
-    console.error(
-      "使用法: tsx src/jobs/ingest-faq.ts <faq|ruling> <url> [url...]"
-    );
+    console.error("使用法: tsx src/jobs/ingest-faq.ts <faq|ruling> <url> [url...]");
     process.exit(1);
   }
   runIngestFaq(parsed.docType, parsed.urls)

@@ -120,7 +120,7 @@ export const MetaSnapshotSchema = z.object({
       usage_rate: z.number(),
       win_rate: z.number().nullable().default(null),
       sample_decklist: z.array(DeckEntrySchema).nullable().default(null),
-    })
+    }),
   ),
 });
 export type MetaSnapshot = z.infer<typeof MetaSnapshotSchema>;
@@ -136,19 +136,14 @@ export const ChatMessageSchema = z.object({
         section: z.string().optional(),
         article: z.string().optional(),
         url: z.string().optional(),
-      })
+      }),
     )
     .optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
 /** チャットモード */
-export const ChatModeSchema = z.enum([
-  "rule",
-  "deck",
-  "meta",
-  "integrated",
-]);
+export const ChatModeSchema = z.enum(["rule", "deck", "meta", "integrated"]);
 export type ChatMode = z.infer<typeof ChatModeSchema>;
 
 /** ツール呼び出し */
@@ -191,7 +186,7 @@ export const SearchResultSchema = z.object({
       text: z.string(),
       score: z.number(),
       meta: RuleChunkSchema.shape.chunk_meta,
-    })
+    }),
   ),
   total: z.number(),
 });
@@ -208,7 +203,7 @@ export const ChatRequestSchema = z.object({
       z.object({
         role: z.enum(["user", "assistant"]),
         content: z.string(),
-      })
+      }),
     )
     .default([]),
   format: z.enum(FORMATS).optional(),
@@ -269,7 +264,7 @@ export const TagExtractionSchema = z.array(
   z.object({
     name: z.string(),
     tags: z.array(z.enum(ROLE_TAGS)),
-  })
+  }),
 );
 export type TagExtraction = z.infer<typeof TagExtractionSchema>;
 
@@ -283,7 +278,7 @@ export const TournamentExtractionSchema = z.object({
       z.object({
         deck_archetype: z.string().min(1),
         placement: z.number().int().positive(),
-      })
+      }),
     )
     .min(1),
 });

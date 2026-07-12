@@ -12,7 +12,7 @@ function isoDate(d: Date): string {
 
 export async function runSnapshotMeta(
   format: Format,
-  weeks = 4
+  weeks = 4,
 ): Promise<{ created: boolean; archetypes: number }> {
   const sql = getSql();
   const periodEnd = new Date();
@@ -42,17 +42,13 @@ export async function runSnapshotMeta(
     DO UPDATE SET tier_data = EXCLUDED.tier_data
   `;
 
-  console.log(
-    `=== メタスナップショット生成完了: ${format} / ${tierData.length}アーキタイプ ===`
-  );
+  console.log(`=== メタスナップショット生成完了: ${format} / ${tierData.length}アーキタイプ ===`);
   await closeDb();
   return { created: true, archetypes: tierData.length };
 }
 
 /** CLI 引数を検証する */
-export function parseSnapshotArgs(
-  argv: string[]
-): { format: Format; weeks: number } | null {
+export function parseSnapshotArgs(argv: string[]): { format: Format; weeks: number } | null {
   const format = argv[0];
   if (format !== "original" && format !== "advance") return null;
   const weeks = parseInt(argv[1] ?? "4", 10) || 4;
@@ -62,9 +58,7 @@ export function parseSnapshotArgs(
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const parsed = parseSnapshotArgs(process.argv.slice(2));
   if (!parsed) {
-    console.error(
-      "使用法: tsx src/jobs/snapshot-meta.ts <original|advance> [weeks=4]"
-    );
+    console.error("使用法: tsx src/jobs/snapshot-meta.ts <original|advance> [weeks=4]");
     process.exit(1);
   }
   runSnapshotMeta(parsed.format, parsed.weeks)

@@ -1,10 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
-import {
-  getTestSql,
-  hasTestDb,
-  enableAppDb,
-  truncateAll,
-} from "../../../tests/helpers/db.js";
+import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/helpers/db.js";
 
 describe.skipIf(!hasTestDb)("snapshot:meta (統合)", () => {
   const sql = getTestSql()!;

@@ -1,27 +1,12 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeAll,
-  beforeEach,
-  afterAll,
-} from "vitest";
-import {
-  getTestSql,
-  hasTestDb,
-  enableAppDb,
-  truncateAll,
-} from "../../../tests/helpers/db.js";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest";
+import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/helpers/db.js";
 
 // embed のみモック (固定 768 次元)
 vi.mock("@dm-ai/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@dm-ai/core")>();
   return {
     ...actual,
-    embed: vi.fn(async (texts: string[]) =>
-      texts.map(() => new Array(768).fill(0.1))
-    ),
+    embed: vi.fn(async (texts: string[]) => texts.map(() => new Array(768).fill(0.1))),
   };
 });
 
@@ -39,9 +24,9 @@ describe.skipIf(!hasTestDb)("ingest:faq (統合)", () => {
       vi.fn(
         async () =>
           new Response(
-            "<body>Q: 質問1ですか？ A: 回答1です。\nQ: 質問2ですか？ A: 回答2です。</body>"
-          )
-      )
+            "<body>Q: 質問1ですか？ A: 回答1です。\nQ: 質問2ですか？ A: 回答2です。</body>",
+          ),
+      ),
     );
     const { runIngestFaq } = await import("../src/jobs/ingest-faq.js");
     const url = "https://example.com/faq";

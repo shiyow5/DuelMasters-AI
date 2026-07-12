@@ -1,8 +1,5 @@
 /** 文明ごとの表示色 (Tailwind クラス) */
-export const CIV_COLORS: Record<
-  string,
-  { bg: string; text: string; dot: string }
-> = {
+export const CIV_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
   fire: {
     bg: "bg-dm-fire/20",
     text: "text-dm-fire",

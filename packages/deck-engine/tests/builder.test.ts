@@ -1,10 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
-import {
-  getTestSql,
-  hasTestDb,
-  enableAppDb,
-  truncateAll,
-} from "../../../tests/helpers/db.js";
+import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/helpers/db.js";
 import { autoBuild } from "../src/builder.js";
 
 describe.skipIf(!hasTestDb)("autoBuild 制約 (統合)", () => {
@@ -68,8 +63,6 @@ describe.skipIf(!hasTestDb)("autoBuild 制約 (統合)", () => {
       requiredCards: ["禁止札"],
     });
     expect(r.entries.find((e) => e.name === "禁止札")).toBeUndefined();
-    expect(
-      r.weaknesses.some((w) => w.includes("プレミアム殿堂のため採用できません"))
-    ).toBe(true);
+    expect(r.weaknesses.some((w) => w.includes("プレミアム殿堂のため採用できません"))).toBe(true);
   });
 });

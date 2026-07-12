@@ -2,10 +2,7 @@ export interface SuggestInput {
   /** デッキ内カード (DB で解決済み。未解決カードは tags=[] で渡す) */
   deckCards: Array<{ name: string; count: number; cost: number; tags: string[] }>;
   /** goal ごとの候補カード (DB 検索済み・デッキ外・goal タグ持ち・コスト昇順) */
-  candidatesByGoal: Map<
-    string,
-    Array<{ name: string; cost: number; tags: string[] }>
-  >;
+  candidatesByGoal: Map<string, Array<{ name: string; cost: number; tags: string[] }>>;
 }
 
 /**

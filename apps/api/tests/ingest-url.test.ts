@@ -25,7 +25,7 @@ describe("POST /api/meta/ingest/url", () => {
     process.env.INTERNAL_API_KEY = "test-key";
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response("<body>大会結果ページ</body>"))
+      vi.fn(async () => new Response("<body>大会結果ページ</body>")),
     );
   });
 
@@ -35,10 +35,7 @@ describe("POST /api/meta/ingest/url", () => {
   });
 
   it("X-Internal-Key 不一致は 401", async () => {
-    const res = await post(
-      { url: "https://example.com" },
-      { "X-Internal-Key": "wrong" }
-    );
+    const res = await post({ url: "https://example.com" }, { "X-Internal-Key": "wrong" });
     expect(res.status).toBe(401);
   });
 
@@ -49,10 +46,7 @@ describe("POST /api/meta/ingest/url", () => {
 
   it("抽出失敗は 422", async () => {
     extractTournamentMock.mockRejectedValueOnce(new Error("抽出不能"));
-    const res = await post(
-      { url: "https://example.com" },
-      { "X-Internal-Key": "test-key" }
-    );
+    const res = await post({ url: "https://example.com" }, { "X-Internal-Key": "test-key" });
     expect(res.status).toBe(422);
   });
 });

@@ -19,18 +19,18 @@ const commands = [
                 .setRequired(true)
                 .addChoices(
                   { name: "オリジナル", value: "original" },
-                  { name: "アドバンス", value: "advance" }
-                )
-            )
-        )
+                  { name: "アドバンス", value: "advance" },
+                ),
+            ),
+        ),
     )
     .addSubcommand((sub) =>
       sub
         .setName("rule")
         .setDescription("ルール質問")
         .addStringOption((opt) =>
-          opt.setName("question").setDescription("質問内容").setRequired(true)
-        )
+          opt.setName("question").setDescription("質問内容").setRequired(true),
+        ),
     )
     .addSubcommandGroup((group) =>
       group
@@ -41,49 +41,36 @@ const commands = [
             .setName("rate")
             .setDescription("デッキ評価")
             .addStringOption((opt) =>
-              opt
-                .setName("list")
-                .setDescription("デッキリスト")
-                .setRequired(true)
-            )
+              opt.setName("list").setDescription("デッキリスト").setRequired(true),
+            ),
         )
         .addSubcommand((sub) =>
           sub
             .setName("build")
             .setDescription("デッキ自動構築")
             .addStringOption((opt) =>
-              opt.setName("theme").setDescription("テーマ").setRequired(true)
-            )
+              opt.setName("theme").setDescription("テーマ").setRequired(true),
+            ),
         )
         .addSubcommand((sub) =>
           sub
             .setName("check")
             .setDescription("殿堂チェック")
             .addStringOption((opt) =>
-              opt
-                .setName("list")
-                .setDescription("デッキリスト")
-                .setRequired(true)
-            )
+              opt.setName("list").setDescription("デッキリスト").setRequired(true),
+            ),
         )
         .addSubcommand((sub) =>
           sub
             .setName("save")
             .setDescription("デッキを保存 (要ログイン設定)")
             .addStringOption((opt) =>
-              opt
-                .setName("list")
-                .setDescription("デッキリスト")
-                .setRequired(true)
+              opt.setName("list").setDescription("デッキリスト").setRequired(true),
             )
             .addStringOption((opt) =>
-              opt
-                .setName("name")
-                .setDescription("デッキ名")
-                .setRequired(true)
-                .setMaxLength(100)
-            )
-        )
+              opt.setName("name").setDescription("デッキ名").setRequired(true).setMaxLength(100),
+            ),
+        ),
     )
     .addSubcommandGroup((group) =>
       group
@@ -93,32 +80,24 @@ const commands = [
           sub
             .setName("tier")
             .setDescription("ティア表")
-            .addStringOption((opt) =>
-              opt.setName("period").setDescription("期間 (例: 2w, 4w)")
-            )
+            .addStringOption((opt) => opt.setName("period").setDescription("期間 (例: 2w, 4w)")),
         )
         .addSubcommand((sub) =>
           sub
             .setName("deck")
             .setDescription("アーキタイプ詳細")
             .addStringOption((opt) =>
-              opt
-                .setName("name")
-                .setDescription("アーキタイプ名")
-                .setRequired(true)
-            )
-        )
+              opt.setName("name").setDescription("アーキタイプ名").setRequired(true),
+            ),
+        ),
     )
     .addSubcommand((sub) =>
       sub
         .setName("chat")
         .setDescription("統合チャット")
         .addStringOption((opt) =>
-          opt
-            .setName("message")
-            .setDescription("メッセージ")
-            .setRequired(true)
-        )
+          opt.setName("message").setDescription("メッセージ").setRequired(true),
+        ),
     ),
 ].map((cmd) => cmd.toJSON());
 

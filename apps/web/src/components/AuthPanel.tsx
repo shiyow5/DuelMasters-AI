@@ -58,9 +58,7 @@ export default function AuthPanel() {
           {userEmail.slice(0, 2).toUpperCase()}
         </div>
         <div className="flex flex-col min-w-0 flex-1">
-          <span className="text-xs font-medium text-white truncate">
-            {userEmail}
-          </span>
+          <span className="text-xs font-medium text-white truncate">{userEmail}</span>
           <button
             onClick={handleLogout}
             className="text-[10px] text-primary text-left hover:underline"

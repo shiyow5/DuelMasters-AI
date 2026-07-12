@@ -21,9 +21,7 @@ async function main() {
       break;
     }
     case "faq": {
-      const { runIngestFaq, parseFaqArgs } = await import(
-        "./jobs/ingest-faq.js"
-      );
+      const { runIngestFaq, parseFaqArgs } = await import("./jobs/ingest-faq.js");
       const parsed = parseFaqArgs(process.argv.slice(3));
       if (!parsed) {
         console.error("使用法: tsx src/index.ts faq <faq|ruling> <url> [url...]");
@@ -33,9 +31,7 @@ async function main() {
       break;
     }
     case "snapshot": {
-      const { runSnapshotMeta, parseSnapshotArgs } = await import(
-        "./jobs/snapshot-meta.js"
-      );
+      const { runSnapshotMeta, parseSnapshotArgs } = await import("./jobs/snapshot-meta.js");
       const parsed = parseSnapshotArgs(process.argv.slice(3));
       if (!parsed) {
         console.error("使用法: tsx src/index.ts snapshot <original|advance> [weeks]");
@@ -45,9 +41,7 @@ async function main() {
       break;
     }
     default:
-      console.log(
-        "使用法: tsx src/index.ts <rules|cards|regulations|tags|faq|snapshot>"
-      );
+      console.log("使用法: tsx src/index.ts <rules|cards|regulations|tags|faq|snapshot>");
       console.log("  rules       - ルールPDF取り込み");
       console.log("  cards       - カードデータ取り込み");
       console.log("  regulations - 殿堂レギュレーション取り込み");

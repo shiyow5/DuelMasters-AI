@@ -9,7 +9,7 @@ export interface RegulationSets {
 
 /** regulations の行を分類する (「プレミアム殿堂コンビ」は autoBuild では制約しない) */
 export function classifyRegulations(
-  rows: Array<{ card_name: string; restriction_type: string }>
+  rows: Array<{ card_name: string; restriction_type: string }>,
 ): RegulationSets {
   const banned = new Set<string>();
   const limited = new Set<string>();
@@ -23,7 +23,7 @@ export function classifyRegulations(
 /** 必須カードに殿堂制約を適用する */
 export function applyRegulationToRequired(
   requiredCards: string[],
-  reg: RegulationSets
+  reg: RegulationSets,
 ): { adopted: Array<{ name: string; count: number }>; warnings: string[] } {
   const adopted: Array<{ name: string; count: number }> = [];
   const warnings: string[] = [];

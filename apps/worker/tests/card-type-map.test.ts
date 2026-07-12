@@ -11,9 +11,7 @@ describe("normalizeCardType", () => {
   });
 
   it("スター進化クリーチャー → star_evolution_creature", () => {
-    expect(normalizeCardType("スター進化クリーチャー")).toBe(
-      "star_evolution_creature"
-    );
+    expect(normalizeCardType("スター進化クリーチャー")).toBe("star_evolution_creature");
   });
 
   it("呪文 → spell", () => {
