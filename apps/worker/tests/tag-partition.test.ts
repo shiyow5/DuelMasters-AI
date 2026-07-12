@@ -27,9 +27,7 @@ describe("partitionByRule", () => {
   });
 
   it("全カードがルールで付く場合 needsLlm は空", () => {
-    const { needsLlm } = partitionByRule([
-      tc({ id: 1, is_shield_trigger: true }),
-    ]);
+    const { needsLlm } = partitionByRule([tc({ id: 1, is_shield_trigger: true })]);
     expect(needsLlm).toEqual([]);
   });
 });

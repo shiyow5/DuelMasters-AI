@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  classifyRegulations,
-  applyRegulationToRequired,
-} from "../src/regulation-rules.js";
+import { classifyRegulations, applyRegulationToRequired } from "../src/regulation-rules.js";
 
 describe("classifyRegulations", () => {
   it("3種の restriction_type を banned/limited に分類し、コンビは除外", () => {
@@ -25,10 +22,7 @@ describe("applyRegulationToRequired", () => {
   ]);
 
   it("banned は不採用+警告、limited は count 1、通常は count 4", () => {
-    const { adopted, warnings } = applyRegulationToRequired(
-      ["禁止A", "制限B", "通常C"],
-      reg
-    );
+    const { adopted, warnings } = applyRegulationToRequired(["禁止A", "制限B", "通常C"], reg);
     expect(adopted).toEqual([
       { name: "制限B", count: 1 },
       { name: "通常C", count: 4 },

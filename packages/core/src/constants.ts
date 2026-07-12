@@ -5,13 +5,7 @@ export const FORMATS = ["original", "advance"] as const;
 export type Format = (typeof FORMATS)[number];
 
 /** 文明 */
-export const CIVILIZATIONS = [
-  "fire",
-  "water",
-  "nature",
-  "light",
-  "darkness",
-] as const;
+export const CIVILIZATIONS = ["fire", "water", "nature", "light", "darkness"] as const;
 export type Civilization = (typeof CIVILIZATIONS)[number];
 
 /** 文明の日本語名 */
@@ -37,11 +31,7 @@ export const CARD_TYPES = [
 export type CardType = (typeof CARD_TYPES)[number];
 
 /** 殿堂区分 */
-export const RESTRICTION_TYPES = [
-  "殿堂入り",
-  "プレミアム殿堂",
-  "プレミアム殿堂コンビ",
-] as const;
+export const RESTRICTION_TYPES = ["殿堂入り", "プレミアム殿堂", "プレミアム殿堂コンビ"] as const;
 export type RestrictionType = (typeof RESTRICTION_TYPES)[number];
 
 /** 役割タグ */
@@ -74,11 +64,7 @@ export const DECK_GUIDELINES = {
 } as const;
 
 /** ルール文書タイプ */
-export const DOC_TYPES = [
-  "comprehensive_rules",
-  "ruling",
-  "faq",
-] as const;
+export const DOC_TYPES = ["comprehensive_rules", "ruling", "faq"] as const;
 export type DocType = (typeof DOC_TYPES)[number];
 
 /** ティア判定閾値 (大会結果からの集計時の使用率) */

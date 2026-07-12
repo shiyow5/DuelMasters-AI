@@ -46,7 +46,7 @@ export interface ChatResponse {
 /** Gemini チャット完了 */
 export async function chat(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
-  options: ChatOptions = {}
+  options: ChatOptions = {},
 ): Promise<ChatResponse> {
   const client = getClient();
 
@@ -144,7 +144,7 @@ export interface StructuredOptions {
 export async function generateStructured<T>(
   prompt: string,
   zodSchema: z.ZodType<T>,
-  options: StructuredOptions
+  options: StructuredOptions,
 ): Promise<T> {
   const client = getClient();
   let lastError: unknown;
@@ -161,10 +161,7 @@ export async function generateStructured<T>(
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config,
     });
-    const text =
-      response.candidates?.[0]?.content?.parts
-        ?.map((p) => p.text ?? "")
-        .join("") ?? "";
+    const text = response.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
     try {
       return zodSchema.parse(JSON.parse(text));
     } catch (err) {

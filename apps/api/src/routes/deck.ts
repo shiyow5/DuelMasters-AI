@@ -23,7 +23,7 @@ const deckRouter = new Hono();
 /** ボディを検証し、失敗時は 400 レスポンスを返す */
 async function parseBody<S extends z.ZodTypeAny>(
   c: Context,
-  schema: S
+  schema: S,
 ): Promise<{ ok: true; data: z.infer<S> } | { ok: false; res: Response }> {
   const raw = await c.req.json().catch(() => null);
   const parsed = schema.safeParse(raw);
@@ -33,11 +33,9 @@ async function parseBody<S extends z.ZodTypeAny>(
       res: c.json(
         {
           error: "リクエストが不正です",
-          details: parsed.error.issues.map(
-            (i) => `${i.path.join(".")}: ${i.message}`
-          ),
+          details: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
         },
-        400
+        400,
       ),
     };
   }
@@ -121,7 +119,7 @@ deckRouter.post("/save", requireAuth, async (c) => {
       cards: row.cards,
       scores: row.scores,
     },
-    201
+    201,
   );
 });
 
@@ -147,11 +145,7 @@ deckRouter.get("/list", requireAuth, async (c) => {
 
 /** デッキ詳細 (自分のもののみ。他人・不存在は 404) */
 deckRouter.get("/:id", requireAuth, async (c) => {
-  const idParsed = z.coerce
-    .number()
-    .int()
-    .positive()
-    .safeParse(c.req.param("id"));
+  const idParsed = z.coerce.number().int().positive().safeParse(c.req.param("id"));
   if (!idParsed.success) return c.json({ error: "見つかりません" }, 404);
   const userId = c.get("userId")!;
   const sql = getSql();
@@ -173,11 +167,7 @@ deckRouter.get("/:id", requireAuth, async (c) => {
 
 /** デッキ削除 (自分のもののみ。他人・不存在は 404) */
 deckRouter.delete("/:id", requireAuth, async (c) => {
-  const idParsed = z.coerce
-    .number()
-    .int()
-    .positive()
-    .safeParse(c.req.param("id"));
+  const idParsed = z.coerce.number().int().positive().safeParse(c.req.param("id"));
   if (!idParsed.success) return c.json({ error: "見つかりません" }, 404);
   const userId = c.get("userId")!;
   const sql = getSql();

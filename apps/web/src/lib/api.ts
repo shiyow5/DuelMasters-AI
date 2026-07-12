@@ -6,9 +6,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 async function authHeaders(): Promise<Record<string, string>> {
   if (!supabase) return {};
   const { data } = await supabase.auth.getSession();
-  return data.session
-    ? { Authorization: `Bearer ${data.session.access_token}` }
-    : {};
+  return data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {};
 }
 
 /** サーバーが返す具体的なエラー文言 (error / details) を優先して Error にする */
@@ -19,9 +17,7 @@ async function toApiError(res: Response): Promise<Error> {
   } | null;
   const detail = body?.details?.length ? `: ${body.details.join(", ")}` : "";
   return new Error(
-    body?.error
-      ? `${body.error}${detail}`
-      : `API error: ${res.status} ${res.statusText}`
+    body?.error ? `${body.error}${detail}` : `API error: ${res.status} ${res.statusText}`,
   );
 }
 
@@ -35,10 +31,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function apiGet<T>(
-  path: string,
-  params?: Record<string, string>
-): Promise<T> {
+export async function apiGet<T>(path: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(`${API_URL}${path}`);
   if (params) {
     for (const [key, value] of Object.entries(params)) {

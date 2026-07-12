@@ -24,9 +24,7 @@ function card(overrides: Partial<Card>): Card {
 
 describe("inferTagsByRule", () => {
   it("S・トリガー持ち呪文 → 受け", () => {
-    expect(
-      inferTagsByRule(card({ type: "spell", is_shield_trigger: true }))
-    ).toContain("受け");
+    expect(inferTagsByRule(card({ type: "spell", is_shield_trigger: true }))).toContain("受け");
   });
 
   it("『カードを2枚引く』コスト2 → ドロー+初動", () => {
@@ -36,29 +34,25 @@ describe("inferTagsByRule", () => {
   });
 
   it("『山札の上から1枚目をマナゾーンに置く』コスト2 → ブースト+初動", () => {
-    const tags = inferTagsByRule(
-      card({ cost: 2, text: "山札の上から1枚目をマナゾーンに置く。" })
-    );
+    const tags = inferTagsByRule(card({ cost: 2, text: "山札の上から1枚目をマナゾーンに置く。" }));
     expect(tags).toContain("ブースト");
     expect(tags).toContain("初動");
   });
 
   it("『相手のクリーチャーを1体選び、破壊する』 → 除去", () => {
-    expect(
-      inferTagsByRule(card({ text: "相手のクリーチャーを1体選び、破壊する。" }))
-    ).toContain("除去");
+    expect(inferTagsByRule(card({ text: "相手のクリーチャーを1体選び、破壊する。" }))).toContain(
+      "除去",
+    );
   });
 
   it("コスト7・W・ブレイカー → フィニッシャー", () => {
-    expect(
-      inferTagsByRule(card({ cost: 7, text: "W・ブレイカー", power: 7000 }))
-    ).toContain("フィニッシャー");
+    expect(inferTagsByRule(card({ cost: 7, text: "W・ブレイカー", power: 7000 }))).toContain(
+      "フィニッシャー",
+    );
   });
 
   it("『相手は呪文を唱えられない』 → メタ", () => {
-    expect(
-      inferTagsByRule(card({ text: "相手は呪文を唱えられない。" }))
-    ).toContain("メタ");
+    expect(inferTagsByRule(card({ text: "相手は呪文を唱えられない。" }))).toContain("メタ");
   });
 
   it("バニラ(効果なし・コスト5) → []", () => {
@@ -70,7 +64,7 @@ describe("inferTagsByRule", () => {
       card({
         is_shield_trigger: true,
         text: "S・トリガー 相手のクリーチャーを1体選び、破壊する。",
-      })
+      }),
     );
     expect(tags).toContain("受け");
     expect(tags).toContain("除去");

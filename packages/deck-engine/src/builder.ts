@@ -1,15 +1,6 @@
-import {
-  DECK_SIZE,
-  MAX_COPIES,
-  ROLE_TAGS,
-  type Format,
-  type DeckEntry,
-} from "@dm-ai/core";
+import { DECK_SIZE, MAX_COPIES, ROLE_TAGS, type Format, type DeckEntry } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
-import {
-  classifyRegulations,
-  applyRegulationToRequired,
-} from "./regulation-rules.js";
+import { classifyRegulations, applyRegulationToRequired } from "./regulation-rules.js";
 import { pickReplacements } from "./suggest.js";
 
 export interface BuildConstraints {
@@ -37,7 +28,7 @@ export interface BuildResult {
 export async function autoBuild(
   theme: string,
   format: Format,
-  constraints: BuildConstraints = {}
+  constraints: BuildConstraints = {},
 ): Promise<BuildResult> {
   const sql = getSql();
   const entries: DeckEntry[] = [];
@@ -52,7 +43,7 @@ export async function autoBuild(
     regRows.map((r) => ({
       card_name: r.card_name as string,
       restriction_type: r.restriction_type as string,
-    }))
+    })),
   );
 
   // 制約フィルタ断片 (該当なしは空フラグメント)。
@@ -60,8 +51,7 @@ export async function autoBuild(
   const excludeCards = constraints.excludeCards ?? [];
   const civs = constraints.civilizations ?? [];
   const maxCost = constraints.maxCost;
-  const excludeFrag =
-    excludeCards.length > 0 ? sql`AND name NOT IN ${sql(excludeCards)}` : sql``;
+  const excludeFrag = excludeCards.length > 0 ? sql`AND name NOT IN ${sql(excludeCards)}` : sql``;
   const civFrag =
     civs.length > 0
       ? sql`AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(civilizations) c WHERE c = ANY(${sql.array(civs)}))`
@@ -70,10 +60,7 @@ export async function autoBuild(
 
   // 1. 必須カード追加 (殿堂制約を適用)
   if (constraints.requiredCards && constraints.requiredCards.length > 0) {
-    const { adopted, warnings } = applyRegulationToRequired(
-      constraints.requiredCards,
-      reg
-    );
+    const { adopted, warnings } = applyRegulationToRequired(constraints.requiredCards, reg);
     for (const a of adopted) {
       entries.push(a);
       totalCards += a.count;
@@ -138,8 +125,7 @@ export async function autoBuild(
 
   // 4. 不足分を汎用カード (S・トリガー) で補充
   if (totalCards < DECK_SIZE) {
-    const usedList =
-      Array.from(usedNames).length > 0 ? Array.from(usedNames) : ["__none__"];
+    const usedList = Array.from(usedNames).length > 0 ? Array.from(usedNames) : ["__none__"];
     const fillers = await sql`
       SELECT name, cost, tags
       FROM cards
@@ -175,8 +161,7 @@ export async function autoBuild(
 function analyzeWeaknesses(entries: DeckEntry[]): string[] {
   const weaknesses: string[] = [];
   const total = entries.reduce((s, e) => s + e.count, 0);
-  if (total < DECK_SIZE)
-    weaknesses.push(`カードが${total}枚しかありません (${DECK_SIZE}枚必要)`);
+  if (total < DECK_SIZE) weaknesses.push(`カードが${total}枚しかありません (${DECK_SIZE}枚必要)`);
   return weaknesses;
 }
 
@@ -186,7 +171,7 @@ function analyzeWeaknesses(entries: DeckEntry[]): string[] {
  */
 export async function suggestReplacements(
   entries: DeckEntry[],
-  goals: string[]
+  goals: string[],
 ): Promise<Array<{ original: string; replacement: string; reason: string }>> {
   if (entries.length === 0 || goals.length === 0) return [];
   const sql = getSql();
@@ -202,7 +187,7 @@ export async function suggestReplacements(
     rows.map((r) => [
       r.name as string,
       { cost: (r.cost as number) ?? 0, tags: (r.tags as string[]) ?? [] },
-    ])
+    ]),
   );
   const deckCards = entries.map((e) => {
     const info = infoByName.get(e.name);
@@ -216,10 +201,7 @@ export async function suggestReplacements(
 
   // goal ごとに候補を検索 (ROLE_TAGS はタグ一致、自由語は text ILIKE)
   const isRoleTag = (g: string) => (ROLE_TAGS as readonly string[]).includes(g);
-  const candidatesByGoal = new Map<
-    string,
-    Array<{ name: string; cost: number; tags: string[] }>
-  >();
+  const candidatesByGoal = new Map<string, Array<{ name: string; cost: number; tags: string[] }>>();
   for (const goal of goals) {
     const candRows = isRoleTag(goal)
       ? await sql`
@@ -238,7 +220,7 @@ export async function suggestReplacements(
         name: r.name as string,
         cost: (r.cost as number) ?? 0,
         tags: (r.tags as string[]) ?? [],
-      }))
+      })),
     );
   }
 

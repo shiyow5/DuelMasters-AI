@@ -19,12 +19,8 @@ export default function Sidebar() {
       <div className="flex flex-col gap-6 p-6">
         {/* Logo */}
         <Link href="/" className="flex flex-col">
-          <h1 className="text-white text-xl font-bold tracking-tight">
-            DM AI Master
-          </h1>
-          <p className="text-text-muted text-xs mt-1">
-            デュエル・マスターズ戦略ツール
-          </p>
+          <h1 className="text-white text-xl font-bold tracking-tight">DM AI Master</h1>
+          <p className="text-text-muted text-xs mt-1">デュエル・マスターズ戦略ツール</p>
         </Link>
 
         {/* Nav Links */}
@@ -43,9 +39,7 @@ export default function Sidebar() {
               >
                 <span
                   className={`material-symbols-outlined ${
-                    isActive
-                      ? "text-primary"
-                      : "group-hover:text-primary transition-colors"
+                    isActive ? "text-primary" : "group-hover:text-primary transition-colors"
                   }`}
                 >
                   {item.icon}

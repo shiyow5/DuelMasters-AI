@@ -1,9 +1,4 @@
-import {
-  DECK_SIZE,
-  MAX_COPIES,
-  type Format,
-  type ValidationResult,
-} from "@dm-ai/core";
+import { DECK_SIZE, MAX_COPIES, type Format, type ValidationResult } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import type { ParsedDeck } from "./parser.js";
 
@@ -12,24 +7,20 @@ import type { ParsedDeck } from "./parser.js";
  */
 export async function validateRegulation(
   deck: ParsedDeck,
-  format: Format
+  format: Format,
 ): Promise<ValidationResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
 
   // 枚数チェック
   if (deck.totalCards !== DECK_SIZE) {
-    errors.push(
-      `デッキは${DECK_SIZE}枚ちょうどである必要があります (現在: ${deck.totalCards}枚)`
-    );
+    errors.push(`デッキは${DECK_SIZE}枚ちょうどである必要があります (現在: ${deck.totalCards}枚)`);
   }
 
   // 同名カード4枚制限
   for (const entry of deck.entries) {
     if (entry.count > MAX_COPIES) {
-      errors.push(
-        `「${entry.name}」は最大${MAX_COPIES}枚までです (現在: ${entry.count}枚)`
-      );
+      errors.push(`「${entry.name}」は最大${MAX_COPIES}枚までです (現在: ${entry.count}枚)`);
     }
   }
 
@@ -44,10 +35,7 @@ export async function validateRegulation(
 
     const regMap = new Map<string, string>();
     for (const reg of regulations) {
-      regMap.set(
-        reg.card_name as string,
-        reg.restriction_type as string
-      );
+      regMap.set(reg.card_name as string, reg.restriction_type as string);
     }
 
     for (const entry of deck.entries) {
@@ -56,20 +44,16 @@ export async function validateRegulation(
 
       switch (restriction) {
         case "プレミアム殿堂":
-          errors.push(
-            `「${entry.name}」はプレミアム殿堂のため使用できません`
-          );
+          errors.push(`「${entry.name}」はプレミアム殿堂のため使用できません`);
           break;
         case "殿堂入り":
           if (entry.count > 1) {
-            errors.push(
-              `「${entry.name}」は殿堂入りのため1枚までです (現在: ${entry.count}枚)`
-            );
+            errors.push(`「${entry.name}」は殿堂入りのため1枚までです (現在: ${entry.count}枚)`);
           }
           break;
         case "プレミアム殿堂コンビ":
           warnings.push(
-            `「${entry.name}」はプレミアム殿堂コンビです。組み合わせを確認してください`
+            `「${entry.name}」はプレミアム殿堂コンビです。組み合わせを確認してください`,
           );
           break;
       }

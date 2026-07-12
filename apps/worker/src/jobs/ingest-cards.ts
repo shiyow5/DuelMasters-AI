@@ -62,9 +62,7 @@ async function main() {
       // 並列数制限で詳細ページを取得
       for (let i = 0; i < cardLinks.length; i += CONCURRENT_LIMIT) {
         const batch = cardLinks.slice(i, i + CONCURRENT_LIMIT);
-        const cards = await Promise.allSettled(
-          batch.map((url) => scrapeCardDetail(url))
-        );
+        const cards = await Promise.allSettled(batch.map((url) => scrapeCardDetail(url)));
 
         for (const result of cards) {
           if (result.status === "fulfilled" && result.value) {
@@ -122,9 +120,7 @@ async function scrapeCardDetail(url: string): Promise<RawCard | null> {
 
   const type = normalizeCardType(typeText);
   if (!type) {
-    console.warn(
-      `未知のカード種別 "${typeText}" のため creature として格納: ${url}`
-    );
+    console.warn(`未知のカード種別 "${typeText}" のため creature として格納: ${url}`);
   }
 
   return {
@@ -148,10 +144,7 @@ async function scrapeCardDetail(url: string): Promise<RawCard | null> {
   };
 }
 
-async function upsertCard(
-  sql: ReturnType<typeof getSql>,
-  card: RawCard
-): Promise<void> {
+async function upsertCard(sql: ReturnType<typeof getSql>, card: RawCard): Promise<void> {
   await sql`
     INSERT INTO cards (
       name, civilizations, cost, type, races, text, power,

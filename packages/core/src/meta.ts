@@ -18,9 +18,7 @@ export type AggregatedTierEntry = {
  * 大会結果の集計行 (deck_archetype, count) をティアリストに変換する。
  * postgres.js の COUNT は文字列で返るため Number() で数値化する。
  */
-export function aggregateTierData(
-  results: Array<Record<string, unknown>>
-): AggregatedTierEntry[] {
+export function aggregateTierData(results: Array<Record<string, unknown>>): AggregatedTierEntry[] {
   const totalEntries = results.reduce((sum, r) => sum + Number(r.count), 0);
   return results.map((r) => {
     const usageRate = Number(r.count) / totalEntries;

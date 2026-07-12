@@ -45,11 +45,9 @@ chatRouter.post("/", async (c) => {
     return c.json(
       {
         error: "リクエストが不正です",
-        details: parsed.error.issues.map(
-          (i) => `${i.path.join(".")}: ${i.message}`
-        ),
+        details: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
       },
-      400
+      400,
     );
   }
   const { message, mode, history, format } = parsed.data;
@@ -70,7 +68,7 @@ chatRouter.post("/", async (c) => {
       response.toolCalls,
       systemPrompt,
       response.text,
-      format
+      format,
     );
     return c.json({ response: text, toolCalls: response.toolCalls, mode });
   }
@@ -91,7 +89,7 @@ async function chatWithToolResults(
   toolCalls: NonNullable<ChatResponse["toolCalls"]>,
   systemPrompt: string,
   responseText: string,
-  format?: string
+  format?: string,
 ): Promise<string> {
   const toolResults: string[] = [];
   for (const toolCall of toolCalls) {
@@ -107,7 +105,7 @@ async function chatWithToolResults(
         content: `ツール実行結果:\n${toolResults.join("\n\n")}\n\nこの結果を踏まえてユーザーの質問に回答してください。`,
       },
     ],
-    { systemPrompt, temperature: 0.3 }
+    { systemPrompt, temperature: 0.3 },
   );
   return followUp.text;
 }
@@ -116,15 +114,12 @@ async function chatWithToolResults(
 async function chatWithRuleContext(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   query: string,
-  systemPrompt: string
+  systemPrompt: string,
 ): Promise<{ text: string; citations: Array<Record<string, unknown>> } | null> {
   const searchResult = await searchRules(query);
   if (searchResult.chunks.length === 0) return null;
   const context = searchResult.chunks
-    .map(
-      (ch, i) =>
-        `[${i + 1}] ${ch.meta.article ? `条${ch.meta.article}: ` : ""}${ch.text}`
-    )
+    .map((ch, i) => `[${i + 1}] ${ch.meta.article ? `条${ch.meta.article}: ` : ""}${ch.text}`)
     .join("\n\n");
   const ragResponse = await chat(
     [
@@ -134,7 +129,7 @@ async function chatWithRuleContext(
         content: `以下のルール条文を参考に回答してください:\n\n${context}`,
       },
     ],
-    { systemPrompt, temperature: 0.2 }
+    { systemPrompt, temperature: 0.2 },
   );
   return {
     text: ragResponse.text,
@@ -148,7 +143,7 @@ async function chatWithRuleContext(
 export async function executeToolCall(
   name: string,
   args: Record<string, unknown>,
-  format?: string
+  format?: string,
 ): Promise<string> {
   try {
     switch (name) {
@@ -179,8 +174,7 @@ export async function executeToolCall(
         const civFrag = civilization
           ? sql`AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(civilizations) c WHERE c = ${civilization})`
           : sql``;
-        const costFrag =
-          max_cost !== undefined ? sql`AND cost <= ${max_cost}` : sql``;
+        const costFrag = max_cost !== undefined ? sql`AND cost <= ${max_cost}` : sql``;
         const typeFrag = type ? sql`AND type = ${type}` : sql``;
         const rows = await sql`
           SELECT name, civilizations, cost, type, races, text, power
@@ -192,7 +186,7 @@ export async function executeToolCall(
         return rows
           .map(
             (r) =>
-              `${r.name} (${r.cost}コスト, ${(r.civilizations as string[]).join("/")}): ${(r.text as string).slice(0, 100)}`
+              `${r.name} (${r.cost}コスト, ${(r.civilizations as string[]).join("/")}): ${(r.text as string).slice(0, 100)}`,
           )
           .join("\n");
       }
@@ -211,7 +205,7 @@ export async function executeToolCall(
         const result = await autoBuild(
           args.theme as string,
           ((args.format as string) ?? format ?? "original") as "original" | "advance",
-          { requiredCards: args.required_cards as string[] }
+          { requiredCards: args.required_cards as string[] },
         );
         return JSON.stringify(result, null, 2);
       }

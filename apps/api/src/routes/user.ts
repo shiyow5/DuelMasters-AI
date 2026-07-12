@@ -23,11 +23,9 @@ userRouter.put("/settings", requireAuth, async (c) => {
     return c.json(
       {
         error: "リクエストが不正です",
-        details: parsed.error.issues.map(
-          (i) => `${i.path.join(".")}: ${i.message}`
-        ),
+        details: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
       },
-      400
+      400,
     );
   }
   const userId = c.get("userId")!;

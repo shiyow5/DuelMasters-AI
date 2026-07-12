@@ -12,9 +12,7 @@ function makeApp() {
   const app = new Hono();
   app.use("*", optionalAuth);
   app.get("/whoami", (c) => c.json({ userId: c.get("userId") }));
-  app.get("/protected", requireAuth, (c) =>
-    c.json({ userId: c.get("userId") })
-  );
+  app.get("/protected", requireAuth, (c) => c.json({ userId: c.get("userId") }));
   return app;
 }
 

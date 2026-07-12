@@ -4,8 +4,7 @@ import Sidebar from "@/components/Sidebar";
 
 export const metadata: Metadata = {
   title: "DM-AI | デュエル・マスターズ Q&A ボット",
-  description:
-    "デュエル・マスターズのルール確認・デッキ構築支援・環境分析ができるAIアシスタント",
+  description: "デュエル・マスターズのルール確認・デッキ構築支援・環境分析ができるAIアシスタント",
 };
 
 export default function RootLayout({
@@ -27,9 +26,7 @@ export default function RootLayout({
       </head>
       <body className="h-screen flex overflow-hidden bg-bg-dark text-text-main antialiased">
         <Sidebar />
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {children}
-        </div>
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">{children}</div>
       </body>
     </html>
   );

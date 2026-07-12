@@ -1,11 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { Hono } from "hono";
-import {
-  getTestSql,
-  hasTestDb,
-  enableAppDb,
-  truncateAll,
-} from "../../../tests/helpers/db.js";
+import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/helpers/db.js";
 import { optionalAuth } from "../src/middleware/auth.js";
 import { deckRouter } from "../src/routes/deck.js";
 
@@ -64,36 +59,26 @@ describe.skipIf(!hasTestDb)("deck CRUD (統合)", () => {
     const res = await post(
       "/api/deck/save",
       { title: "テスト", format: "original", decklist: "4 テストカード" },
-      INTERNAL
+      INTERNAL,
     );
     expect(res.status).toBe(201);
     const rows = await sql`SELECT user_id, scores FROM decks`;
     expect(rows[0].user_id).toBe("discord:me");
-    expect(typeof (rows[0].scores as Record<string, unknown>).overall).toBe(
-      "number"
-    );
+    expect(typeof (rows[0].scores as Record<string, unknown>).overall).toBe("number");
   });
 
   it("decklist パース不能のみは 400", async () => {
     const res = await post(
       "/api/deck/save",
       { title: "x", format: "original", decklist: "42" },
-      INTERNAL
+      INTERNAL,
     );
     expect(res.status).toBe(400);
   });
 
   it("list は自分のデッキのみ・降順", async () => {
-    await post(
-      "/api/deck/save",
-      { title: "mine1", format: "original", decklist: "4 A" },
-      INTERNAL
-    );
-    await post(
-      "/api/deck/save",
-      { title: "theirs", format: "original", decklist: "4 B" },
-      OTHER
-    );
+    await post("/api/deck/save", { title: "mine1", format: "original", decklist: "4 A" }, INTERNAL);
+    await post("/api/deck/save", { title: "theirs", format: "original", decklist: "4 B" }, OTHER);
     const res = await makeApp().request("/api/deck/list", { headers: INTERNAL });
     const body = (await res.json()) as { decks: Array<{ title: string }> };
     expect(body.decks.map((d) => d.title)).toEqual(["mine1"]);
@@ -103,7 +88,7 @@ describe.skipIf(!hasTestDb)("deck CRUD (統合)", () => {
     const saved = await post(
       "/api/deck/save",
       { title: "mine", format: "original", decklist: "4 A" },
-      INTERNAL
+      INTERNAL,
     );
     const { id } = (await saved.json()) as { id: number };
 

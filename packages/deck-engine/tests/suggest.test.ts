@@ -9,9 +9,7 @@ describe("pickReplacements", () => {
         { name: "バニラ小", count: 1, cost: 2, tags: [] },
         { name: "受け札", count: 4, cost: 3, tags: ["受け"] },
       ],
-      candidatesByGoal: new Map([
-        ["ドロー", [{ name: "新ドロー", cost: 3, tags: ["ドロー"] }]],
-      ]),
+      candidatesByGoal: new Map([["ドロー", [{ name: "新ドロー", cost: 3, tags: ["ドロー"] }]]]),
     };
     const out = pickReplacements(input);
     expect(out[0].original).toBe("バニラ大");
@@ -22,9 +20,7 @@ describe("pickReplacements", () => {
   it("全カードが goal に寄与している → 提案 0 件 (original に空文字を返さない)", () => {
     const input: SuggestInput = {
       deckCards: [{ name: "受け札", count: 4, cost: 3, tags: ["受け"] }],
-      candidatesByGoal: new Map([
-        ["受け", [{ name: "新受け", cost: 2, tags: ["受け"] }]],
-      ]),
+      candidatesByGoal: new Map([["受け", [{ name: "新受け", cost: 2, tags: ["受け"] }]]]),
     };
     expect(pickReplacements(input)).toEqual([]);
   });

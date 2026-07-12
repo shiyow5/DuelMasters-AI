@@ -1,7 +1,4 @@
-import {
-  type ChatInputCommandInteraction,
-  EmbedBuilder,
-} from "discord.js";
+import { type ChatInputCommandInteraction, EmbedBuilder } from "discord.js";
 import type { DeckScore, ValidationResult } from "@dm-ai/core";
 
 const API_URL = process.env.API_URL ?? "http://localhost:3001";
@@ -27,9 +24,7 @@ const userFormats = new Map<string, string>();
 /** 内部認証ヘッダ (INTERNAL_API_KEY 未設定なら空 = 認証系コマンドは失敗する) */
 function internalHeaders(discordId: string): Record<string, string> {
   const key = process.env.INTERNAL_API_KEY;
-  return key
-    ? { "X-Internal-Key": key, "X-User-Id": `discord:${discordId}` }
-    : {};
+  return key ? { "X-Internal-Key": key, "X-User-Id": `discord:${discordId}` } : {};
 }
 
 /** フォーマット解決: Map になければ API から取得してキャッシュ */
@@ -37,10 +32,7 @@ async function resolveFormat(discordId: string): Promise<string> {
   const cached = userFormats.get(discordId);
   if (cached) return cached;
   try {
-    const res = await apiGet<{ format: string }>(
-      "/api/user/settings",
-      internalHeaders(discordId)
-    );
+    const res = await apiGet<{ format: string }>("/api/user/settings", internalHeaders(discordId));
     userFormats.set(discordId, res.format);
     return res.format;
   } catch {
@@ -48,9 +40,7 @@ async function resolveFormat(discordId: string): Promise<string> {
   }
 }
 
-export async function handleCommand(
-  interaction: ChatInputCommandInteraction
-): Promise<void> {
+export async function handleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   const group = interaction.options.getSubcommandGroup(false);
   const sub = interaction.options.getSubcommand();
 
@@ -78,9 +68,7 @@ export async function handleCommand(
   }
 }
 
-async function handleFormatSet(
-  interaction: ChatInputCommandInteraction
-): Promise<void> {
+async function handleFormatSet(interaction: ChatInputCommandInteraction): Promise<void> {
   const format = interaction.options.getString("type", true);
   const discordId = interaction.user.id;
   userFormats.set(discordId, format);
@@ -90,14 +78,12 @@ async function handleFormatSet(
     await interaction.reply(`フォーマットを **${label}** に設定しました`);
   } catch {
     await interaction.reply(
-      `フォーマットを **${label}** に設定しました(設定の保存に失敗しました。次回再起動まで有効)`
+      `フォーマットを **${label}** に設定しました(設定の保存に失敗しました。次回再起動まで有効)`,
     );
   }
 }
 
-async function handleRule(
-  interaction: ChatInputCommandInteraction
-): Promise<void> {
+async function handleRule(interaction: ChatInputCommandInteraction): Promise<void> {
   const question = interaction.options.getString("question", true);
   await interaction.deferReply();
 
@@ -115,10 +101,7 @@ async function handleRule(
   await interaction.editReply({ embeds: [embed] });
 }
 
-async function handleDeck(
-  interaction: ChatInputCommandInteraction,
-  sub: string
-): Promise<void> {
+async function handleDeck(interaction: ChatInputCommandInteraction, sub: string): Promise<void> {
   // API 呼び出し (resolveFormat 含む) の前に defer し、Discord の初期応答3秒枠切れを防ぐ
   await interaction.deferReply();
   const format = await resolveFormat(interaction.user.id);
@@ -148,14 +131,14 @@ async function handleDeck(
         {
           name: "コストカーブ",
           value: `低:${score.costCurve.low} 中:${score.costCurve.mid} 高:${score.costCurve.high}`,
-        }
+        },
       )
       .setColor(
         score.overall >= 70
           ? EMBED_COLORS.success
           : score.overall >= 40
             ? EMBED_COLORS.warning
-            : EMBED_COLORS.danger
+            : EMBED_COLORS.danger,
       );
 
     if (score.warnings.length > 0) {
@@ -172,9 +155,7 @@ async function handleDeck(
     const res = await apiPost<{
       entries: Array<{ name: string; count: number }>;
     }>("/api/deck/build", { theme, format });
-    const deckText = res.entries
-      .map((e) => `${e.count} ${e.name}`)
-      .join("\n");
+    const deckText = res.entries.map((e) => `${e.count} ${e.name}`).join("\n");
 
     const embed = new EmbedBuilder()
       .setTitle(`自動構築: ${theme}`)
@@ -213,27 +194,22 @@ async function handleDeck(
       const res = await apiPost<{ scores: { overall: number } | null }>(
         "/api/deck/save",
         { title: name, format, decklist: list },
-        internalHeaders(interaction.user.id)
+        internalHeaders(interaction.user.id),
       );
       const embed = new EmbedBuilder()
         .setTitle("デッキ保存完了")
-        .setDescription(
-          `「${name}」を保存しました (スコア: ${res.scores?.overall ?? "-"}/100)`
-        )
+        .setDescription(`「${name}」を保存しました (スコア: ${res.scores?.overall ?? "-"}/100)`)
         .setColor(EMBED_COLORS.success);
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {
       await interaction.editReply(
-        `保存に失敗しました: ${err instanceof Error ? err.message : "不明"}`
+        `保存に失敗しました: ${err instanceof Error ? err.message : "不明"}`,
       );
     }
   }
 }
 
-async function handleMeta(
-  interaction: ChatInputCommandInteraction,
-  sub: string
-): Promise<void> {
+async function handleMeta(interaction: ChatInputCommandInteraction, sub: string): Promise<void> {
   // API 呼び出し (resolveFormat 含む) の前に defer し、Discord の初期応答3秒枠切れを防ぐ
   await interaction.deferReply();
   const format = await resolveFormat(interaction.user.id);
@@ -242,7 +218,7 @@ async function handleMeta(
     const period = interaction.options.getString("period") ?? "4w";
 
     const res = await apiGet<{ tier_data: TierEntry[] }>(
-      `/api/meta/tier?format=${format}&period=${period}`
+      `/api/meta/tier?format=${format}&period=${period}`,
     );
 
     if (!res.tier_data || res.tier_data.length === 0) {
@@ -259,9 +235,7 @@ async function handleMeta(
       if (entries.length > 0) {
         embed.addFields({
           name: tier,
-          value: entries
-            .map((e) => `**${e.archetype}** (${e.usage_rate}%)`)
-            .join("\n"),
+          value: entries.map((e) => `**${e.archetype}** (${e.usage_rate}%)`).join("\n"),
         });
       }
     }
@@ -275,9 +249,7 @@ async function handleMeta(
       stats: { total_entries: number; wins: number; top8: number } | null;
     }>(`/api/meta/archetype/${encodeURIComponent(name)}?format=${format}`);
 
-    const embed = new EmbedBuilder()
-      .setTitle(res.archetype)
-      .setColor(EMBED_COLORS.accent);
+    const embed = new EmbedBuilder().setTitle(res.archetype).setColor(EMBED_COLORS.accent);
 
     if (res.stats) {
       embed.addFields(
@@ -287,7 +259,7 @@ async function handleMeta(
           inline: true,
         },
         { name: "優勝", value: `${res.stats.wins}`, inline: true },
-        { name: "Top8", value: `${res.stats.top8}`, inline: true }
+        { name: "Top8", value: `${res.stats.top8}`, inline: true },
       );
     }
 
@@ -295,9 +267,7 @@ async function handleMeta(
   }
 }
 
-async function handleChat(
-  interaction: ChatInputCommandInteraction
-): Promise<void> {
+async function handleChat(interaction: ChatInputCommandInteraction): Promise<void> {
   const message = interaction.options.getString("message", true);
   await interaction.deferReply();
 
@@ -314,7 +284,7 @@ async function handleChat(
 async function apiPost<T>(
   path: string,
   body: unknown,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
 ): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
@@ -328,7 +298,7 @@ async function apiPost<T>(
 async function apiPut<T>(
   path: string,
   body: unknown,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
 ): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: "PUT",
@@ -339,10 +309,7 @@ async function apiPut<T>(
   return res.json() as Promise<T>;
 }
 
-async function apiGet<T>(
-  path: string,
-  headers: Record<string, string> = {}
-): Promise<T> {
+async function apiGet<T>(path: string, headers: Record<string, string> = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { headers });
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json() as Promise<T>;

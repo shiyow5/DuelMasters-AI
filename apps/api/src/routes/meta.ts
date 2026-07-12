@@ -31,9 +31,7 @@ function extractMappedIPv4(ip: string): string | null {
   if (!hex) return null;
   const high = parseInt(hex[1], 16);
   const low = parseInt(hex[2], 16);
-  return [(high >> 8) & 0xff, high & 0xff, (low >> 8) & 0xff, low & 0xff].join(
-    "."
-  );
+  return [(high >> 8) & 0xff, high & 0xff, (low >> 8) & 0xff, low & 0xff].join(".");
 }
 
 /** IPv6 のループバック/未指定/ユニークローカル/リンクローカル/IPv4-mapped プライベートを判定する */
@@ -87,10 +85,7 @@ function isPublicHttpUrl(raw: string): boolean {
 metaRouter.get("/tier", async (c) => {
   const format = c.req.query("format") ?? "original";
   if (!(FORMATS as readonly string[]).includes(format)) {
-    return c.json(
-      { error: `format は ${FORMATS.join(" | ")} のいずれかを指定してください` },
-      400
-    );
+    return c.json({ error: `format は ${FORMATS.join(" | ")} のいずれかを指定してください` }, 400);
   }
   const period = c.req.query("period") ?? "4w";
 
@@ -170,10 +165,7 @@ metaRouter.get("/archetype/:name", async (c) => {
   const name = c.req.param("name");
   const format = c.req.query("format") ?? "original";
   if (!(FORMATS as readonly string[]).includes(format)) {
-    return c.json(
-      { error: `format は ${FORMATS.join(" | ")} のいずれかを指定してください` },
-      400
-    );
+    return c.json({ error: `format は ${FORMATS.join(" | ")} のいずれかを指定してください` }, 400);
   }
 
   try {
@@ -204,10 +196,7 @@ metaRouter.get("/archetype/:name", async (c) => {
       recent_results: results,
     });
   } catch (err) {
-    console.error(
-      "[api/meta] archetype 取得に失敗 (フォールバック応答を返します):",
-      err
-    );
+    console.error("[api/meta] archetype 取得に失敗 (フォールバック応答を返します):", err);
     return c.json({
       archetype: name,
       format,
@@ -225,18 +214,16 @@ metaRouter.post("/ingest/url", requireInternal, async (c) => {
     return c.json(
       {
         error: "リクエストが不正です",
-        details: parsed.error.issues.map(
-          (i) => `${i.path.join(".")}: ${i.message}`
-        ),
+        details: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
       },
-      400
+      400,
     );
   }
   const { url, format } = parsed.data;
   if (!isPublicHttpUrl(url)) {
     return c.json(
       { error: "許可されていない URL です (内部/プライベート宛先は取得できません)" },
-      400
+      400,
     );
   }
 

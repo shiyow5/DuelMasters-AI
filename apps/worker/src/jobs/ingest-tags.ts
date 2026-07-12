@@ -57,7 +57,7 @@ async function tagByLlm(cards: TaggingCard[]): Promise<Map<number, RoleTag[]>> {
       batch
         .map(
           (c) =>
-            `- 名前: ${c.name} / コスト: ${c.cost} / パワー: ${c.power ?? "-"}\n  テキスト: ${c.text}`
+            `- 名前: ${c.name} / コスト: ${c.cost} / パワー: ${c.power ?? "-"}\n  テキスト: ${c.text}`,
         )
         .join("\n");
 
@@ -77,12 +77,10 @@ async function tagByLlm(cards: TaggingCard[]): Promise<Map<number, RoleTag[]>> {
 }
 
 export async function runIngestTags(
-  opts: { onlyEmpty?: boolean } = {}
+  opts: { onlyEmpty?: boolean } = {},
 ): Promise<{ ruleCount: number; llmCount: number; emptyCount: number }> {
   const onlyEmpty = opts.onlyEmpty ?? true;
-  console.log(
-    `=== タグ付与開始 (対象: ${onlyEmpty ? "タグ未設定のみ" : "全カード"}) ===`
-  );
+  console.log(`=== タグ付与開始 (対象: ${onlyEmpty ? "タグ未設定のみ" : "全カード"}) ===`);
   const sql = getSql();
 
   const rows = onlyEmpty
@@ -118,7 +116,7 @@ export async function runIngestTags(
   }
 
   console.log(
-    `=== タグ付与完了: ルール ${ruleTagged.length}件 / LLM ${llmCount}件 / タグ無し ${emptyCount}件 ===`
+    `=== タグ付与完了: ルール ${ruleTagged.length}件 / LLM ${llmCount}件 / タグ無し ${emptyCount}件 ===`,
   );
   await closeDb();
   return { ruleCount: ruleTagged.length, llmCount, emptyCount };

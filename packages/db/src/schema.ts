@@ -26,11 +26,7 @@ const vector = customType<{
   },
   fromDriver(value: unknown) {
     if (typeof value === "string") {
-      return value
-        .replace(/^\[/, "")
-        .replace(/]$/, "")
-        .split(",")
-        .map(Number);
+      return value.replace(/^\[/, "").replace(/]$/, "").split(",").map(Number);
     }
     return value as number[];
   },
@@ -64,7 +60,7 @@ export const cards = pgTable(
   (table) => [
     index("cards_name_idx").on(table.name),
     uniqueIndex("cards_official_id_uidx").on(table.official_id),
-  ]
+  ],
 );
 
 /** 殿堂レギュレーション */
@@ -81,7 +77,7 @@ export const regulations = pgTable(
   (table) => [
     index("regulations_card_name_idx").on(table.card_name),
     index("regulations_format_idx").on(table.format),
-  ]
+  ],
 );
 
 /** ルールRAG用チャンク */
@@ -96,9 +92,7 @@ export const ruleChunks = pgTable(
     embedding: vector("embedding", { dimensions: 768 }),
     created_at: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [
-    index("rule_chunks_doc_type_idx").on(table.doc_type),
-  ]
+  (table) => [index("rule_chunks_doc_type_idx").on(table.doc_type)],
 );
 
 /** デッキ保存 */
@@ -117,7 +111,7 @@ export const decks = pgTable(
   (table) => [
     index("decks_user_id_idx").on(table.user_id),
     index("decks_format_idx").on(table.format),
-  ]
+  ],
 );
 
 /** 大会結果 */
@@ -138,7 +132,7 @@ export const tournamentResults = pgTable(
     index("tournament_results_date_idx").on(table.event_date),
     index("tournament_results_archetype_idx").on(table.deck_archetype),
     index("tournament_results_format_idx").on(table.format),
-  ]
+  ],
 );
 
 /** メタスナップショット */
@@ -165,7 +159,7 @@ export const metaSnapshots = pgTable(
   (table) => [
     index("meta_snapshots_format_idx").on(table.format),
     index("meta_snapshots_period_idx").on(table.period_start, table.period_end),
-  ]
+  ],
 );
 
 /** ユーザー設定 */

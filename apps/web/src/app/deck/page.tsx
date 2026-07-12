@@ -4,11 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { apiPost, apiGet, apiDelete } from "@/lib/api";
 import { scoreGrade } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
-import type {
-  DeckScore,
-  ValidationResult,
-  SavedDeckSummary,
-} from "@/lib/types";
+import type { DeckScore, ValidationResult, SavedDeckSummary } from "@/lib/types";
 import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";
 
 export default function DeckPage() {
@@ -68,19 +64,14 @@ export default function DeckPage() {
       setTitle("");
       await refreshMyDecks();
     } catch (err) {
-      setSaveMsg(
-        `保存に失敗しました: ${err instanceof Error ? err.message : "不明"}`
-      );
+      setSaveMsg(`保存に失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     } finally {
       setSaving(false);
     }
   }
 
   async function loadDeck(id: number) {
-    if (
-      decklist.trim() &&
-      !confirm("現在の入力を破棄してこのデッキを読み込みますか?")
-    ) {
+    if (decklist.trim() && !confirm("現在の入力を破棄してこのデッキを読み込みますか?")) {
       return;
     }
     try {
@@ -94,9 +85,7 @@ export default function DeckPage() {
       setValidation(null);
       setBuildResult("");
     } catch (err) {
-      alert(
-        `読み込みに失敗しました: ${err instanceof Error ? err.message : "不明"}`
-      );
+      alert(`読み込みに失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     }
   }
 
@@ -106,9 +95,7 @@ export default function DeckPage() {
       await apiDelete(`/api/deck/${id}`);
       await refreshMyDecks();
     } catch (err) {
-      alert(
-        `削除に失敗しました: ${err instanceof Error ? err.message : "不明"}`
-      );
+      alert(`削除に失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     }
   }
 
@@ -135,10 +122,7 @@ export default function DeckPage() {
   async function handleBuild(e: React.FormEvent) {
     e.preventDefault();
     if (!theme.trim() || loading) return;
-    if (
-      decklist.trim() &&
-      !confirm("現在の入力を破棄して自動構築の結果に置き換えますか?")
-    ) {
+    if (decklist.trim() && !confirm("現在の入力を破棄して自動構築の結果に置き換えますか?")) {
       return;
     }
     setLoading(true);
@@ -149,17 +133,13 @@ export default function DeckPage() {
         strategy: string;
         weaknesses: string[];
       }>("/api/deck/build", { theme, format });
-      const deckText = res.entries
-        .map((e) => `${e.count} ${e.name}`)
-        .join("\n");
+      const deckText = res.entries.map((e) => `${e.count} ${e.name}`).join("\n");
       setBuildResult(
-        `${res.strategy}\n\n--- デッキリスト ---\n${deckText}\n\n弱点: ${res.weaknesses.join(", ") || "なし"}`
+        `${res.strategy}\n\n--- デッキリスト ---\n${deckText}\n\n弱点: ${res.weaknesses.join(", ") || "なし"}`,
       );
       setDecklist(deckText);
     } catch (err) {
-      setBuildResult(
-        `エラー: ${err instanceof Error ? err.message : "不明"}`
-      );
+      setBuildResult(`エラー: ${err instanceof Error ? err.message : "不明"}`);
     } finally {
       setLoading(false);
     }
@@ -182,9 +162,7 @@ export default function DeckPage() {
         <div>
           <div className="flex items-center gap-2 text-text-muted text-sm mb-1">
             <span>Decks</span>
-            <span className="material-symbols-outlined text-[14px]">
-              chevron_right
-            </span>
+            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
             <span className="text-white">デッキビルダー</span>
           </div>
           <h1 className="text-3xl font-bold text-white">デッキ構築・評価</h1>
@@ -244,9 +222,7 @@ export default function DeckPage() {
                   disabled={loading || !decklist.trim()}
                   className="flex-1 py-2 bg-bg-surface-highlight hover:bg-bg-surface-highlight/80 text-white rounded-lg text-sm font-medium transition-colors flex justify-center items-center gap-2 disabled:opacity-50"
                 >
-                  <span className="material-symbols-outlined text-[18px]">
-                    analytics
-                  </span>
+                  <span className="material-symbols-outlined text-[18px]">analytics</span>
                   評価する
                 </button>
                 <button
@@ -255,9 +231,7 @@ export default function DeckPage() {
                   disabled={loading || !theme.trim()}
                   className="flex-1 py-2 bg-gradient-to-r from-primary to-cyan-400 hover:opacity-90 text-bg-dark rounded-lg text-sm font-bold transition-opacity shadow-lg shadow-primary/10 flex justify-center items-center gap-2 disabled:opacity-50"
                 >
-                  <span className="material-symbols-outlined text-[18px]">
-                    auto_fix_high
-                  </span>
+                  <span className="material-symbols-outlined text-[18px]">auto_fix_high</span>
                   Auto Build
                 </button>
               </div>
@@ -266,9 +240,7 @@ export default function DeckPage() {
 
           {/* Theme Input for Auto Build */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-text-muted mb-3">
-              Auto Build テーマ
-            </h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-3">Auto Build テーマ</h3>
             <input
               type="text"
               value={theme}
@@ -282,13 +254,9 @@ export default function DeckPage() {
           {score && score.suggestions.length > 0 && (
             <div className="bg-bg-surface border border-border-highlight rounded-xl p-5 relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                <span className="material-symbols-outlined text-6xl text-primary">
-                  lightbulb
-                </span>
+                <span className="material-symbols-outlined text-6xl text-primary">lightbulb</span>
               </div>
-              <h3 className="text-sm font-semibold text-white mb-2 relative z-10">
-                AI Suggestion
-              </h3>
+              <h3 className="text-sm font-semibold text-white mb-2 relative z-10">AI Suggestion</h3>
               <p className="text-xs text-text-muted leading-relaxed relative z-10">
                 {score.suggestions[0]}
               </p>
@@ -298,13 +266,9 @@ export default function DeckPage() {
           {/* My Decks (ログイン時のみ) */}
           {loggedIn && (
             <div className="bg-bg-surface border border-border-highlight rounded-xl p-4">
-              <h3 className="text-sm font-semibold text-text-muted mb-3">
-                マイデッキ
-              </h3>
+              <h3 className="text-sm font-semibold text-text-muted mb-3">マイデッキ</h3>
               {myDecks.length === 0 ? (
-                <p className="text-xs text-text-dim">
-                  保存したデッキはありません
-                </p>
+                <p className="text-xs text-text-dim">保存したデッキはありません</p>
               ) : (
                 <ul className="flex flex-col gap-2">
                   {myDecks.map((d) => (
@@ -316,9 +280,7 @@ export default function DeckPage() {
                         onClick={() => loadDeck(d.id)}
                         className="flex flex-col items-start min-w-0 flex-1 text-left"
                       >
-                        <span className="text-xs text-white truncate w-full">
-                          {d.title}
-                        </span>
+                        <span className="text-xs text-white truncate w-full">{d.title}</span>
                         <span className="text-[10px] text-text-muted">
                           {d.format} · {d.overall ?? "--"}点
                         </span>
@@ -328,9 +290,7 @@ export default function DeckPage() {
                         className="text-text-dim hover:text-dm-fire transition-colors flex-shrink-0"
                         title="削除"
                       >
-                        <span className="material-symbols-outlined text-[18px]">
-                          delete
-                        </span>
+                        <span className="material-symbols-outlined text-[18px]">delete</span>
                       </button>
                     </li>
                   ))}
@@ -355,9 +315,7 @@ export default function DeckPage() {
             ) : validation && !validation.valid ? (
               <div className="space-y-3">
                 <div className="rounded-xl border border-danger/30 bg-danger/10 p-4">
-                  <h4 className="text-sm font-medium text-danger mb-2">
-                    レギュレーション違反
-                  </h4>
+                  <h4 className="text-sm font-medium text-danger mb-2">レギュレーション違反</h4>
                   <ul className="space-y-1">
                     {validation.errors.map((e, i) => (
                       <li key={i} className="text-sm text-text-muted">
@@ -368,9 +326,7 @@ export default function DeckPage() {
                 </div>
                 {validation.warnings.length > 0 && (
                   <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
-                    <h4 className="text-sm font-medium text-warning mb-2">
-                      警告
-                    </h4>
+                    <h4 className="text-sm font-medium text-warning mb-2">警告</h4>
                     <ul className="space-y-1">
                       {validation.warnings.map((w, i) => (
                         <li key={i} className="text-sm text-text-muted">
@@ -420,9 +376,7 @@ export default function DeckPage() {
           {/* Overall Score */}
           <div className="bg-gradient-to-br from-bg-surface to-bg-surface-highlight border border-border-highlight rounded-xl p-5 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
-            <h3 className="text-sm font-semibold text-text-muted mb-4">
-              Deck Power Score
-            </h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-4">Deck Power Score</h3>
             <div className="flex items-end gap-3">
               <span className="text-5xl font-bold text-white tracking-tighter">
                 {score ? scoreGrade(score.overall) : "--"}
@@ -432,10 +386,7 @@ export default function DeckPage() {
                   {score ? `${score.overall}/100` : "未評価"}
                 </div>
                 <div className="text-[10px] text-text-muted">
-                  初動率:{" "}
-                  {score
-                    ? `${Math.round(score.openingHandRate * 100)}%`
-                    : "--"}
+                  初動率: {score ? `${Math.round(score.openingHandRate * 100)}%` : "--"}
                 </div>
               </div>
             </div>
@@ -443,9 +394,7 @@ export default function DeckPage() {
 
           {/* Mana Curve */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-text-muted mb-6">
-              Mana Curve
-            </h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-6">Mana Curve</h3>
             <div className="h-32 flex items-end justify-between gap-2 px-1">
               {[
                 {
@@ -464,10 +413,7 @@ export default function DeckPage() {
                   max: 20,
                 },
               ].map((bar) => (
-                <div
-                  key={bar.label}
-                  className="flex flex-col items-center gap-1 group w-full"
-                >
+                <div key={bar.label} className="flex flex-col items-center gap-1 group w-full">
                   <div className="w-full bg-bg-surface-highlight rounded-t-sm relative h-24 group-hover:bg-bg-surface-highlight/80 transition-colors">
                     <div
                       className="absolute bottom-0 w-full bg-primary rounded-t-sm transition-all"
@@ -486,42 +432,38 @@ export default function DeckPage() {
 
           {/* Civilization Ratio */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-text-muted mb-4">
-              Civilization Ratio
-            </h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-4">Civilization Ratio</h3>
             {score ? (
               <div className="flex items-center gap-4">
                 {/* Donut placeholder */}
                 <div className="relative w-24 h-24 rounded-full border-4 border-bg-surface-highlight flex items-center justify-center shrink-0">
-                  <svg
-                    className="w-full h-full -rotate-90"
-                    viewBox="0 0 36 36"
-                  >
-                    {Object.entries(score.civilizationBalance).reduce<
-                      { el: React.ReactNode[]; offset: number }
-                    >(
-                      (acc, [civ, count]) => {
-                        const pct = totalCards
-                          ? (count / totalCards) * 100
-                          : 0;
-                        acc.el.push(
-                          <circle
-                            key={civ}
-                            cx="18"
-                            cy="18"
-                            r="15.9155"
-                            fill="none"
-                            stroke={CIV_HEX[civ] ?? "#6b7280"}
-                            strokeWidth="3"
-                            strokeDasharray={`${pct} ${100 - pct}`}
-                            strokeDashoffset={`${-acc.offset}`}
-                          />
-                        );
-                        acc.offset += pct;
-                        return acc;
-                      },
-                      { el: [], offset: 0 }
-                    ).el}
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                    {
+                      Object.entries(score.civilizationBalance).reduce<{
+                        el: React.ReactNode[];
+                        offset: number;
+                      }>(
+                        (acc, [civ, count]) => {
+                          const pct = totalCards ? (count / totalCards) * 100 : 0;
+                          acc.el.push(
+                            <circle
+                              key={civ}
+                              cx="18"
+                              cy="18"
+                              r="15.9155"
+                              fill="none"
+                              stroke={CIV_HEX[civ] ?? "#6b7280"}
+                              strokeWidth="3"
+                              strokeDasharray={`${pct} ${100 - pct}`}
+                              strokeDashoffset={`${-acc.offset}`}
+                            />,
+                          );
+                          acc.offset += pct;
+                          return acc;
+                        },
+                        { el: [], offset: 0 },
+                      ).el
+                    }
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center flex-col">
                     <span className="text-xs font-bold text-white">
@@ -531,27 +473,19 @@ export default function DeckPage() {
                   </div>
                 </div>
                 <div className="flex flex-col gap-2 w-full">
-                  {Object.entries(score.civilizationBalance).map(
-                    ([civ, count]) => (
-                      <div
-                        key={civ}
-                        className="flex justify-between items-center text-xs"
-                      >
-                        <span className="flex items-center gap-1.5 text-text-muted">
-                          <span
-                            className={`w-2 h-2 rounded-full ${CIV_COLORS[civ]?.dot ?? "bg-gray-500"}`}
-                          />
-                          {CIV_LABELS[civ] ?? civ}
-                        </span>
-                        <span className="font-medium text-white">
-                          {totalCards
-                            ? Math.round((count / totalCards) * 100)
-                            : 0}
-                          %
-                        </span>
-                      </div>
-                    )
-                  )}
+                  {Object.entries(score.civilizationBalance).map(([civ, count]) => (
+                    <div key={civ} className="flex justify-between items-center text-xs">
+                      <span className="flex items-center gap-1.5 text-text-muted">
+                        <span
+                          className={`w-2 h-2 rounded-full ${CIV_COLORS[civ]?.dot ?? "bg-gray-500"}`}
+                        />
+                        {CIV_LABELS[civ] ?? civ}
+                      </span>
+                      <span className="font-medium text-white">
+                        {totalCards ? Math.round((count / totalCards) * 100) : 0}%
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : (
@@ -562,9 +496,7 @@ export default function DeckPage() {
           {/* Shield Triggers */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
             <div className="flex justify-between items-center mb-2">
-              <h3 className="text-sm font-semibold text-text-muted">
-                Shield Triggers
-              </h3>
+              <h3 className="text-sm font-semibold text-text-muted">Shield Triggers</h3>
               <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                 {score?.triggerCount ?? 0} Cards
               </span>
@@ -591,9 +523,7 @@ export default function DeckPage() {
           {/* デッキ保存 (評価後のみ表示) */}
           {score && (
             <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-text-muted mb-3">
-                デッキを保存
-              </h3>
+              <h3 className="text-sm font-semibold text-text-muted mb-3">デッキを保存</h3>
               {loggedIn ? (
                 <div className="flex flex-col gap-2">
                   <input
@@ -611,14 +541,10 @@ export default function DeckPage() {
                   >
                     {saving ? "保存中..." : "保存"}
                   </button>
-                  {saveMsg && (
-                    <p className="text-xs text-text-muted">{saveMsg}</p>
-                  )}
+                  {saveMsg && <p className="text-xs text-text-muted">{saveMsg}</p>}
                 </div>
               ) : (
-                <p className="text-xs text-text-dim">
-                  ログインすると保存できます
-                </p>
+                <p className="text-xs text-text-dim">ログインすると保存できます</p>
               )}
             </div>
           )}

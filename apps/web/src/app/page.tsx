@@ -67,16 +67,13 @@ export default function ChatPage() {
   function handleExport() {
     if (messages.length === 0) return;
     const text = messages
-      .map(
-        (m) =>
-          `[${m.timestamp ?? ""}] ${m.role === "user" ? "You" : "AI"}: ${m.content}`
-      )
+      .map((m) => `[${m.timestamp ?? ""}] ${m.role === "user" ? "You" : "AI"}: ${m.content}`)
       .join("\n\n");
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const d = new Date();
     const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
-      d.getDate()
+      d.getDate(),
     ).padStart(2, "0")}`;
     const a = document.createElement("a");
     a.href = url;
@@ -103,9 +100,7 @@ export default function ChatPage() {
       <header className="px-6 py-4 border-b border-border-subtle flex items-center justify-between glass-panel">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
-            <span className="material-symbols-outlined text-primary">
-              psychology
-            </span>
+            <span className="material-symbols-outlined text-primary">psychology</span>
           </div>
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -114,9 +109,7 @@ export default function ChatPage() {
                 Beta
               </span>
             </h2>
-            <p className="text-xs text-text-muted">
-              Gemini Based Duel Masters Engine
-            </p>
+            <p className="text-xs text-text-muted">Gemini Based Duel Masters Engine</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -144,13 +137,9 @@ export default function ChatPage() {
           <div className="flex h-full items-center justify-center">
             <div className="text-center max-w-lg">
               <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30 mx-auto mb-4">
-                <span className="material-symbols-outlined text-primary text-3xl">
-                  psychology
-                </span>
+                <span className="material-symbols-outlined text-primary text-3xl">psychology</span>
               </div>
-              <h2 className="mb-2 text-2xl font-bold text-white">
-                DM AI Master へようこそ
-              </h2>
+              <h2 className="mb-2 text-2xl font-bold text-white">DM AI Master へようこそ</h2>
               <p className="text-text-muted text-sm mb-6">
                 デュエル・マスターズに関する質問をどうぞ。ルール、デッキ構築、環境分析まで幅広くサポートします。
               </p>
@@ -178,9 +167,7 @@ export default function ChatPage() {
             <div key={i} className="flex justify-end gap-4">
               <div className="flex flex-col items-end gap-1 max-w-[80%] lg:max-w-[60%]">
                 <div className="glass-bubble-user p-4 rounded-2xl rounded-tr-sm text-text-main shadow-lg">
-                  <p className="leading-relaxed whitespace-pre-wrap text-sm">
-                    {msg.content}
-                  </p>
+                  <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
                 </div>
                 <span className="text-[10px] text-text-dim">
                   You {msg.timestamp && `\u2022 ${msg.timestamp}`}
@@ -193,26 +180,18 @@ export default function ChatPage() {
           ) : (
             <div key={i} className="flex justify-start gap-4">
               <div className="w-8 h-8 rounded-full bg-primary/20 flex-shrink-0 flex items-center justify-center border border-primary/30 mt-1">
-                <span className="material-symbols-outlined text-primary text-sm">
-                  psychology
-                </span>
+                <span className="material-symbols-outlined text-primary text-sm">psychology</span>
               </div>
               <div className="flex flex-col items-start gap-1 max-w-[80%] lg:max-w-[60%]">
                 <div className="glass-bubble-ai p-5 rounded-2xl rounded-tl-sm text-text-main shadow-lg">
-                  <p className="leading-relaxed whitespace-pre-wrap text-sm">
-                    {msg.content}
-                  </p>
+                  <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
                   <div className="mt-4 flex gap-2">
                     <button
-                      onClick={() =>
-                        setHelpful((prev) => new Set(prev).add(i))
-                      }
+                      onClick={() => setHelpful((prev) => new Set(prev).add(i))}
                       disabled={helpful.has(i)}
                       className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle disabled:text-primary disabled:opacity-100"
                     >
-                      <span className="material-symbols-outlined text-sm">
-                        thumb_up
-                      </span>
+                      <span className="material-symbols-outlined text-sm">thumb_up</span>
                       {helpful.has(i) ? "ありがとうございます" : "役に立った"}
                     </button>
                     <button
@@ -222,9 +201,7 @@ export default function ChatPage() {
                         setCopiedIdx(i);
                       }}
                     >
-                      <span className="material-symbols-outlined text-sm">
-                        content_copy
-                      </span>
+                      <span className="material-symbols-outlined text-sm">content_copy</span>
                       {copiedIdx === i ? "コピーしました" : "コピー"}
                     </button>
                   </div>
@@ -234,15 +211,13 @@ export default function ChatPage() {
                 </span>
               </div>
             </div>
-          )
+          ),
         )}
 
         {loading && (
           <div className="flex justify-start gap-4">
             <div className="w-8 h-8 rounded-full bg-primary/20 flex-shrink-0 flex items-center justify-center border border-primary/30 mt-1">
-              <span className="material-symbols-outlined text-primary text-sm">
-                psychology
-              </span>
+              <span className="material-symbols-outlined text-primary text-sm">psychology</span>
             </div>
             <div className="glass-bubble-ai px-4 py-3 rounded-2xl rounded-tl-sm shadow-lg flex items-center gap-1">
               <div
@@ -276,9 +251,7 @@ export default function ChatPage() {
               onClick={() => setShowLoadModal(true)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
             >
-              <span className="material-symbols-outlined text-sm">
-                upload_file
-              </span>
+              <span className="material-symbols-outlined text-sm">upload_file</span>
               デッキリスト読込
             </button>
             <button
@@ -294,9 +267,7 @@ export default function ChatPage() {
               onClick={() => insertTemplate("裁定確認: ")}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/5 transition-colors"
             >
-              <span className="material-symbols-outlined text-sm">
-                history_edu
-              </span>
+              <span className="material-symbols-outlined text-sm">history_edu</span>
               裁定確認
             </button>
           </div>

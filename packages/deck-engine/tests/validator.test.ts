@@ -4,8 +4,7 @@ import { validateRegulation } from "../src/validator.js";
 
 // DATABASE_URL 無しで実行される前提 (vitest.config.ts で強制)。
 // 殿堂チェックはスキップされ、固定の警告文が返る。
-const DB_SKIP_WARNING =
-  "殿堂データベースに接続できないため、殿堂チェックをスキップしました";
+const DB_SKIP_WARNING = "殿堂データベースに接続できないため、殿堂チェックをスキップしました";
 
 function list(n: number, prefix = "カード"): string {
   const lines: string[] = [];

@@ -26,13 +26,13 @@
 
 ### 必須ソフトウェア
 
-| ソフトウェア | バージョン | 確認コマンド |
-|-------------|-----------|-------------|
-| Node.js | 20 以上 | `node -v` |
-| pnpm | 9 以上 | `pnpm -v` |
-| Docker | 最新版 | `docker -v` |
-| Docker Compose | 最新版 | `docker compose version` |
-| Git | 最新版 | `git -v` |
+| ソフトウェア   | バージョン | 確認コマンド             |
+| -------------- | ---------- | ------------------------ |
+| Node.js        | 20 以上    | `node -v`                |
+| pnpm           | 9 以上     | `pnpm -v`                |
+| Docker         | 最新版     | `docker -v`              |
+| Docker Compose | 最新版     | `docker compose version` |
+| Git            | 最新版     | `git -v`                 |
 
 ### Node.js のインストール
 
@@ -134,6 +134,7 @@ PostgreSQL + pgvector をホスティングするサービスです。
 プロジェクトが作成されたら、以下を控えます:
 
 **Settings > API** から:
+
 - **Project URL** → `SUPABASE_URL` として使用
   - 例: `https://abcdefghijk.supabase.co`
 - **anon public key** → `SUPABASE_ANON_KEY` として使用
@@ -141,6 +142,7 @@ PostgreSQL + pgvector をホスティングするサービスです。
   - 「Reveal」をクリックして表示
 
 **Settings > Database** から:
+
 - **Connection string > URI** → `DATABASE_URL` として使用
   - 「Display connection pooler」のチェックを **外した** 状態の URI を使用
   - `[YOUR-PASSWORD]` 部分を手順3で設定したパスワードに置き換える
@@ -360,6 +362,7 @@ pnpm --filter @dm-ai/worker ingest:rules
 ```
 
 出力例:
+
 ```
 === ルールPDF取り込み開始 ===
 PDFダウンロード中: https://dm.takaratomy.co.jp/rule/pdf/dm_comprehensive_rules.pdf
@@ -439,11 +442,11 @@ pnpm --filter @dm-ai/worker fix:card-types
 
 Supabase Dashboard の **Table Editor** で各テーブルにデータが入っていることを確認してください。
 
-| テーブル | 確認ポイント |
-|----------|-------------|
+| テーブル      | 確認ポイント                                                         |
+| ------------- | -------------------------------------------------------------------- |
 | `rule_chunks` | ルールPDFのチャンクデータ + `embedding` カラムにベクトルが入っている |
-| `cards` | カード名・コスト・テキスト等が入っている |
-| `regulations` | 殿堂入り・プレミアム殿堂のカード名が入っている |
+| `cards`       | カード名・コスト・テキスト等が入っている                             |
+| `regulations` | 殿堂入り・プレミアム殿堂のカード名が入っている                       |
 
 ---
 
@@ -455,10 +458,10 @@ pnpm dev
 
 以下の 2 つのサーバーが同時に起動します:
 
-| アプリ | URL | 説明 |
-|--------|-----|------|
+| アプリ | URL                   | 説明                               |
+| ------ | --------------------- | ---------------------------------- |
 | Web UI | http://localhost:3000 | ブラウザでアクセスするチャット画面 |
-| API | http://localhost:3001 | バックエンド API サーバー |
+| API    | http://localhost:3001 | バックエンド API サーバー          |
 
 ### 動作確認
 
@@ -503,6 +506,7 @@ pnpm --filter @dm-ai/bot deploy-commands
 ```
 
 出力例:
+
 ```
 Deploying commands...
 Guild commands deployed to 987654321098765432
@@ -518,6 +522,7 @@ pnpm --filter @dm-ai/bot dev
 ```
 
 出力例:
+
 ```
 Bot ready: DM-AI Bot#1234
 ```
@@ -639,16 +644,16 @@ gcloud run jobs execute dm-ai-worker-rules --region=asia-northeast1
 
 ### 10-3. デプロイ後の環境変数まとめ
 
-| 変数 | 設定先 | 値 |
-|------|--------|-----|
-| `NEXT_PUBLIC_API_URL` | Vercel (Web) | Cloud Run API の URL |
-| `GEMINI_API_KEY` | Cloud Run (API, Worker) | Gemini API キー |
-| `SUPABASE_URL` | Cloud Run (API) | Supabase URL |
-| `SUPABASE_ANON_KEY` | Cloud Run (API) | Supabase anon key |
-| `DATABASE_URL` | Cloud Run (API, Worker) | Supabase DB 接続文字列 |
-| `DISCORD_TOKEN` | Cloud Run (Bot) | Discord Bot トークン |
-| `DISCORD_CLIENT_ID` | Cloud Run (Bot) | Discord Application ID |
-| `API_URL` | Cloud Run (Bot) | Cloud Run API の URL |
+| 変数                  | 設定先                  | 値                     |
+| --------------------- | ----------------------- | ---------------------- |
+| `NEXT_PUBLIC_API_URL` | Vercel (Web)            | Cloud Run API の URL   |
+| `GEMINI_API_KEY`      | Cloud Run (API, Worker) | Gemini API キー        |
+| `SUPABASE_URL`        | Cloud Run (API)         | Supabase URL           |
+| `SUPABASE_ANON_KEY`   | Cloud Run (API)         | Supabase anon key      |
+| `DATABASE_URL`        | Cloud Run (API, Worker) | Supabase DB 接続文字列 |
+| `DISCORD_TOKEN`       | Cloud Run (Bot)         | Discord Bot トークン   |
+| `DISCORD_CLIENT_ID`   | Cloud Run (Bot)         | Discord Application ID |
+| `API_URL`             | Cloud Run (Bot)         | Cloud Run API の URL   |
 
 ---
 

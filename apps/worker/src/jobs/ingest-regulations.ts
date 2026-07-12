@@ -33,20 +33,22 @@ async function main() {
   }> = [];
 
   for (const section of sections) {
-    $(section.selector).find("li, .card-name, tr").each((_, el) => {
-      const cardName = $(el).text().trim();
-      if (!cardName || cardName.length > 100) return;
-      regulations.push({
-        format: "original",
-        restriction_type: section.type,
-        card_name: cardName,
+    $(section.selector)
+      .find("li, .card-name, tr")
+      .each((_, el) => {
+        const cardName = $(el).text().trim();
+        if (!cardName || cardName.length > 100) return;
+        regulations.push({
+          format: "original",
+          restriction_type: section.type,
+          card_name: cardName,
+        });
       });
-    });
   }
 
   if (regulations.length === 0) {
     throw new Error(
-      "殿堂レギュレーションを1件も取得できませんでした。ページ構造が変わった可能性があります。既存データは変更せず中断します"
+      "殿堂レギュレーションを1件も取得できませんでした。ページ構造が変わった可能性があります。既存データは変更せず中断します",
     );
   }
 

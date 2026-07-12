@@ -50,13 +50,13 @@ async function main() {
     const texts = batch.map((c) => c.text);
 
     console.log(
-      `埋め込み生成中... ${i + 1}-${Math.min(i + BATCH_SIZE, chunks.length)}/${chunks.length}`
+      `埋め込み生成中... ${i + 1}-${Math.min(i + BATCH_SIZE, chunks.length)}/${chunks.length}`,
     );
 
     const embeddings = await embed(texts);
     if (embeddings.length !== texts.length) {
       throw new Error(
-        `embed() が ${texts.length} 件中 ${embeddings.length} 件しか返しませんでした`
+        `embed() が ${texts.length} 件中 ${embeddings.length} 件しか返しませんでした`,
       );
     }
 

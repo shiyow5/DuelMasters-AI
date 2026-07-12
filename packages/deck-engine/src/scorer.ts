@@ -28,7 +28,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   const triggerCount = expandedCards.filter((c) => c.is_shield_trigger).length;
   if (triggerCount < DECK_GUIDELINES.triggerCount) {
     warnings.push(
-      `S・トリガーが${triggerCount}枚です (推奨: ${DECK_GUIDELINES.triggerCount}枚以上)`
+      `S・トリガーが${triggerCount}枚です (推奨: ${DECK_GUIDELINES.triggerCount}枚以上)`,
     );
     suggestions.push("S・トリガー持ちのカードを追加して防御力を上げましょう");
   }
@@ -36,9 +36,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   // レインボー枚数
   const rainbowCount = expandedCards.filter((c) => c.is_rainbow).length;
   if (rainbowCount > DECK_GUIDELINES.rainbowMax) {
-    warnings.push(
-      `多色カードが${rainbowCount}枚です (推奨上限: ${DECK_GUIDELINES.rainbowMax}枚)`
-    );
+    warnings.push(`多色カードが${rainbowCount}枚です (推奨上限: ${DECK_GUIDELINES.rainbowMax}枚)`);
     suggestions.push("多色カードを減らしてマナ置きの柔軟性を確保しましょう");
   }
 
@@ -46,7 +44,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   const costCurve = computeCostCurve(expandedCards);
   if (costCurve.low < DECK_GUIDELINES.costCurve.low) {
     warnings.push(
-      `低コスト(3以下)が${costCurve.low}枚です (推奨: ${DECK_GUIDELINES.costCurve.low}枚)`
+      `低コスト(3以下)が${costCurve.low}枚です (推奨: ${DECK_GUIDELINES.costCurve.low}枚)`,
     );
     suggestions.push("初動で使える低コストカードを増やしましょう");
   }
@@ -60,14 +58,8 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   }
 
   // 初動率 (2-3コストのカード枚数から概算)
-  const earlyCards = expandedCards.filter(
-    (c) => c.cost >= 2 && c.cost <= 3
-  ).length;
-  const openingHandRate = calculateOpeningRate(
-    earlyCards,
-    deck.totalCards,
-    HAND_SIZE
-  );
+  const earlyCards = expandedCards.filter((c) => c.cost >= 2 && c.cost <= 3).length;
+  const openingHandRate = calculateOpeningRate(earlyCards, deck.totalCards, HAND_SIZE);
 
   // 役割バランス
   const roleBalance = computeRoleBalance(expandedCards);
@@ -144,7 +136,7 @@ async function fetchCardInfo(names: string[]): Promise<Map<string, Card>> {
     // DB未接続時はカード情報なしで評価を続行する (劣化動作は仕様として維持)
     console.warn(
       "カード情報の取得に失敗したため、カード情報なしで評価します:",
-      err instanceof Error ? err.message : err
+      err instanceof Error ? err.message : err,
     );
   }
 
@@ -203,11 +195,7 @@ function computeRoleBalance(cards: Card[]): Record<string, number> {
 }
 
 /** 初手に特定コスト帯のカードが含まれる確率 (超幾何分布の近似) */
-function calculateOpeningRate(
-  targetCards: number,
-  deckSize: number,
-  handSize: number
-): number {
+function calculateOpeningRate(targetCards: number, deckSize: number, handSize: number): number {
   if (deckSize <= 0 || targetCards <= 0) return 0;
   // 山札が初手枚数以下だと超幾何分布が定義できない(分母0で NaN)。
   // 対象カードが1枚でもあれば必ず引ける扱いとする。
