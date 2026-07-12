@@ -3,12 +3,7 @@ import { SYSTEM_PROMPTS } from "../src/prompts.js";
 
 describe("SYSTEM_PROMPTS", () => {
   it("全モードが定義されている", () => {
-    expect(Object.keys(SYSTEM_PROMPTS).sort()).toEqual([
-      "deck",
-      "integrated",
-      "meta",
-      "rule",
-    ]);
+    expect(Object.keys(SYSTEM_PROMPTS).sort()).toEqual(["deck", "integrated", "meta", "rule"]);
   });
 
   it("deck モードは評価/構築/改善のツール利用を明示する", () => {
