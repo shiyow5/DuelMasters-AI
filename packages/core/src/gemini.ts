@@ -49,10 +49,12 @@ function getClient(): GoogleGenAI {
 // チェーンは環境変数 (GEMINI_CHAT_MODELS / GEMINI_STRUCTURED_MODELS, カンマ区切り) や
 // configureGemini() で上書きできる。
 
+// モデル ID は実 API で疎通確認済み (2026-07)。gemini-2.5-* 系は新規プロジェクトで 404
+// (提供終了) のため使わない。現行は Gemma 4 と Gemini 3.x 系。
 /** チャット/ツール応答のモデルチェーン (無料優先 → 低コスト) */
-const DEFAULT_CHAT_MODELS = ["gemma-4-31b-it", "gemini-2.5-flash-lite"];
-/** 構造化出力のモデルチェーン (Gemini 系のみ。Gemma は responseSchema 非対応) */
-const DEFAULT_STRUCTURED_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
+const DEFAULT_CHAT_MODELS = ["gemma-4-31b-it", "gemini-3.1-flash-lite"];
+/** 構造化出力のモデルチェーン (Gemini 系のみ。Gemma は responseSchema でコードフェンス混入のため不可) */
+const DEFAULT_STRUCTURED_MODELS = ["gemini-3.1-flash-lite", "gemini-flash-latest"];
 
 /** 後方互換: 主チャットモデル (チェーン先頭) */
 const CHAT_MODEL = DEFAULT_CHAT_MODELS[0];

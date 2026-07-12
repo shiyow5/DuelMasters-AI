@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import { configureDb, createSql, runWithSql } from "@dm-ai/db";
 import { configureGemini, parseModelEnv } from "@dm-ai/core";
+import { configureAgent } from "@dm-ai/agent";
 
 /** Cloudflare Workers の env バインディング (Node 実行時は未設定でも動くよう全て optional)。 */
 export type Bindings = {
@@ -33,6 +34,11 @@ export const dbEnv: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) 
     apiKey: env.GEMINI_API_KEY,
     chatModels: parseModelEnv(env.GEMINI_CHAT_MODELS),
     structuredModels: parseModelEnv(env.GEMINI_STRUCTURED_MODELS),
+  });
+  // LangGraph エージェント (@dm-ai/agent) も同じ接続情報を使う。
+  configureAgent({
+    apiKey: env.GEMINI_API_KEY,
+    chatModels: parseModelEnv(env.GEMINI_CHAT_MODELS),
   });
 
   const connectionString = env.HYPERDRIVE?.connectionString;

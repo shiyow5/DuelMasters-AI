@@ -1,32 +1,32 @@
 {
-  "name": "@dm-ai/api",
+  "name": "@dm-ai/agent",
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./dist/*.js"
+  },
   "scripts": {
-    "dev": "tsx watch src/node-server.ts",
     "build": "tsc",
-    "start": "node dist/node-server.js",
-    "cf:dev": "wrangler dev",
-    "cf:deploy": "wrangler deploy",
-    "cf:check": "wrangler deploy --dry-run",
+    "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@dm-ai/agent": "workspace:*",
     "@dm-ai/core": "workspace:*",
     "@dm-ai/db": "workspace:*",
     "@dm-ai/deck-engine": "workspace:*",
     "@dm-ai/rag": "workspace:*",
-    "@hono/node-server": "^1.14.0",
-    "hono": "^4.7.0",
+    "@langchain/core": "^1.2.0",
+    "@langchain/google-genai": "^2.2.0",
+    "@langchain/langgraph": "^1.4.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
-    "wrangler": "^4.0.0"
+    "typescript": "^5.7.0"
   }
 }
