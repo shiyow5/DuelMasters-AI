@@ -156,6 +156,22 @@ describe("chat モデルフォールバック", () => {
     expect(generateContentMock.mock.calls[0][0].model).toBe("model-x");
     expect(generateContentMock.mock.calls[1][0].model).toBe("model-y");
   });
+
+  it("process 未定義 runtime (nodejs_compat 無し Worker 等) でも既定チェーンで動作する", async () => {
+    const { chat, configureGemini } = await import("../src/gemini.js");
+    // process が無くても動くよう apiKey は binding 注入で渡す
+    configureGemini({ apiKey: "test-key" });
+    vi.stubGlobal("process", undefined);
+    try {
+      generateContentMock.mockResolvedValueOnce(makeResponse("ok"));
+      const res = await chat([{ role: "user", content: "hi" }]);
+      expect(res.text).toBe("ok");
+      // process.env を参照できなくても既定 (gemma) にフォールバックする
+      expect(generateContentMock.mock.calls[0][0].model).toBe("gemma-4-31b-it");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("generateStructured モデルフォールバック", () => {

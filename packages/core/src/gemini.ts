@@ -22,9 +22,18 @@ export function configureGemini(cfg: {
   if (cfg.structuredModels?.length) _structuredModels = cfg.structuredModels;
 }
 
+/**
+ * env を安全に読む。`process` が存在しない runtime (nodejs_compat 無しの Cloudflare
+ * Worker 等) では未設定として扱い、参照だけで ReferenceError を投げないようにする。
+ * (未注入時は configureGemini による binding 注入か既定値へフォールバックさせる)
+ */
+function readEnv(name: string): string | undefined {
+  return typeof process !== "undefined" ? process.env?.[name] : undefined;
+}
+
 function getClient(): GoogleGenAI {
   if (!_client) {
-    const apiKey = _apiKey ?? process.env.GEMINI_API_KEY;
+    const apiKey = _apiKey ?? readEnv("GEMINI_API_KEY");
     if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
     _client = new GoogleGenAI({ apiKey });
   }
@@ -65,13 +74,13 @@ export function parseModelEnv(value: string | undefined): string[] | undefined {
 // 既定チェーンは共有参照を返さずコピーする (呼び出し側の破壊的変更でプロセス全体の
 // 既定が壊れるのを防ぐ)。注入値/env 由来は既に都度生成された配列なのでそのまま返す。
 function getChatModels(): string[] {
-  return _chatModels ?? parseModelEnv(process.env.GEMINI_CHAT_MODELS) ?? [...DEFAULT_CHAT_MODELS];
+  return _chatModels ?? parseModelEnv(readEnv("GEMINI_CHAT_MODELS")) ?? [...DEFAULT_CHAT_MODELS];
 }
 
 function getStructuredModels(): string[] {
   return (
     _structuredModels ??
-    parseModelEnv(process.env.GEMINI_STRUCTURED_MODELS) ?? [...DEFAULT_STRUCTURED_MODELS]
+    parseModelEnv(readEnv("GEMINI_STRUCTURED_MODELS")) ?? [...DEFAULT_STRUCTURED_MODELS]
   );
 }
 
