@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import { apiPost } from "@/lib/api";
 import { getTime } from "@/lib/format";
 import type { Message } from "@/lib/types";
+import Header from "@/components/Header";
+import ChatBubble, { ChatAvatar } from "@/components/ChatBubble";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -97,39 +99,43 @@ export default function ChatPage() {
   return (
     <div className="flex-1 flex flex-col h-full relative">
       {/* Header */}
-      <header className="px-6 py-4 border-b border-border-subtle flex items-center justify-between glass-panel">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
-            <span className="material-symbols-outlined text-primary">psychology</span>
+      <Header
+        left={
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
+              <span className="material-symbols-outlined text-primary">psychology</span>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                AI戦略アドバイザー
+                <span className="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[10px] font-bold border border-primary/20 uppercase">
+                  Beta
+                </span>
+              </h2>
+              <p className="text-xs text-text-muted">Gemini Based Duel Masters Engine</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              AI戦略アドバイザー
-              <span className="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[10px] font-bold border border-primary/20 uppercase">
-                Beta
-              </span>
-            </h2>
-            <p className="text-xs text-text-muted">Gemini Based Duel Masters Engine</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleExport}
-            disabled={messages.length === 0}
-            className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Export Chat"
-          >
-            <span className="material-symbols-outlined">ios_share</span>
-          </button>
-          <button
-            onClick={handleDeleteChat}
-            className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-            title="Delete Chat"
-          >
-            <span className="material-symbols-outlined">delete</span>
-          </button>
-        </div>
-      </header>
+        }
+        right={
+          <>
+            <button
+              onClick={handleExport}
+              disabled={messages.length === 0}
+              className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Export Chat"
+            >
+              <span className="material-symbols-outlined">ios_share</span>
+            </button>
+            <button
+              onClick={handleDeleteChat}
+              className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+              title="Delete Chat"
+            >
+              <span className="material-symbols-outlined">delete</span>
+            </button>
+          </>
+        }
+      />
 
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-8 scroll-smooth">
@@ -162,63 +168,45 @@ export default function ChatPage() {
           </div>
         )}
 
-        {messages.map((msg, i) =>
-          msg.role === "user" ? (
-            <div key={i} className="flex justify-end gap-4">
-              <div className="flex flex-col items-end gap-1 max-w-[80%] lg:max-w-[60%]">
-                <div className="glass-bubble-user p-4 rounded-2xl rounded-tr-sm text-text-main shadow-lg">
-                  <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
+        {messages.map((msg, i) => (
+          <ChatBubble
+            key={i}
+            role={msg.role}
+            name={msg.role === "user" ? "You" : "AI Advisor"}
+            timestamp={msg.timestamp}
+            aiIcon="psychology"
+            footer={
+              msg.role === "assistant" ? (
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => setHelpful((prev) => new Set(prev).add(i))}
+                    disabled={helpful.has(i)}
+                    className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle disabled:text-primary disabled:opacity-100"
+                  >
+                    <span className="material-symbols-outlined text-sm">thumb_up</span>
+                    {helpful.has(i) ? "ありがとうございます" : "役に立った"}
+                  </button>
+                  <button
+                    className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(msg.content);
+                      setCopiedIdx(i);
+                    }}
+                  >
+                    <span className="material-symbols-outlined text-sm">content_copy</span>
+                    {copiedIdx === i ? "コピーしました" : "コピー"}
+                  </button>
                 </div>
-                <span className="text-[10px] text-text-dim">
-                  You {msg.timestamp && `\u2022 ${msg.timestamp}`}
-                </span>
-              </div>
-              <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-primary to-primary-purple flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white shadow-lg shadow-primary/20 mt-1">
-                DU
-              </div>
-            </div>
-          ) : (
-            <div key={i} className="flex justify-start gap-4">
-              <div className="w-8 h-8 rounded-full bg-primary/20 flex-shrink-0 flex items-center justify-center border border-primary/30 mt-1">
-                <span className="material-symbols-outlined text-primary text-sm">psychology</span>
-              </div>
-              <div className="flex flex-col items-start gap-1 max-w-[80%] lg:max-w-[60%]">
-                <div className="glass-bubble-ai p-5 rounded-2xl rounded-tl-sm text-text-main shadow-lg">
-                  <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
-                  <div className="mt-4 flex gap-2">
-                    <button
-                      onClick={() => setHelpful((prev) => new Set(prev).add(i))}
-                      disabled={helpful.has(i)}
-                      className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle disabled:text-primary disabled:opacity-100"
-                    >
-                      <span className="material-symbols-outlined text-sm">thumb_up</span>
-                      {helpful.has(i) ? "ありがとうございます" : "役に立った"}
-                    </button>
-                    <button
-                      className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle"
-                      onClick={async () => {
-                        await navigator.clipboard.writeText(msg.content);
-                        setCopiedIdx(i);
-                      }}
-                    >
-                      <span className="material-symbols-outlined text-sm">content_copy</span>
-                      {copiedIdx === i ? "コピーしました" : "コピー"}
-                    </button>
-                  </div>
-                </div>
-                <span className="text-[10px] text-text-dim">
-                  AI Advisor {msg.timestamp && `\u2022 ${msg.timestamp}`}
-                </span>
-              </div>
-            </div>
-          ),
-        )}
+              ) : undefined
+            }
+          >
+            <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
+          </ChatBubble>
+        ))}
 
         {loading && (
-          <div className="flex justify-start gap-4">
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex-shrink-0 flex items-center justify-center border border-primary/30 mt-1">
-              <span className="material-symbols-outlined text-primary text-sm">psychology</span>
-            </div>
+          <div className="flex gap-4">
+            <ChatAvatar role="assistant" icon="psychology" />
             <div className="glass-bubble-ai px-4 py-3 rounded-2xl rounded-tl-sm shadow-lg flex items-center gap-1">
               <div
                 className="w-2 h-2 rounded-full bg-primary/50 animate-bounce"
