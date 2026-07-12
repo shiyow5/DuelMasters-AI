@@ -24,6 +24,8 @@ const ResponseType = {
   DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE: 5,
 } as const;
 
+const MessageFlags = { EPHEMERAL: 64 } as const;
+
 interface InteractionOption {
   name: string;
   type: number;
@@ -81,10 +83,18 @@ export default {
         ctx.waitUntil(sendPingFollowUp(interaction, env));
         return json({ type: ResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE });
       }
-      // Phase 2 で実装予定のコマンド
+      // Cloudflare 移行中の暫定応答。
+      // 注意 (単一アプリでは HTTP と gateway は排他): Interactions Endpoint URL を設定すると
+      // このアプリの全コマンドが HTTP 配信になり、gateway 版 (apps/bot/src/index.ts) は
+      // 一切 interaction を受け取らなくなる。実コマンド (rule/deck/meta/chat/format) の配線は
+      // Phase 2 (api の Workers 化直後) で実装するため、それまで ping 以外はこの移行中メッセージを返す。
       return json({
         type: ResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-        data: { content: "このコマンドはまだ Workers 上で未対応です (Phase 2 で配線予定)。" },
+        data: {
+          content:
+            "🚧 このコマンドは Cloudflare への移行中のため一時的に利用できません（次のフェーズで有効化予定）。現在は `/dm ping` のみ対応しています。",
+          flags: MessageFlags.EPHEMERAL, // 実行者にのみ表示
+        },
       });
     }
 
