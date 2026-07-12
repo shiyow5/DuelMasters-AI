@@ -6,9 +6,16 @@ export { Type } from "@google/genai";
 
 let _client: GoogleGenAI | null = null;
 
+// Cloudflare Workers には process.env が無く、API キーは binding 経由でしか渡せないため、
+// リクエストのミドルウェアから注入できるようにする。未注入なら process.env にフォールバック。
+let _apiKey: string | undefined;
+export function configureGemini(cfg: { apiKey?: string }): void {
+  if (cfg.apiKey) _apiKey = cfg.apiKey;
+}
+
 function getClient(): GoogleGenAI {
   if (!_client) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = _apiKey ?? process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
     _client = new GoogleGenAI({ apiKey });
   }
