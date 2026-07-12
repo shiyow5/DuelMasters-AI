@@ -4,6 +4,7 @@ import {
   HumanMessage,
   SystemMessage,
   ToolMessage,
+  RemoveMessage,
   type BaseMessage,
 } from "@langchain/core/messages";
 import { searchRules } from "@dm-ai/rag";
@@ -46,37 +47,45 @@ async function retrieveNode(state: AgentStateType): Promise<Partial<AgentStateTy
     text: ch.text.slice(0, 100),
     ...ch.meta,
   }));
-  return {
-    messages: [new HumanMessage(`以下のルール条文を参考に回答してください:\n\n${context}`)],
-    citations,
-  };
+  // context は messages に human として積まず、ragContext として system へ畳み込む。
+  return { ragContext: context, citations };
+}
+
+/** system 指示を組み立てる (rule モードは RAG 条文を畳み込む)。 */
+function buildSystemPrompt(state: AgentStateType): SystemMessage {
+  const base = SYSTEM_PROMPTS[state.mode];
+  const text = state.ragContext
+    ? `${base}\n\n以下のルール条文を参考に回答してください:\n\n${state.ragContext}`
+    : base;
+  return new SystemMessage(text);
 }
 
 /** LLM 呼び出し。ツール bind + コスト優先フォールバック。iterations を進める。 */
 async function agentNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
   const model = buildChatModel(AGENT_TOOLS);
-  const system = new SystemMessage(SYSTEM_PROMPTS[state.mode]);
-  const result = await model.invoke([system, ...state.messages]);
+  const result = await model.invoke([buildSystemPrompt(state), ...state.messages]);
   return { messages: [result], iterations: state.iterations + 1 };
 }
 
-/** 直前の AIMessage のツール呼び出しを実行し、ToolMessage と citations を返す。 */
+/** 直前の AIMessage のツール呼び出しを (並列に) 実行し、ToolMessage と citations を返す。 */
 async function toolsNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
   const last = state.messages.at(-1);
   if (!last || !AIMessage.isInstance(last) || !last.tool_calls?.length) return {};
-  const toolMessages: ToolMessage[] = [];
-  const newCitations: Citation[] = [];
-  for (const call of last.tool_calls) {
-    const { text, citations } = await runTool(call.name, call.args ?? {}, state.format);
-    if (citations?.length) newCitations.push(...citations);
-    toolMessages.push(
+  const results = await Promise.all(
+    last.tool_calls.map(async (call) => ({
+      call,
+      result: await runTool(call.name, call.args ?? {}, state.format),
+    })),
+  );
+  const toolMessages = results.map(
+    ({ call, result }) =>
       new ToolMessage({
-        content: text,
+        content: result.text,
         tool_call_id: call.id ?? call.name,
         name: call.name,
       }),
-    );
-  }
+  );
+  const newCitations = results.flatMap(({ result }) => result.citations ?? []);
   return {
     messages: toolMessages,
     citations: [...state.citations, ...newCitations],
@@ -91,15 +100,23 @@ async function toolsNode(state: AgentStateType): Promise<Partial<AgentStateType>
 async function finalizeNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
   const messages = [...state.messages];
   const last = messages.at(-1);
-  if (last && AIMessage.isInstance(last) && (last.tool_calls?.length ?? 0) > 0) {
-    messages.pop();
-  }
+  const dangling =
+    last && AIMessage.isInstance(last) && (last.tool_calls?.length ?? 0) > 0 ? last : undefined;
+  if (dangling) messages.pop();
+
   const model = buildChatModel([]);
   const system = new SystemMessage(
     `${SYSTEM_PROMPTS[state.mode]}\n\nこれ以上ツールは使用できません。現在得られている情報だけで最終回答を作成してください。`,
   );
   const result = await model.invoke([system, ...messages]);
-  return { messages: [result] };
+
+  // 未実行のツール呼び出しを含む AIMessage を state からも除去する。
+  // (messagesStateReducer は id で追記/マージするだけなので、ローカルの pop では state に残り、
+  //  runAgent の toolCalls 抽出に未実行分が混入してしまう)
+  const updates: BaseMessage[] = [];
+  if (dangling?.id) updates.push(new RemoveMessage({ id: dangling.id }));
+  updates.push(result);
+  return { messages: updates };
 }
 
 /** agent の後の分岐: ツール呼び出しの有無と反復上限で tools / finalize / 終了を決める。 */

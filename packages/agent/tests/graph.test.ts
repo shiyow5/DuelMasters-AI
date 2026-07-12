@@ -114,6 +114,10 @@ describe("runAgent グラフ制御フロー", () => {
     // agent を MAX 回 + finalize 1 回 = MAX+1 回モデルを呼ぶ
     expect(invokeMock).toHaveBeenCalledTimes(MAX_ITERATIONS + 1);
     expect(out.response).toBe("これ以上は現状の情報で回答します");
+    // 実行されたツールは MAX-1 回 (最後の反復のツール呼び出しは finalize 送りで未実行)
+    expect(runToolMock).toHaveBeenCalledTimes(MAX_ITERATIONS - 1);
+    // 未実行の dangling tool-call は RemoveMessage で除去され toolCalls に混入しない
+    expect(out.toolCalls).toHaveLength(MAX_ITERATIONS - 1);
   });
 
   it("history を messages に引き継ぐ", async () => {

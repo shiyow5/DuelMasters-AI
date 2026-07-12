@@ -9,8 +9,10 @@ export type Bindings = {
   INTERNAL_API_KEY?: string;
   GEMINI_API_KEY?: string;
   // 任意: モデルチェーン上書き (カンマ区切り)。Workers は process.env を読めないため env 経由で注入する。
+  // core (Gemma 優先) と agent (flash-lite 優先) は順序が逆なので env を分ける。
   GEMINI_CHAT_MODELS?: string;
   GEMINI_STRUCTURED_MODELS?: string;
+  AGENT_CHAT_MODELS?: string;
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   SUPABASE_ANON_KEY?: string;
@@ -35,10 +37,11 @@ export const dbEnv: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) 
     chatModels: parseModelEnv(env.GEMINI_CHAT_MODELS),
     structuredModels: parseModelEnv(env.GEMINI_STRUCTURED_MODELS),
   });
-  // LangGraph エージェント (@dm-ai/agent) も同じ接続情報を使う。
+  // LangGraph エージェント (@dm-ai/agent)。モデル上書きは agent 専用 env を使う
+  // (core の GEMINI_CHAT_MODELS は Gemma 優先で、agent に渡すとツールループ収束が壊れる)。
   configureAgent({
     apiKey: env.GEMINI_API_KEY,
-    chatModels: parseModelEnv(env.GEMINI_CHAT_MODELS),
+    chatModels: parseModelEnv(env.AGENT_CHAT_MODELS),
   });
 
   const connectionString = env.HYPERDRIVE?.connectionString;

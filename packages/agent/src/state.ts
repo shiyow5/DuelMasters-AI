@@ -13,6 +13,9 @@ export const AgentState = Annotation.Root({
   ...MessagesAnnotation.spec,
   mode: Annotation<AgentMode>(),
   format: Annotation<string | undefined>(),
+  // rule モードの RAG 条文。system 指示に畳み込む (2 連続 human メッセージを避けるため
+  // messages には積まない。Gemini は human/ai 交互が必要)。
+  ragContext: Annotation<string | undefined>(),
   citations: Annotation<Citation[]>({
     reducer: (_prev, next) => next,
     default: () => [],
