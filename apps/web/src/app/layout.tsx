@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { inter, notoSansJp, materialSymbols } from "./fonts";
 import Sidebar from "@/components/Sidebar";
+import { SidebarProvider } from "@/components/SidebarContext";
 
 export const metadata: Metadata = {
   title: "DM-AI | デュエル・マスターズ Q&A ボット",
@@ -13,20 +15,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ja" className="dark">
-      <head>
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
-          rel="stylesheet"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html
+      lang="ja"
+      className={`dark ${inter.variable} ${notoSansJp.variable} ${materialSymbols.variable}`}
+    >
       <body className="h-screen flex overflow-hidden bg-bg-dark text-text-main antialiased">
-        <Sidebar />
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">{children}</div>
+        <SidebarProvider>
+          <Sidebar />
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">{children}</div>
+        </SidebarProvider>
       </body>
     </html>
   );

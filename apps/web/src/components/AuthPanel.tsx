@@ -54,7 +54,7 @@ export default function AuthPanel() {
   if (userEmail) {
     return (
       <div className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-xl border border-border-subtle">
-        <div className="h-8 w-8 flex-shrink-0 rounded-full bg-gradient-to-tr from-primary to-primary-purple flex items-center justify-center text-[10px] font-bold text-white shadow-lg shadow-primary/20">
+        <div className="h-8 w-8 flex-shrink-0 rounded-full bg-gradient-to-tr from-primary to-primary-dark flex items-center justify-center text-[10px] font-bold text-bg-dark shadow-lg shadow-primary/20">
           {userEmail.slice(0, 2).toUpperCase()}
         </div>
         <div className="flex flex-col min-w-0 flex-1">
@@ -86,7 +86,7 @@ export default function AuthPanel() {
         placeholder="パスワード"
         className="w-full bg-bg-dark border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-main placeholder-text-dim focus:outline-none focus:ring-1 focus:ring-primary"
       />
-      {error && <p className="text-[10px] text-dm-fire">{error}</p>}
+      {error && <p className="text-[10px] text-danger">{error}</p>}
       {info && <p className="text-[10px] text-primary">{info}</p>}
       <div className="flex gap-2">
         <button

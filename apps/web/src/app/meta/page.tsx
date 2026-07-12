@@ -4,12 +4,14 @@ import { useState, useEffect } from "react";
 import { apiGet } from "@/lib/api";
 import { nameToHue } from "@/lib/format";
 import type { TierEntry, TierData } from "@/lib/types";
+import Header from "@/components/Header";
+import ErrorDisplay from "@/components/ErrorDisplay";
 
 const TIER_STYLES: Record<string, { accent: string; badge: string; valueColor: string }> = {
   Tier1: {
-    accent: "bg-gradient-to-b from-primary-purple to-primary-purple-light",
-    badge: "bg-bg-card text-primary-purple-light",
-    valueColor: "text-primary-purple-light",
+    accent: "bg-gradient-to-b from-primary to-primary-dark",
+    badge: "bg-bg-card text-primary",
+    valueColor: "text-primary",
   },
   Tier2: {
     accent: "bg-bg-surface-highlight",
@@ -51,33 +53,38 @@ export default function MetaPage() {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <header className="border-b border-border-highlight bg-bg-dark px-10 py-3 sticky top-0 z-10 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="w-8 h-8 rounded-full bg-primary-purple flex items-center justify-center">
-            <span className="material-symbols-outlined text-white text-[20px]">playing_cards</span>
+      <Header
+        left={
+          <div className="flex items-center gap-4">
+            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+              <span className="material-symbols-outlined text-bg-dark text-[20px]">
+                playing_cards
+              </span>
+            </div>
+            <h2 className="text-lg font-bold leading-tight tracking-tight text-white">環境分析</h2>
+            <span className="px-2 py-1 rounded bg-primary/20 text-primary text-xs font-bold uppercase tracking-wider border border-primary/30">
+              Beta
+            </span>
           </div>
-          <h2 className="text-lg font-bold leading-tight tracking-tight text-white">環境分析</h2>
-          <span className="px-2 py-1 rounded bg-primary-purple/20 text-primary-purple text-xs font-bold uppercase tracking-wider border border-primary-purple/30">
-            Beta
-          </span>
-        </div>
-        {/* Format Toggle */}
-        <div className="flex h-10 items-center justify-center rounded-lg bg-bg-card p-1">
-          {(["original", "advance"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFormat(f)}
-              className={`px-6 h-full rounded text-sm font-bold transition-all duration-200 ${
-                format === f
-                  ? "bg-bg-dark text-primary-purple-light shadow-sm"
-                  : "text-text-muted hover:text-white"
-              }`}
-            >
-              {f === "original" ? "オリジナル" : "アドバンス"}
-            </button>
-          ))}
-        </div>
-      </header>
+        }
+        right={
+          <div className="flex h-10 items-center justify-center rounded-lg bg-bg-card p-1">
+            {(["original", "advance"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFormat(f)}
+                className={`px-6 h-full rounded text-sm font-bold transition-all duration-200 ${
+                  format === f
+                    ? "bg-bg-dark text-primary shadow-sm"
+                    : "text-text-muted hover:text-white"
+                }`}
+              >
+                {f === "original" ? "オリジナル" : "アドバンス"}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
@@ -102,7 +109,7 @@ export default function MetaPage() {
                 onClick={() => setPeriod(p)}
                 className={`flex h-9 items-center justify-center gap-x-2 rounded-lg px-4 transition-colors ${
                   period === p
-                    ? "bg-primary-purple/20 text-primary-purple-light border border-primary-purple/30"
+                    ? "bg-primary/20 text-primary border border-primary/30"
                     : "bg-bg-card hover:bg-bg-card-hover text-white"
                 }`}
               >
@@ -121,11 +128,7 @@ export default function MetaPage() {
 
           {loading && <div className="py-12 text-center text-text-muted">読み込み中...</div>}
 
-          {error && (
-            <div className="rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
-              {error}
-            </div>
-          )}
+          {error && <ErrorDisplay message={error} variant="error" />}
 
           {data && data.tier_data.length > 0 && (
             <>
@@ -236,8 +239,8 @@ function DeckCard({ entry, tier }: { entry: TierEntry; tier: string }) {
               className={`text-lg font-bold ${
                 entry.win_rate !== null
                   ? entry.win_rate >= 50
-                    ? "text-emerald-500"
-                    : "text-dm-light"
+                    ? "text-success"
+                    : "text-warning"
                   : "text-text-dim"
               }`}
             >

@@ -6,6 +6,8 @@ import { scoreGrade } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import type { DeckScore, ValidationResult, SavedDeckSummary } from "@/lib/types";
 import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";
+import Header from "@/components/Header";
+import ErrorDisplay from "@/components/ErrorDisplay";
 
 export default function DeckPage() {
   const [decklist, setDecklist] = useState("");
@@ -18,8 +20,11 @@ export default function DeckPage() {
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const [saveOk, setSaveOk] = useState(false);
   const [myDecks, setMyDecks] = useState<SavedDeckSummary[]>([]);
   const [loggedIn, setLoggedIn] = useState(false);
+  // 読込/削除/評価/自動構築のエラーを画面内で統一表示する (alert は使わない)
+  const [pageError, setPageError] = useState("");
 
   const refreshMyDecks = useCallback(async () => {
     if (!supabase) {
@@ -60,10 +65,12 @@ export default function DeckPage() {
         format,
         decklist,
       });
+      setSaveOk(true);
       setSaveMsg("保存しました");
       setTitle("");
       await refreshMyDecks();
     } catch (err) {
+      setSaveOk(false);
       setSaveMsg(`保存に失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     } finally {
       setSaving(false);
@@ -74,6 +81,7 @@ export default function DeckPage() {
     if (decklist.trim() && !confirm("現在の入力を破棄してこのデッキを読み込みますか?")) {
       return;
     }
+    setPageError("");
     try {
       const deck = await apiGet<{
         cards: Array<{ name: string; count: number }>;
@@ -85,17 +93,18 @@ export default function DeckPage() {
       setValidation(null);
       setBuildResult("");
     } catch (err) {
-      alert(`読み込みに失敗しました: ${err instanceof Error ? err.message : "不明"}`);
+      setPageError(`読み込みに失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     }
   }
 
   async function deleteDeck(id: number) {
     if (!confirm("このデッキを削除しますか?")) return;
+    setPageError("");
     try {
       await apiDelete(`/api/deck/${id}`);
       await refreshMyDecks();
     } catch (err) {
-      alert(`削除に失敗しました: ${err instanceof Error ? err.message : "不明"}`);
+      setPageError(`削除に失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     }
   }
 
@@ -103,6 +112,7 @@ export default function DeckPage() {
     e.preventDefault();
     if (!decklist.trim() || loading) return;
     setLoading(true);
+    setPageError("");
     setScore(null);
     setValidation(null);
     try {
@@ -113,7 +123,7 @@ export default function DeckPage() {
       setScore(res.score);
       setValidation(res.validation);
     } catch (err) {
-      alert(`エラー: ${err instanceof Error ? err.message : "不明"}`);
+      setPageError(`評価に失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     } finally {
       setLoading(false);
     }
@@ -126,6 +136,7 @@ export default function DeckPage() {
       return;
     }
     setLoading(true);
+    setPageError("");
     setBuildResult("");
     try {
       const res = await apiPost<{
@@ -139,7 +150,7 @@ export default function DeckPage() {
       );
       setDecklist(deckText);
     } catch (err) {
-      setBuildResult(`エラー: ${err instanceof Error ? err.message : "不明"}`);
+      setPageError(`自動構築に失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     } finally {
       setLoading(false);
     }
@@ -158,39 +169,49 @@ export default function DeckPage() {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="px-8 py-6 border-b border-border-highlight bg-bg-surface/50 backdrop-blur-sm flex justify-between items-end">
-        <div>
-          <div className="flex items-center gap-2 text-text-muted text-sm mb-1">
-            <span>Decks</span>
-            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span className="text-white">デッキビルダー</span>
+      <Header
+        left={
+          <div>
+            <div className="flex items-center gap-2 text-text-muted text-sm mb-1">
+              <span>Decks</span>
+              <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+              <span className="text-white">デッキビルダー</span>
+            </div>
+            <h1 className="text-3xl font-bold text-white">デッキ構築・評価</h1>
           </div>
-          <h1 className="text-3xl font-bold text-white">デッキ構築・評価</h1>
-        </div>
-        {/* Format Toggle */}
-        <div className="flex gap-2">
-          {(["original", "advance"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => {
-                setFormat(f);
-                setScore(null);
-                setValidation(null);
-              }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                format === f
-                  ? "bg-primary/20 text-primary border border-primary/20"
-                  : "bg-bg-surface-highlight text-text-muted hover:text-white border border-border-subtle"
-              }`}
-            >
-              {f === "original" ? "Original" : "Advance"}
-            </button>
-          ))}
-        </div>
-      </div>
+        }
+        right={
+          <div className="flex gap-2">
+            {(["original", "advance"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => {
+                  setFormat(f);
+                  setScore(null);
+                  setValidation(null);
+                }}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  format === f
+                    ? "bg-primary/20 text-primary border border-primary/20"
+                    : "bg-bg-surface-highlight text-text-muted hover:text-white border border-border-subtle"
+                }`}
+              >
+                {f === "original" ? "Original" : "Advance"}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
       {/* Dashboard Columns */}
       <div className="flex-1 overflow-y-auto lg:overflow-hidden p-6 grid grid-cols-12 gap-6">
+        {/* ページ全体のエラー (読込/削除/評価/自動構築) */}
+        {pageError && (
+          <div className="col-span-12">
+            <ErrorDisplay message={pageError} variant="error" onDismiss={() => setPageError("")} />
+          </div>
+        )}
+
         {/* Left Column: Deck Input */}
         <div className="col-span-12 lg:col-span-3 flex flex-col gap-6 lg:overflow-y-auto lg:pr-2">
           {/* Deck List Input */}
@@ -229,7 +250,7 @@ export default function DeckPage() {
                   type="button"
                   onClick={handleBuild}
                   disabled={loading || !theme.trim()}
-                  className="flex-1 py-2 bg-gradient-to-r from-primary to-cyan-400 hover:opacity-90 text-bg-dark rounded-lg text-sm font-bold transition-opacity shadow-lg shadow-primary/10 flex justify-center items-center gap-2 disabled:opacity-50"
+                  className="flex-1 py-2 bg-gradient-to-r from-primary to-primary-dark hover:opacity-90 text-bg-dark rounded-lg text-sm font-bold transition-opacity shadow-lg shadow-primary/10 flex justify-center items-center gap-2 disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-[18px]">auto_fix_high</span>
                   Auto Build
@@ -287,7 +308,7 @@ export default function DeckPage() {
                       </button>
                       <button
                         onClick={() => deleteDeck(d.id)}
-                        className="text-text-dim hover:text-dm-fire transition-colors flex-shrink-0"
+                        className="text-text-dim hover:text-danger transition-colors flex-shrink-0"
                         title="削除"
                       >
                         <span className="material-symbols-outlined text-[18px]">delete</span>
@@ -504,7 +525,7 @@ export default function DeckPage() {
             <div className="relative pt-1">
               <div className="overflow-hidden h-2 mb-2 text-xs flex rounded bg-bg-surface-highlight">
                 <div
-                  className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-dm-light"
+                  className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-warning"
                   style={{
                     width: `${Math.min(((score?.triggerCount ?? 0) / 20) * 100, 100)}%`,
                   }}
@@ -513,7 +534,7 @@ export default function DeckPage() {
               <div className="flex justify-between text-[10px] text-text-muted font-medium">
                 <span>0</span>
                 <span>Low</span>
-                <span className="text-dm-light">Avg (8)</span>
+                <span className="text-warning">Avg (8)</span>
                 <span>High</span>
                 <span>20</span>
               </div>
@@ -541,7 +562,9 @@ export default function DeckPage() {
                   >
                     {saving ? "保存中..." : "保存"}
                   </button>
-                  {saveMsg && <p className="text-xs text-text-muted">{saveMsg}</p>}
+                  {saveMsg && (
+                    <ErrorDisplay message={saveMsg} variant={saveOk ? "success" : "error"} />
+                  )}
                 </div>
               ) : (
                 <p className="text-xs text-text-dim">ログインすると保存できます</p>

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { apiPost } from "@/lib/api";
 import { getTime } from "@/lib/format";
 import type { Citation, Message } from "@/lib/types";
+import Header from "@/components/Header";
+import ChatBubble, { ChatAvatar } from "@/components/ChatBubble";
 
 const COMMON_KEYWORDS = [
   "マッハファイター",
@@ -66,14 +68,16 @@ export default function RulePage() {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <header className="h-16 border-b border-border-subtle bg-bg-dark/80 backdrop-blur-md flex items-center justify-between px-8">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-bold text-white tracking-tight">AIルール審査員</h2>
-          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary-purple text-white uppercase tracking-wider">
-            Beta
-          </span>
-        </div>
-      </header>
+      <Header
+        left={
+          <div className="flex items-center gap-4">
+            <h2 className="text-xl font-bold text-white tracking-tight">AIルール審査員</h2>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary text-bg-dark uppercase tracking-wider">
+              Beta
+            </span>
+          </div>
+        }
+      />
 
       {/* Split View */}
       <div className="flex-1 flex overflow-hidden">
@@ -83,96 +87,65 @@ export default function RulePage() {
           <div className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
             {/* Welcome */}
             {messages.length === 0 && (
-              <div className="flex gap-4 max-w-3xl mx-auto w-full">
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-bg-surface flex items-center justify-center border border-border-subtle">
-                  <span className="material-symbols-outlined text-primary-purple text-xl">
-                    smart_toy
-                  </span>
-                </div>
-                <div className="flex flex-col gap-2 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-bold text-text-main">AIジャッジ</span>
-                    <span className="text-xs text-text-dim">{getTime()}</span>
-                  </div>
-                  <div className="p-4 rounded-2xl rounded-tl-none glass-bubble-ai-purple text-text-main leading-relaxed shadow-sm">
-                    <p>
-                      こんにちは！デュエル・マスターズのルールについて何か質問はありますか？
-                      <br />
-                      カードの効果処理、タイミング、キーワード能力など、何でも聞いてください。
-                    </p>
-                  </div>
-                </div>
+              <div className="max-w-3xl mx-auto w-full">
+                <ChatBubble
+                  role="assistant"
+                  name="AIジャッジ"
+                  timestamp={getTime()}
+                  aiIcon="smart_toy"
+                >
+                  <p className="leading-relaxed text-sm">
+                    こんにちは！デュエル・マスターズのルールについて何か質問はありますか？
+                    <br />
+                    カードの効果処理、タイミング、キーワード能力など、何でも聞いてください。
+                  </p>
+                </ChatBubble>
               </div>
             )}
 
-            {messages.map((msg, i) =>
-              msg.role === "user" ? (
-                <div key={i} className="flex gap-4 flex-row-reverse max-w-3xl mx-auto w-full">
-                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-primary-purple flex items-center justify-center text-[10px] font-bold text-white">
-                    DU
-                  </div>
-                  <div className="flex flex-col gap-2 items-end flex-1">
-                    <div className="flex items-baseline gap-2 flex-row-reverse">
-                      <span className="text-sm font-bold text-text-main">あなた</span>
-                      <span className="text-xs text-text-dim">{msg.timestamp}</span>
-                    </div>
-                    <div className="p-4 rounded-2xl rounded-tr-none bg-primary-purple text-white leading-relaxed shadow-lg shadow-primary-purple/10">
-                      <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div key={i} className="flex gap-4 max-w-3xl mx-auto w-full">
-                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-bg-surface flex items-center justify-center border border-border-subtle">
-                    <span className="material-symbols-outlined text-primary-purple text-xl">
-                      smart_toy
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-2 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-bold text-text-main">AIジャッジ</span>
-                      <span className="text-xs text-text-dim">{msg.timestamp}</span>
-                    </div>
-                    <div className="p-4 rounded-2xl rounded-tl-none glass-bubble-ai-purple text-text-main leading-relaxed shadow-sm">
-                      <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
-                      {msg.citations && msg.citations.length > 0 && (
-                        <div className="mt-4 pt-3 border-t border-white/5 flex flex-wrap gap-2">
-                          {msg.citations.map((c, ci) => (
-                            <button
-                              key={ci}
-                              className="text-xs bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-colors text-text-muted"
-                              onClick={() => setActiveKeyword(c.text)}
-                            >
-                              {c.article && `条${c.article}: `}
-                              {c.text.slice(0, 30)}...
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ),
-            )}
+            {messages.map((msg, i) => (
+              <div key={i} className="max-w-3xl mx-auto w-full">
+                <ChatBubble
+                  role={msg.role}
+                  name={msg.role === "user" ? "あなた" : "AIジャッジ"}
+                  timestamp={msg.timestamp}
+                  aiIcon="smart_toy"
+                  footer={
+                    msg.citations && msg.citations.length > 0 ? (
+                      <div className="mt-4 pt-3 border-t border-white/5 flex flex-wrap gap-2">
+                        {msg.citations.map((c, ci) => (
+                          <button
+                            key={ci}
+                            className="text-xs bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-colors text-text-muted"
+                            onClick={() => setActiveKeyword(c.text)}
+                          >
+                            {c.article && `条${c.article}: `}
+                            {c.text.slice(0, 30)}...
+                          </button>
+                        ))}
+                      </div>
+                    ) : undefined
+                  }
+                >
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                </ChatBubble>
+              </div>
+            ))}
 
             {loading && (
-              <div className="flex gap-4 max-w-3xl mx-auto w-full">
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-bg-surface flex items-center justify-center border border-border-subtle">
-                  <span className="material-symbols-outlined text-primary-purple text-xl">
-                    smart_toy
-                  </span>
-                </div>
-                <div className="glass-bubble-ai-purple px-4 py-3 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-1">
+              <div className="max-w-3xl mx-auto w-full flex gap-4">
+                <ChatAvatar role="assistant" icon="smart_toy" />
+                <div className="glass-bubble-ai px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-1">
                   <div
-                    className="w-2 h-2 rounded-full bg-primary-purple/50 animate-bounce"
+                    className="w-2 h-2 rounded-full bg-primary/50 animate-bounce"
                     style={{ animationDelay: "0ms" }}
                   />
                   <div
-                    className="w-2 h-2 rounded-full bg-primary-purple/50 animate-bounce"
+                    className="w-2 h-2 rounded-full bg-primary/50 animate-bounce"
                     style={{ animationDelay: "150ms" }}
                   />
                   <div
-                    className="w-2 h-2 rounded-full bg-primary-purple/50 animate-bounce"
+                    className="w-2 h-2 rounded-full bg-primary/50 animate-bounce"
                     style={{ animationDelay: "300ms" }}
                   />
                 </div>
@@ -192,14 +165,14 @@ export default function RulePage() {
                     handleSearch(e);
                   }
                 }}
-                className="w-full bg-bg-surface border border-border-subtle rounded-xl px-4 py-4 pr-12 text-white placeholder-text-dim focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent resize-none shadow-lg text-sm"
+                className="w-full bg-bg-surface border border-border-subtle rounded-xl px-4 py-4 pr-12 text-white placeholder-text-dim focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none shadow-lg text-sm"
                 placeholder="ルールの質問を入力してください... (例: マッハファイターとは？)"
                 rows={2}
               />
               <button
                 type="submit"
                 disabled={loading || !query.trim()}
-                className="absolute right-3 bottom-3 p-2 bg-primary-purple hover:bg-primary-purple/90 text-white rounded-lg transition-colors flex items-center justify-center shadow-lg shadow-primary-purple/20 disabled:opacity-50"
+                className="absolute right-3 bottom-3 p-2 bg-primary hover:bg-primary-dark text-bg-dark rounded-lg transition-colors flex items-center justify-center shadow-lg shadow-primary/20 disabled:opacity-50"
               >
                 <span className="material-symbols-outlined text-[20px]">send</span>
               </button>
@@ -214,7 +187,7 @@ export default function RulePage() {
         <aside className="w-96 bg-bg-card border-l border-border-subtle flex flex-col overflow-hidden hidden xl:flex">
           <div className="p-5 border-b border-border-subtle">
             <h3 className="text-white font-bold text-lg flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary-purple">menu_book</span>
+              <span className="material-symbols-outlined text-primary">menu_book</span>
               クイックリファレンス
             </h3>
           </div>
@@ -223,7 +196,7 @@ export default function RulePage() {
             {activeKeyword && (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-primary-purple font-bold text-sm uppercase tracking-wider">
+                  <h4 className="text-primary font-bold text-sm uppercase tracking-wider">
                     選択中の引用
                   </h4>
                   <button
@@ -233,7 +206,7 @@ export default function RulePage() {
                     <span className="material-symbols-outlined text-sm">close</span>
                   </button>
                 </div>
-                <div className="bg-bg-surface/50 border border-primary-purple/30 rounded-lg p-4">
+                <div className="bg-bg-surface/50 border border-primary/30 rounded-lg p-4">
                   <p className="text-sm text-text-main leading-relaxed">{activeKeyword}</p>
                 </div>
               </div>
@@ -249,7 +222,7 @@ export default function RulePage() {
                   <button
                     key={kw}
                     onClick={() => setQuery(kw + "とは？")}
-                    className="px-3 py-1.5 rounded-md bg-bg-surface border border-border-subtle text-xs text-text-muted hover:border-primary-purple/50 hover:text-white cursor-pointer transition-colors"
+                    className="px-3 py-1.5 rounded-md bg-bg-surface border border-border-subtle text-xs text-text-muted hover:border-primary/50 hover:text-white cursor-pointer transition-colors"
                   >
                     {kw}
                   </button>
@@ -258,9 +231,9 @@ export default function RulePage() {
             </div>
 
             {/* Official Link */}
-            <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-primary-purple/10 to-transparent border border-primary-purple/20">
+            <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-transparent border border-primary/20">
               <div className="flex items-center gap-3 mb-2">
-                <div className="bg-primary-purple/20 p-2 rounded-lg text-primary-purple">
+                <div className="bg-primary/20 p-2 rounded-lg text-primary">
                   <span className="material-symbols-outlined">gavel</span>
                 </div>
                 <h5 className="text-white font-bold text-sm">公式総合ルール</h5>
@@ -270,7 +243,7 @@ export default function RulePage() {
                 href="https://dm.takaratomy.co.jp/rule/rulechange/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full py-2 bg-bg-surface hover:bg-primary-purple hover:text-white border border-border-subtle hover:border-primary-purple/50 text-text-main text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-2"
+                className="w-full py-2 bg-bg-surface hover:bg-primary hover:text-bg-dark border border-border-subtle hover:border-primary/50 text-text-main text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-2"
               >
                 PDFを開く
                 <span className="material-symbols-outlined text-[16px]">open_in_new</span>
