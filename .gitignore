@@ -8,3 +8,8 @@ dist/
 .DS_Store
 coverage/
 .vercel/
+
+# 開発者向けサポート/計画ドキュメント (リポジトリには含めない)
+CLOUD_ARCHITECTURE_COMPARISON.md
+IMPLEMENTATION_PLAN.md
+REFACTORING_PLAN.md
