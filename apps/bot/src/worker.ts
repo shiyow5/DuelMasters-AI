@@ -93,17 +93,28 @@ export default {
 };
 
 /**
- * #7936 検証用: deferred レスポンスの後に follow-up webhook で元メッセージを編集する。
- * この PATCH が Workers から確実に解決するか (hang しないか) が Phase 1 の検証対象。
+ * deferred レスポンスの後に follow-up webhook で元メッセージを編集する。
+ *
+ * 重要: `User-Agent` ヘッダは必須級。無いと Workers→Discord の follow-up fetch が
+ * hang して応答が「考え中…」のまま止まる (discord-api-docs#7936)。UA を付けると解消する
+ * (本番検証で 5/5 status=200 を確認済み)。Phase 2 の実コマンド follow-up でも必ず付けること。
  */
+const DISCORD_UA = "DM-AI-Bot (https://github.com/shiyow5/DuelMasters-AI, 0.1)";
+
 async function sendPingFollowUp(interaction: DiscordInteraction, env: Env): Promise<void> {
   const url = `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${interaction.token}/messages/@original`;
-  const res = await fetch(url, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ content: "🏓 pong — follow-up webhook OK (#7936 検証)" }),
-  });
-  if (!res.ok) {
-    console.error(`follow-up webhook failed: ${res.status} ${await res.text()}`);
+  try {
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "user-agent": DISCORD_UA },
+      body: JSON.stringify({ content: "🏓 pong — follow-up webhook OK (#7936 検証)" }),
+    });
+    if (!res.ok) {
+      console.error(`follow-up failed: ${res.status} ${await res.text()}`);
+    }
+  } catch (err) {
+    console.error(
+      `follow-up threw: ${err instanceof Error ? err.stack || err.message : String(err)}`,
+    );
   }
 }
