@@ -13,6 +13,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
+    "eval": "tsx eval/run.ts",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@types/node": "^20",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }
 }

@@ -9,12 +9,21 @@ async function main() {
     case "rules":
       await import("./jobs/ingest-rules.js");
       break;
-    case "cards":
-      await import("./jobs/ingest-cards.js");
+    case "cards": {
+      const { runIngestCards, parseCardsArgs } = await import("./jobs/ingest-cards.js");
+      await runIngestCards(parseCardsArgs(process.argv.slice(3)));
       break;
-    case "regulations":
-      await import("./jobs/ingest-regulations.js");
+    }
+    case "regulations": {
+      const { runIngestRegulations } = await import("./jobs/ingest-regulations.js");
+      await runIngestRegulations();
       break;
+    }
+    case "rulings": {
+      const { runIngestRulings, parseRulingsArgs } = await import("./jobs/ingest-rulings.js");
+      await runIngestRulings(parseRulingsArgs(process.argv.slice(3)));
+      break;
+    }
     case "tags": {
       const { runIngestTags } = await import("./jobs/ingest-tags.js");
       await runIngestTags({ onlyEmpty: !process.argv.includes("--all") });
