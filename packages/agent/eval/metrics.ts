@@ -55,6 +55,7 @@ export function aggregate(
   n: number;
   errors: number;
   toolRecall: number | null;
+  toolPrecision: number | null;
   citationRecall: number | null;
   citationPrecision: number | null;
   factCoverage: number | null;
@@ -66,6 +67,8 @@ export function aggregate(
     n: results.length,
     errors: results.length - ok.length,
     toolRecall: mean(ok.filter((r) => r.tool).map((r) => r.tool!.recall)),
+    // toolPrecision: 無関係ツールを乱発する退化戦略を検出する (期待ツールに含まれない呼び出しを罰する)
+    toolPrecision: mean(ok.filter((r) => r.tool).map((r) => r.tool!.precision)),
     citationRecall: mean(ok.filter((r) => r.citation).map((r) => r.citation!.recall)),
     citationPrecision: mean(ok.filter((r) => r.citation).map((r) => r.citation!.precision)),
     factCoverage: mean(ok.filter((r) => r.factCoverage !== undefined).map((r) => r.factCoverage!)),

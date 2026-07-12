@@ -73,6 +73,7 @@ describe("aggregate", () => {
     expect(agg.n).toBe(3);
     expect(agg.errors).toBe(1);
     expect(agg.toolRecall).toBe(0.5); // (1 + 0) / 2
+    expect(agg.toolPrecision).toBe(1); // (1 + 1) / 2 (actual空は precision 1)
     expect(agg.citationRecall).toBe(1); // 1 件のみ
     expect(agg.judgeMean).toBe(3); // (4 + 2) / 2
     expect(agg.factCoverage).toBeNull(); // 該当なし

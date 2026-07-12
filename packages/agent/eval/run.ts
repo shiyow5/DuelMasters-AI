@@ -70,12 +70,12 @@ function renderReport(agg: ReturnType<typeof aggregate>): string {
     "## Eval Report",
     "",
     `- 対象: ${agg.n}件 (エラー ${agg.errors})`,
-    `- ツール軌跡 recall: **${fmt(agg.toolRecall)}**`,
+    `- ツール軌跡 recall / precision: **${fmt(agg.toolRecall)}** / **${fmt(agg.toolPrecision)}**`,
     `- 引用 recall / precision: **${fmt(agg.citationRecall)}** / ${fmt(agg.citationPrecision)}`,
     `- 事実カバレッジ: **${fmt(agg.factCoverage)}**`,
     `- judge 平均 (1-5): **${fmt(agg.judgeMean)}**`,
     "",
-    "閾値目安: 引用recall≥0.8 / judge平均≥3.5 / ハルシネーションは judge 減点で捕捉",
+    "閾値目安: ツールrecall≥0.8 / ツールprecision≥0.8 / judge平均≥3.5 / ハルシネーションは judge 減点で捕捉",
   ].join("\n");
 }
 
