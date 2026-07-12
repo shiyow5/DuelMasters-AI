@@ -52,8 +52,8 @@ const EMBEDDING_MODEL = "gemini-embedding-001";
 /** 埋め込みの次元数 */
 const EMBEDDING_DIMENSIONS = 768;
 
-/** カンマ区切りのモデル env をパースする (空なら undefined) */
-function parseModelEnv(value: string | undefined): string[] | undefined {
+/** カンマ区切りのモデル env をパースする (空なら undefined)。Workers の env 注入でも再利用する。 */
+export function parseModelEnv(value: string | undefined): string[] | undefined {
   if (!value) return undefined;
   const list = value
     .split(",")
@@ -62,15 +62,16 @@ function parseModelEnv(value: string | undefined): string[] | undefined {
   return list.length > 0 ? list : undefined;
 }
 
+// 既定チェーンは共有参照を返さずコピーする (呼び出し側の破壊的変更でプロセス全体の
+// 既定が壊れるのを防ぐ)。注入値/env 由来は既に都度生成された配列なのでそのまま返す。
 function getChatModels(): string[] {
-  return _chatModels ?? parseModelEnv(process.env.GEMINI_CHAT_MODELS) ?? DEFAULT_CHAT_MODELS;
+  return _chatModels ?? parseModelEnv(process.env.GEMINI_CHAT_MODELS) ?? [...DEFAULT_CHAT_MODELS];
 }
 
 function getStructuredModels(): string[] {
   return (
     _structuredModels ??
-    parseModelEnv(process.env.GEMINI_STRUCTURED_MODELS) ??
-    DEFAULT_STRUCTURED_MODELS
+    parseModelEnv(process.env.GEMINI_STRUCTURED_MODELS) ?? [...DEFAULT_STRUCTURED_MODELS]
   );
 }
 
@@ -95,6 +96,9 @@ async function withModelFallback<T>(
   models: string[],
   run: (model: string) => Promise<T>,
 ): Promise<T> {
+  if (models.length === 0) {
+    throw new Error("withModelFallback: モデルが1つも指定されていません");
+  }
   let lastError: unknown;
   for (let i = 0; i < models.length; i++) {
     try {
@@ -229,7 +233,9 @@ export interface StructuredOptions {
 
 /**
  * JSON 強制出力 + Zod 検証付きの生成。
- * Zod 検証に失敗した場合は1回だけ再試行し、それでも失敗なら例外を投げる。
+ * 各モデル内で Zod 検証に失敗したら1回だけ再試行し、2回とも失敗なら例外を投げる。
+ * レート制限(429)等では構造化モデルチェーン (getStructuredModels) の次モデルへ
+ * フォールバックする (検証失敗自体はフォールバック対象外)。
  */
 export async function generateStructured<T>(
   prompt: string,

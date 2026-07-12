@@ -91,6 +91,13 @@ describe("isRetryableModelError", () => {
     expect(isRetryableModelError(null)).toBe(false);
     expect(isRetryableModelError(undefined)).toBe(false);
   });
+
+  it("トークン数など数字に埋め込まれた 429/503 では誤検知しない", async () => {
+    const { isRetryableModelError } = await import("../src/gemini.js");
+    expect(isRetryableModelError(new Error("token count: 1429"))).toBe(false);
+    expect(isRetryableModelError(new Error("used 42900 tokens"))).toBe(false);
+    expect(isRetryableModelError(new Error("id 5039 not found"))).toBe(false);
+  });
 });
 
 describe("chat モデルフォールバック", () => {

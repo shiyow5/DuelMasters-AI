@@ -1,12 +1,15 @@
 import type { MiddlewareHandler } from "hono";
 import { configureDb, createSql, runWithSql } from "@dm-ai/db";
-import { configureGemini } from "@dm-ai/core";
+import { configureGemini, parseModelEnv } from "@dm-ai/core";
 
 /** Cloudflare Workers の env バインディング (Node 実行時は未設定でも動くよう全て optional)。 */
 export type Bindings = {
   HYPERDRIVE?: { connectionString: string };
   INTERNAL_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  // 任意: モデルチェーン上書き (カンマ区切り)。Workers は process.env を読めないため env 経由で注入する。
+  GEMINI_CHAT_MODELS?: string;
+  GEMINI_STRUCTURED_MODELS?: string;
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   SUPABASE_ANON_KEY?: string;
@@ -26,7 +29,11 @@ export const dbEnv: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) 
     supabaseUrl: env.SUPABASE_URL,
     supabaseKey: env.SUPABASE_SERVICE_ROLE_KEY ?? env.SUPABASE_ANON_KEY,
   });
-  configureGemini({ apiKey: env.GEMINI_API_KEY });
+  configureGemini({
+    apiKey: env.GEMINI_API_KEY,
+    chatModels: parseModelEnv(env.GEMINI_CHAT_MODELS),
+    structuredModels: parseModelEnv(env.GEMINI_STRUCTURED_MODELS),
+  });
 
   const connectionString = env.HYPERDRIVE?.connectionString;
   if (!connectionString) {
