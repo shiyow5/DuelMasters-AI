@@ -1,0 +1,15 @@
+{
+  // Discord bot (HTTP Interactions) — Cloudflare Workers 設定
+  // 実値は非機密のため vars に置くが、リポジトリにはコミットしない (デプロイ時に設定)。
+  //   DISCORD_PUBLIC_KEY / DISCORD_APPLICATION_ID: Discord Developer Portal で取得し、
+  //   `wrangler deploy` 前にダッシュボードの Variables もしくは下記 vars を上書きして設定する。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dm-ai-bot",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-06-01",
+  "observability": { "enabled": true },
+  "vars": {
+    "DISCORD_PUBLIC_KEY": "",
+    "DISCORD_APPLICATION_ID": "",
+  },
+}

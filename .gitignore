@@ -4,6 +4,7 @@ dist/
 .next/
 .env
 .env.local
+.dev.vars
 *.log
 .DS_Store
 coverage/

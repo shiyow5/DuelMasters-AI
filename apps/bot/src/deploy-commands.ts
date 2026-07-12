@@ -98,6 +98,9 @@ const commands = [
         .addStringOption((opt) =>
           opt.setName("message").setDescription("メッセージ").setRequired(true),
         ),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("ping").setDescription("Workers 疎通確認 (defer→follow-up の動作検証)"),
     ),
 ].map((cmd) => cmd.toJSON());
 
