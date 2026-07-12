@@ -1,0 +1,14 @@
+{
+  // Discord bot (HTTP Interactions) — Cloudflare Workers 設定
+  // DISCORD_PUBLIC_KEY / DISCORD_APPLICATION_ID はいずれも Discord の公開情報 (非機密) のため
+  // vars に直接記載する。Bot Token 等の機密は Worker では使わない (コマンド登録時のみ・別管理)。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dm-ai-bot",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-06-01",
+  "observability": { "enabled": true },
+  "vars": {
+    "DISCORD_PUBLIC_KEY": "acd27716f4dc9410a5a52a72babecd0688b503e09e26d3135ee74c1a2b3cb4a1",
+    "DISCORD_APPLICATION_ID": "1525792807053168753",
+  },
+}
