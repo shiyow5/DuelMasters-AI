@@ -117,7 +117,7 @@ describe("chat モデルフォールバック", () => {
     expect(res.text).toBe("ok");
     expect(generateContentMock).toHaveBeenCalledTimes(2);
     expect(generateContentMock.mock.calls[0][0].model).toBe("gemma-4-31b-it");
-    expect(generateContentMock.mock.calls[1][0].model).toBe("gemini-2.5-flash-lite");
+    expect(generateContentMock.mock.calls[1][0].model).toBe("gemini-3.1-flash-lite");
   });
 
   it("非リトライ系(400)はフォールバックせず即失敗", async () => {
@@ -189,8 +189,8 @@ describe("generateStructured モデルフォールバック", () => {
       .mockResolvedValueOnce(makeResponse(JSON.stringify({ name: "a", value: 1 })));
     const res = await generateStructured("p", schema, { responseSchema: {} });
     expect(res).toEqual({ name: "a", value: 1 });
-    expect(generateContentMock.mock.calls[0][0].model).toBe("gemini-2.5-flash-lite");
-    expect(generateContentMock.mock.calls[1][0].model).toBe("gemini-2.5-flash");
+    expect(generateContentMock.mock.calls[0][0].model).toBe("gemini-3.1-flash-lite");
+    expect(generateContentMock.mock.calls[1][0].model).toBe("gemini-flash-latest");
   });
 
   it("構造化チェーンは Gemma を含まない (responseSchema 非対応のため)", async () => {
