@@ -275,7 +275,15 @@ pnpm turbo build --filter=@dm-ai/web
 
 ## 本番デプロイ (Cloudflare Workers)
 
-main の CI が成功すると `.github/workflows/deploy.yml` が api / bot Worker を自動デプロイする。
+main の CI が成功すると `.github/workflows/deploy.yml` が api / web Worker を自動デプロイする。
+bot は Discord の Interactions Endpoint を差し替える性質上、`workflow_dispatch` で明示的に選んだときだけ出す。
+
+| コンポーネント | URL                                                                             |
+| -------------- | ------------------------------------------------------------------------------- |
+| web            | https://dm-ai.shiyow.dev (Custom Domain) / https://dm-ai-web.shiyow.workers.dev |
+| api            | https://dm-ai-api.shiyow.workers.dev                                            |
+| bot            | https://dm-ai-bot.shiyow.workers.dev (Discord Interactions Endpoint)            |
+
 手動デプロイに頼ると main と本番が乖離する (提供終了した Gemini モデルを使う古い Worker が
 残り続け `/api/chat` が 500 を返していた実例あり)。
 

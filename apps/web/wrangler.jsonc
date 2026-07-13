@@ -10,6 +10,15 @@
   "compatibility_date": "2026-06-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "observability": { "enabled": true },
+  // 独自ドメイン。shiyow.dev は既に Cloudflare のゾーンなので、custom_domain を宣言すれば
+  // deploy 時に DNS レコードと証明書が自動で作られる (ダッシュボードでの手作業は不要)。
+  // ルートの shiyow.dev はポートフォリオが使っているため触らず、サブドメインだけを使う。
+  "routes": [
+    {
+      "pattern": "dm-ai.shiyow.dev",
+      "custom_domain": true,
+    },
+  ],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS",
