@@ -129,3 +129,33 @@ describe.skipIf(!hasTestDb)("runTool build_deck クリーチャー下限 (統合
     expect(creatures).toBe(4);
   });
 });
+
+describe("AGENT_TOOLS の JSON Schema (Gemini 互換)", () => {
+  // Gemini の function declaration は exclusiveMinimum/exclusiveMaximum を受け付けず 400 を返す。
+  // zod の .positive()/.negative() は排他境界 (inclusive: false) を作り、これに変換される。
+  // 実際に min_creatures: z.number().int().positive() で eval 35問すべてが ERR になった。
+  it("排他境界 (.positive() 等) を使っていない", async () => {
+    const { AGENT_TOOLS } = await import("../src/tools.js");
+
+    /** zod スキーマを再帰的に辿り、排他境界を持つ数値フィールドのパスを集める。 */
+    function findExclusiveBounds(schema: unknown, path: string): string[] {
+      const def = (schema as { _def?: Record<string, unknown> })?._def;
+      if (!def) return [];
+      const checks = def.checks as Array<{ kind: string; inclusive?: boolean }> | undefined;
+      const hit = (checks ?? [])
+        .filter((c) => (c.kind === "min" || c.kind === "max") && c.inclusive === false)
+        .map(() => path);
+      const shape = def.shape as (() => Record<string, unknown>) | undefined;
+      const nested = shape
+        ? Object.entries(shape()).flatMap(([k, v]) => findExclusiveBounds(v, `${path}.${k}`))
+        : [];
+      const inner = def.innerType ?? def.type ?? def.schema;
+      return [...hit, ...nested, ...(inner ? findExclusiveBounds(inner, path) : [])];
+    }
+
+    const offenders = AGENT_TOOLS.flatMap((t) =>
+      findExclusiveBounds((t as { schema: unknown }).schema, (t as { name: string }).name),
+    );
+    expect(offenders).toEqual([]);
+  });
+});
