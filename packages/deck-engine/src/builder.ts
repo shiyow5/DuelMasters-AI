@@ -109,38 +109,73 @@ export async function autoBuild(
     ブースト: 4,
   };
 
-  const usedNames = new Set(entries.map((e) => e.name));
   const minCreatures = constraints.minCreatures ?? Math.round(DECK_SIZE * MIN_CREATURE_RATIO);
-  // 必須カード (手順1で投入済み) の種別は取得していないため、ここでは 0 から数える。
-  // 最低枚数を下回る側に倒れるだけなので安全側。
+
+  // 採用済み枚数を名前ごとに持つ。cap 付きで部分的にしか入らなかったカードを
+  // 後のパスで上限まで積み増せるようにするため、Set (使用済みフラグ) では足りない。
+  const counts = new Map(entries.map((e) => [e.name, e.count]));
+  const entryIndex = new Map(entries.map((e, i) => [e.name, i]));
+
+  // 必須カードにクリーチャーが含まれていれば下限に数える。0 から数え直すと、
+  // 全部クリーチャーの必須構築でも下限ぶんの枠を余計に予約し、「クリーチャーが0枚」と
+  // 誤って警告してしまう。
   let creatureCount = 0;
+  if (counts.size > 0) {
+    // cards.name に UNIQUE 制約は無く upsert は official_id 単位なので、再録カード (別 official_id・
+    // 同名) があると同名で複数行返る。DISTINCT ON で1名1行に絞らないと、採用枚数を行数ぶん
+    // 足してしまい (4枚 → 8枚)、クリーチャー補充が発火しなくなる。
+    const requiredTypes = await sql`
+      SELECT DISTINCT ON (name) name, type
+      FROM cards WHERE name IN ${sql(Array.from(counts.keys()))}
+      ORDER BY name
+    `;
+    for (const row of requiredTypes) {
+      if (isCreatureType(row.type as string)) creatureCount += counts.get(row.name as string) ?? 0;
+    }
+  }
 
-  /** 1枚のカードをデッキへ入れる。入れた枚数を返す (0 なら不採用)。cap で追加枚数を制限できる。 */
-  function takeCard(card: Record<string, unknown>, cap = MAX_COPIES): number {
+  /** 採用済みカード名 (SQL の NOT IN 用。空だと構文エラーになるためダミーを返す)。 */
+  function usedList(): string[] {
+    return counts.size > 0 ? Array.from(counts.keys()) : ["__none__"];
+  }
+
+  /** 殿堂・高コストを踏まえた、そのカードのデッキ内上限枚数。 */
+  function copyLimit(card: Record<string, unknown>): number {
     const name = card.name as string;
-    if (usedNames.has(name) || reg.banned.has(name)) return 0;
+    if (reg.limited.has(name)) return 1; // 殿堂入りは1枚
+    if ((card.cost as number) >= 7) return 2;
+    return MAX_COPIES;
+  }
 
+  /** カードを最大 want 枚まで入れる。実際に入れた枚数を返す (0 なら不採用)。 */
+  function takeCard(card: Record<string, unknown>, want = MAX_COPIES, limit = DECK_SIZE): number {
+    const name = card.name as string;
+    if (reg.banned.has(name)) return 0;
+
+    const already = counts.get(name) ?? 0;
+    let add = Math.min(copyLimit(card) - already, want, limit - totalCards);
+    if (add <= 0) return 0;
+
+    // 役割クォータは「上限」であって「門」ではない。残枠のあるタグだけが枚数を抑える。
+    // 実際に入れた枚数だけ減らす (以前は clamp 前の枚数で減らしていたため枠を食い潰していた)。
     const tags = (card.tags as string[]) ?? [];
-    const cost = card.cost as number;
-
-    let count = MAX_COPIES;
-    for (const tag of tags) {
-      if (roleQuotas[tag] !== undefined && roleQuotas[tag] > 0) {
-        count = Math.min(count, roleQuotas[tag]);
-        roleQuotas[tag] -= count;
-        break;
-      }
+    const tag = tags.find((t) => roleQuotas[t] !== undefined && roleQuotas[t] > 0);
+    if (tag !== undefined) {
+      add = Math.min(add, roleQuotas[tag]);
+      if (add <= 0) return 0;
+      roleQuotas[tag] -= add;
     }
 
-    if (cost >= 7) count = Math.min(count, 2);
-    if (reg.limited.has(name)) count = Math.min(count, 1); // 殿堂入りは1枚
-    count = Math.min(count, cap, DECK_SIZE - totalCards);
-    if (count <= 0) return 0;
-
-    entries.push({ name, count });
-    usedNames.add(name);
-    totalCards += count;
-    return count;
+    const idx = entryIndex.get(name);
+    if (idx === undefined) {
+      entries.push({ name, count: add });
+      entryIndex.set(name, entries.length - 1);
+    } else {
+      entries[idx] = { ...entries[idx], count: entries[idx].count + add };
+    }
+    counts.set(name, already + add);
+    totalCards += add;
+    return add;
   }
 
   // クリーチャーを先に確保する。
@@ -160,9 +195,9 @@ export async function autoBuild(
   const otherLimit = DECK_SIZE - Math.max(0, minCreatures - creatureCount);
   for (const card of otherCards) {
     if (totalCards >= otherLimit) break;
-    takeCard(card, otherLimit - totalCards);
+    takeCard(card, MAX_COPIES, otherLimit);
   }
-  // 3. まだ空きがあればテーマのクリーチャーを追加で
+  // 3. まだ空きがあればテーマのクリーチャーを追加で (手順1で上限未満だったカードの積み増しも兼ねる)
   for (const card of creatureCards) {
     if (totalCards >= DECK_SIZE) break;
     creatureCount += takeCard(card);
@@ -171,11 +206,10 @@ export async function autoBuild(
   // 4. クリーチャーが最低枚数に届かない場合、テーマ外からでもクリーチャーで補う。
   // (テーマ検索に掛かるクリーチャーが少ない場合でも「殴れないデッキ」を返さないため)
   if (creatureCount < minCreatures && totalCards < DECK_SIZE) {
-    const usedList = usedNames.size > 0 ? Array.from(usedNames) : ["__none__"];
     const creatureFillers = await sql`
       SELECT name, cost, type, tags
       FROM cards
-      WHERE name NOT IN ${sql(usedList)}
+      WHERE name NOT IN ${sql(usedList())}
         AND type LIKE ${"%creature%"}
         ${excludeFrag} ${civFrag} ${costFrag} ${playableFrag}
       ORDER BY cost ASC
@@ -187,13 +221,19 @@ export async function autoBuild(
     }
   }
 
-  // 5. 不足分を汎用カード (S・トリガー) で補充
+  // 5. クリーチャーを最低枚数まで確保できなかった場合、手順2で予約した枠が浮いている。
+  // そのまま返すと 40 枚に満たない違法なデッキになるため、テーマの非クリーチャーで埋め戻す。
+  for (const card of otherCards) {
+    if (totalCards >= DECK_SIZE) break;
+    takeCard(card);
+  }
+
+  // 6. 不足分を汎用カード (S・トリガー) で補充
   if (totalCards < DECK_SIZE) {
-    const usedList = usedNames.size > 0 ? Array.from(usedNames) : ["__none__"];
     const fillers = await sql`
       SELECT name, cost, type, tags
       FROM cards
-      WHERE name NOT IN ${sql(usedList)}
+      WHERE name NOT IN ${sql(usedList())}
         AND is_shield_trigger = true
         ${excludeFrag} ${civFrag} ${costFrag} ${playableFrag}
       ORDER BY cost ASC

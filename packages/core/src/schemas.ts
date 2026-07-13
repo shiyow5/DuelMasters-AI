@@ -233,6 +233,8 @@ export const DeckBuildRequestSchema = z.object({
       excludeCards: z.array(z.string()).optional(),
       civilizations: z.array(z.string()).optional(),
       maxCost: z.number().optional(),
+      /** クリーチャーの最低枚数。未指定なら deck-engine 側の既定 (デッキの 55%) */
+      minCreatures: z.number().int().positive().optional(),
     })
     .default({}),
 });
