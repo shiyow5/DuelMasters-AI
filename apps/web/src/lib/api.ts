@@ -88,7 +88,10 @@ export async function apiDelete<T>(path: string): Promise<T> {
 /** SSE で受け取るイベント (apps/api の /api/chat/stream と対応) */
 export type ChatStreamEvent =
   | { type: "token"; text: string }
-  | { type: "tool"; name: string }
+  /** ツール実行が決まった。`args` から「何を」検索しているかを進行表示に出す (#98)。 */
+  | { type: "tool"; name: string; args?: Record<string, unknown> }
+  /** グラフのノードを1つ通過した (retrieve / agent / tools / finalize)。 */
+  | { type: "phase"; node: string }
   | { type: "done"; result: ChatResult }
   | { type: "error"; message: string };
 

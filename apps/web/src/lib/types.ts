@@ -22,8 +22,13 @@ export interface Message {
   timestamp?: string;
   /** ストリーミング中 (content は途中経過。確定したら done の response で置き換わる) */
   streaming?: boolean;
-  /** 実行中のツール名 (進行表示用) */
-  activeTool?: string;
+  /**
+   * いま何をしているか (進行表示。#98)。
+   *
+   * ツール名だけでなく引数まで含んだ完成済みの文言を入れる
+   * (例:「ルールを検索しています: 「S・トリガー」」)。生成は `lib/tools.ts` が行う。
+   */
+  status?: string;
   /** エラーで終わった応答 (UI で赤く出す) */
   error?: boolean;
 }
