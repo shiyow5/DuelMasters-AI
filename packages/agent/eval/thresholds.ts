@@ -14,6 +14,8 @@ export interface Aggregate {
   citationPrecision: number | null;
   factCoverage: number | null;
   judgeMean: number | null;
+  /** judge を回したのに失敗した件数 (quota/スキーマ/キー不正)。 */
+  judgeFailures?: number;
 }
 
 export const THRESHOLDS = {
@@ -43,8 +45,8 @@ export interface GateOptions {
    *
    * `--no-judge` の高速実行では judgeMean が null になるが、それは意図した省略なので
    * 評価しない。一方、judge を回したのに quota 切れ・スキーマエラー・キー不正で
-   * judgeAnswer が全問失敗しても judgeMean は null になる。両者を区別しないと、
-   * judge 障害のときに「合格」と表示され、ゲートが judge の退行に盲目になる。
+   * judgeAnswer が失敗しても judgeMean は残りの成功分から計算されてしまう。
+   * 両者を区別しないと、judge が半分落ちていても「合格」と表示され、ゲートが盲目になる。
    */
   judgeExpected?: boolean;
 }
@@ -61,8 +63,16 @@ export function checkThresholds(agg: Aggregate, options: GateOptions = {}): Gate
     failures.push(`エラー ${agg.errors}件 (上限 ${THRESHOLDS.maxErrors})`);
   }
 
-  if (judgeExpected && agg.judgeMean === null) {
-    failures.push("judge スコアが1件も取れていない (judge 障害の可能性)");
+  if (judgeExpected) {
+    if (agg.judgeMean === null) {
+      failures.push("judge スコアが1件も取れていない (judge 障害の可能性)");
+    }
+    // 一部だけ成功した場合、judgeMean はその少数から計算されてしまう。
+    // 採点できなかった問を無視した平均でゲートを通してはいけない。
+    const judgeFailures = agg.judgeFailures ?? 0;
+    if (judgeFailures > 0) {
+      failures.push(`judge が ${judgeFailures}件で失敗 (採点できなかった問がある)`);
+    }
   }
 
   const checks: Array<[string, number | null, number]> = [

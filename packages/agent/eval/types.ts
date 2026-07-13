@@ -39,6 +39,8 @@ export interface ItemResult {
   factCoverage?: number;
   judgeScore?: number;
   judgeReason?: string;
+  /** judge を回したが失敗した (quota/スキーマ/キー不正)。部分障害の検出に使う。 */
+  judgeFailed?: boolean;
   latencyMs: number;
   error?: string;
 }

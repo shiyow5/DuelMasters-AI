@@ -57,6 +57,7 @@ async function evalItem(item: GoldenItem, noJudge: boolean): Promise<ItemResult>
         res.judgeReason = j.reason;
       } catch (err) {
         res.judgeReason = `judge失敗: ${(err as Error).message}`;
+        res.judgeFailed = true;
       }
     }
     return res;
@@ -82,7 +83,8 @@ function renderReport(agg: ReturnType<typeof aggregate>): string {
     `- ツール軌跡 recall / precision: **${fmt(agg.toolRecall)}** / **${fmt(agg.toolPrecision)}**`,
     `- 引用 recall / precision: **${fmt(agg.citationRecall)}** / ${fmt(agg.citationPrecision)}`,
     `- 事実カバレッジ: **${fmt(agg.factCoverage)}**`,
-    `- judge 平均 (1-5): **${fmt(agg.judgeMean)}**`,
+    `- judge 平均 (1-5): **${fmt(agg.judgeMean)}**` +
+      (agg.judgeFailures > 0 ? ` (**judge 失敗 ${agg.judgeFailures}件**)` : ""),
     "",
     // 閾値はここに書き写さず thresholds.ts から出す (二重管理で食い違うのを防ぐ)。
     `回帰ゲートの閾値: エラー ${THRESHOLDS.maxErrors}件 / judge平均 ≥ ${THRESHOLDS.minJudgeMean} / ` +

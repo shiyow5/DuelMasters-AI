@@ -91,6 +91,7 @@ describe("checkThresholds (CI 回帰ゲート)", () => {
     citationPrecision: null,
     factCoverage: 0.84,
     judgeMean: 4.94,
+    judgeFailures: 0,
   };
 
   it("v8 のベースライン相当なら通る", () => {
@@ -133,5 +134,20 @@ describe("checkThresholds (CI 回帰ゲート)", () => {
 
   it("既定は judge を回した前提 (安全側)", () => {
     expect(checkThresholds({ ...OK, judgeMean: null }).passed).toBe(false);
+  });
+
+  it("judge が一部だけ失敗しても落とす (成功分の平均で通してはいけない)", () => {
+    // aggregate は1問でも judgeScore があれば非 null の平均を返す。quota 切れが途中で起きると
+    // 採点できた少数の問だけで「合格」と表示され、残りの退行が見えなくなる。
+    const r = checkThresholds({ ...OK, judgeMean: 4.9, judgeFailures: 12 });
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("12件で失敗");
+  });
+
+  it("--no-judge なら judge 失敗も評価しない", () => {
+    expect(
+      checkThresholds({ ...OK, judgeMean: null, judgeFailures: 35 }, { judgeExpected: false })
+        .passed,
+    ).toBe(true);
   });
 });
