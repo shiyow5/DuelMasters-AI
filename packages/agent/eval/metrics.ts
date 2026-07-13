@@ -1,4 +1,8 @@
 import type { Citation } from "../src/state.js";
+// 抽出は src/citations.ts に一本化する。ここに正規表現を再実装するとズレて指標が盲目になる。
+import { citedArticles } from "../src/citations.js";
+
+export { citedArticles };
 import type { PR } from "./types.js";
 
 /** 集合の precision/recall。expected が空なら「評価対象外」として recall=1 とする。 */
@@ -30,22 +34,6 @@ export function citationScore(expected: string[], citations: Citation[]): PR {
     )
     .filter(Boolean);
   return prScore(expected, actual);
-}
-
-/**
- * 回答本文に書かれた総合ルールの条番号を取り出す (#99)。
- *
- * RAG は `【総合ルール 113.6】` の形で資料を渡すので、本文にも同じ形で書かせる。
- * 【裁定Q&A】【FAQ】には条番号が無いため、実在検証の対象にならない (拾わない)。
- *
- * 「4枚まで」「3.5」のような本文中の数字を条番号と誤認しないよう、**出典ラベルの中だけ**を見る。
- */
-const CITED_ARTICLE = /【総合ルール\s*(\d+(?:\.\d+[a-z]?)?)\s*】/g;
-
-export function citedArticles(responseText: string): string[] {
-  const found = new Set<string>();
-  for (const m of responseText.matchAll(CITED_ARTICLE)) found.add(m[1]);
-  return [...found];
 }
 
 /**
