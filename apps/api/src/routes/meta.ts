@@ -1,6 +1,11 @@
 import { Hono } from "hono";
 import { getSql } from "@dm-ai/db";
-import { FORMATS, IngestUrlRequestSchema, aggregateTierData } from "@dm-ai/core";
+import {
+  FORMATS,
+  IngestUrlRequestSchema,
+  aggregateTierData,
+  mergeArchetypeCounts,
+} from "@dm-ai/core";
 import { extractTextFromHtml } from "@dm-ai/rag";
 import { extractTournament } from "../tournament-extract.js";
 import { requireInternal } from "../middleware/auth.js";
@@ -108,16 +113,28 @@ metaRouter.get("/tier", async (c) => {
     `;
 
     if (snapshots.length === 0) {
-      // スナップショットがない場合は tournament_results から集計
-      const results = await sql`
-        SELECT deck_archetype, COUNT(*)::int as count,
-               (COUNT(*) FILTER (WHERE placement <= 8))::int as top8_count
-        FROM tournament_results
+      // スナップショットが無ければその場で集計する。
+      // 優先度は snapshot-meta と同じ: 週次ランキング (母集団の全量) > 個別 CS 記事 (偏った標本)。
+      const weekly = await sql`
+        SELECT deck_archetype, SUM(entries)::int as count
+        FROM archetype_weekly_stats
         WHERE format = ${format}
-          AND event_date >= ${isoDate(periodStart)}
+          AND period_end >= ${isoDate(periodStart)}
         GROUP BY deck_archetype
         ORDER BY count DESC
       `;
+
+      const results =
+        weekly.length > 0
+          ? weekly
+          : await sql`
+              SELECT deck_archetype, COUNT(*)::int as count
+              FROM tournament_results
+              WHERE format = ${format}
+                AND event_date >= ${isoDate(periodStart)}
+              GROUP BY deck_archetype
+              ORDER BY count DESC
+            `;
 
       if (results.length === 0) {
         return c.json({
@@ -129,7 +146,15 @@ metaRouter.get("/tier", async (c) => {
         });
       }
 
-      const tierData = aggregateTierData(results);
+      // snapshot-meta と同じく、集計前にアーキタイプ名の表記ゆれを畳む
+      const tierData = aggregateTierData(
+        mergeArchetypeCounts(
+          results.map((r) => ({
+            deck_archetype: r.deck_archetype as string,
+            count: r.count as number,
+          })),
+        ),
+      );
 
       return c.json({
         format,
@@ -171,10 +196,17 @@ metaRouter.get("/archetype/:name", async (c) => {
   try {
     const sql = getSql();
 
+    // ティア表の名前は取込元がまとめている基底アーキタイプ (「ウィリデ」)、
+    // tournament_results は個別 CS 記事の色つき表記 (「白緑ウィリデ」「白青ウィリデ」)。
+    // 完全一致だけだと詳細がいつも空になるので、部分一致も拾う。
+    // LIKE のメタ文字はユーザー入力なのでエスケープする。
+    const pattern = `%${name.replace(/[\\%_]/g, "\\$&")}%`;
+    const match = sql`(deck_archetype = ${name} OR deck_archetype LIKE ${pattern} ESCAPE '\')`;
+
     const results = await sql`
-      SELECT event_name, event_date, placement, participants, source_url
+      SELECT event_name, event_date, placement, participants, source_url, deck_archetype
       FROM tournament_results
-      WHERE deck_archetype = ${name} AND format = ${format}
+      WHERE ${match} AND format = ${format}
       ORDER BY event_date DESC
       LIMIT 20
     `;
@@ -186,7 +218,7 @@ metaRouter.get("/archetype/:name", async (c) => {
         (COUNT(*) FILTER (WHERE placement <= 4))::int as top4,
         (COUNT(*) FILTER (WHERE placement <= 8))::int as top8
       FROM tournament_results
-      WHERE deck_archetype = ${name} AND format = ${format}
+      WHERE ${match} AND format = ${format}
     `;
 
     return c.json({

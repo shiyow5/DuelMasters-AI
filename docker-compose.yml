@@ -32,6 +32,7 @@ services:
       - ./infra/sql/003_features.sql:/docker-entrypoint-initdb.d/003_features.sql
       - ./infra/sql/004_enable_rls.sql:/docker-entrypoint-initdb.d/004_enable_rls.sql
       - ./infra/sql/005_pgvector_update.sql:/docker-entrypoint-initdb.d/005_pgvector_update.sql
+      - ./infra/sql/006_archetype_weekly_stats.sql:/docker-entrypoint-initdb.d/006_archetype_weekly_stats.sql
 
 volumes:
   pgdata:

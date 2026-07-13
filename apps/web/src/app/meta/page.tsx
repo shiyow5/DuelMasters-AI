@@ -201,6 +201,21 @@ export default function MetaPage() {
               </p>
             </div>
           )}
+
+          {/* 出典表示。CS の入賞数集計は田園補完計画の週次ランキング記事から取り込んでいる。 */}
+          {data && data.tier_data.length > 0 && (
+            <p className="mt-6 border-t border-border-highlight/50 pt-4 text-xs text-text-dim">
+              大会結果の出典:{" "}
+              <a
+                href="https://supersolenoid.jp/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-text-muted"
+              >
+                田園補完計画 第十七次中間報告書
+              </a>
+            </p>
+          )}
         </div>
       </div>
     </div>

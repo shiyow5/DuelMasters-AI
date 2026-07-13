@@ -22,5 +22,5 @@ export function enableAppDb() {
 /** 全テーブルを空にする (各テストファイルの beforeEach で呼ぶ) */
 export async function truncateAll(sql: ReturnType<typeof postgres>) {
   await sql`TRUNCATE cards, regulations, rule_chunks, decks,
-            tournament_results, meta_snapshots, user_settings RESTART IDENTITY`;
+            tournament_results, archetype_weekly_stats, meta_snapshots, user_settings RESTART IDENTITY`;
 }

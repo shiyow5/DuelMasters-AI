@@ -261,7 +261,7 @@ Supabase Dashboard の SQL Editor でテーブルを作成します。
 4. `infra/sql/001_init.sql` の内容を **全文コピー** してエディタに貼り付け
 5. **「Run」** をクリック
 6. 同様に `infra/sql/002_cards_official_id_unique.sql`、`infra/sql/003_features.sql`、
-   `infra/sql/004_enable_rls.sql` `infra/sql/005_pgvector_update.sql` も この順で貼り付けて実行
+   `infra/sql/004_enable_rls.sql` `infra/sql/005_pgvector_update.sql` `infra/sql/006_archetype_weekly_stats.sql` も この順で貼り付けて実行
 
 `Success. No rows returned` と表示されればOKです。
 
@@ -430,14 +430,38 @@ pnpm --filter @dm-ai/worker ingest:faq faq <FAQページURL> [URL...]
 pnpm --filter @dm-ai/worker ingest:faq ruling <裁定ページURL>
 ```
 
-### 7-6. メタスナップショットの生成 (任意)
+### 7-6. 大会結果の取り込みとメタスナップショットの生成
 
-`tournament_results` を期間集計して `meta_snapshots` を作り、ティア表に反映します。
-大会結果は `POST /api/meta/ingest/url`(X-Internal-Key 必須)で取り込めます。
+ティア表 (`/api/meta/tier`, `/dm meta`) は大会結果が入っていないと空のままです。
+
+取込元は **田園補完計画 第十七次中間報告書** (<https://supersolenoid.jp/>)。robots.txt が
+取込を許可しており、記事のタイトルと本文が構造化されているため LLM 抽出は不要です。
+2種類の記事を役割を分けて取り込みます。
+
+| 記事 | 取込先 | 用途 |
+| --- | --- | --- |
+| 週次入賞数ランキング (フォーマットごとに週1本) | `archetype_weekly_stats` | **ティア表の一次ソース**。母数つきの全量 |
+| 個別 CS 記事 | `tournament_results` | アーキタイプ別の入賞履歴 (`/api/meta/archetype/:name`) |
+
+個別 CS 記事だけを数えてはいけません。ブログが記事にする CS は集計している母集団の一部で
+しかなく (実測 2026/7/6〜7/12 オリジナル: 記事 44件 vs 母数 274件)、そのまま数えると
+「記事になった CS」に偏った標本になります。
 
 ```bash
+# 大会結果を取り込む (--pages=N で遡るカテゴリページ数。既定 20 ≒ 過去5〜6週)
+pnpm --filter @dm-ai/worker ingest:tournaments
+
+# 取り込んだ結果を集計してティア表を作る (この順で打つ)
 pnpm --filter @dm-ai/worker snapshot:meta original 4
+pnpm --filter @dm-ai/worker snapshot:meta advance 4
 ```
+
+本番では `.github/workflows/ingest-cron.yml` が週1で `tournaments` → `snapshot` の順に回します。
+取込マナーとして、リクエスト間に 1 秒のウェイトを入れ、識別可能な User-Agent を送り、
+web と Discord のティア表に出典リンクを表示しています。
+
+単発の大会ページを手で入れたい場合は `POST /api/meta/ingest/url` (X-Internal-Key 必須) も
+使えます (こちらは Gemini で構造化抽出します)。
 
 ### (補正) 既存カード種別の正規化
 
