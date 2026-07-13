@@ -15,6 +15,20 @@ describe("parseAuthHash", () => {
     expect(parseAuthHash("#access_token=x&type=recovery").type).toBe("recovery");
   });
 
+  it("トークンを伴わない type= は無視する (URL を送りつけられただけで設定画面を出さない)", () => {
+    // ハッシュは利用者 (や攻撃者) が自由に書ける。type だけを信じると、既にログイン済みの人に
+    // `https://<本物のドメイン>/#type=invite` を踏ませるだけで、正規ドメイン上に
+    // 「パスワードを設定してください」画面を出せてしまう (フィッシングの足場)。
+    // 本物の招待着地には必ず Supabase が発行したトークンが伴う。
+    expect(parseAuthHash("#type=invite").type).toBeNull();
+    expect(parseAuthHash("#type=recovery").type).toBeNull();
+    expect(parseAuthHash("#type=invite&foo=bar").type).toBeNull();
+  });
+
+  it("refresh_token だけでも本物の着地として認める", () => {
+    expect(parseAuthHash("#refresh_token=abc&type=invite").type).toBe("invite");
+  });
+
   it("期限切れの招待リンクをエラーとして拾う", () => {
     // 実際に踏んだ URL。放置すると Next の 404 やアプリの真っ白画面になり、
     // 何が起きたのか利用者に分からない。
@@ -39,10 +53,10 @@ describe("parseAuthHash", () => {
   });
 
   it("先頭の # が無くても読める", () => {
-    expect(parseAuthHash("type=invite").type).toBe("invite");
+    expect(parseAuthHash("access_token=x&type=invite").type).toBe("invite");
   });
 
   it("想定外の type は無視する (未知の遷移でパスワード設定画面を出さない)", () => {
-    expect(parseAuthHash("#type=magiclink").type).toBeNull();
+    expect(parseAuthHash("#access_token=x&type=magiclink").type).toBeNull();
   });
 });

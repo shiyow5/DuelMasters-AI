@@ -30,8 +30,16 @@ export function parseAuthHash(hash: string): AuthHash {
   const type = params.get("type");
   const error = params.get("error_code") ?? params.get("error");
 
+  // **トークンを伴わない type= は信じない。**
+  // ハッシュは利用者 (や攻撃者) が自由に書ける。type だけで判定すると、既にログイン済みの人に
+  // `https://<本物のドメイン>/#type=invite` を踏ませるだけで、正規ドメイン上に
+  // 「パスワードを設定してください」画面を出せてしまう (フィッシングの足場になる)。
+  // 本物の招待/再設定の着地には、必ず Supabase が発行したトークンが伴う。
+  const hasToken = params.has("access_token") || params.has("refresh_token");
+  const setupType = type !== null && hasToken && PASSWORD_SETUP_TYPES.has(type) ? type : null;
+
   return {
-    type: type !== null && PASSWORD_SETUP_TYPES.has(type) ? type : null,
+    type: setupType,
     error: error,
     // URLSearchParams が + と %xx を復号する。
     description: params.get("error_description"),
