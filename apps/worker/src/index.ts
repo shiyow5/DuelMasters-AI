@@ -27,8 +27,16 @@ async function main() {
       break;
     }
     case "audit-rulings": {
-      const { runAuditRulings, parseAuditArgs } = await import("./jobs/audit-rulings.js");
-      await runAuditRulings(parseAuditArgs(process.argv.slice(3)));
+      const { runAuditRulings, runAuditControl, parseAuditArgs } =
+        await import("./jobs/audit-rulings.js");
+      const opts = parseAuditArgs(process.argv.slice(3));
+      if (opts.control) {
+        // 正解の分かっている2件でプロンプトの判別能力を確かめる。通らなければ監査を回さない。
+        const ok = await runAuditControl();
+        if (!ok) process.exit(1);
+        break;
+      }
+      await runAuditRulings(opts);
       break;
     }
     case "deprecate": {

@@ -21,7 +21,7 @@ import { pathToFileURL } from "node:url";
 import { writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { getSql, closeDb } from "@dm-ai/db";
-import { generateStructured, Type } from "@dm-ai/core";
+import { generateStructured, embedSingle, Type } from "@dm-ai/core";
 
 /** 総合ルールの1条文。 */
 export interface RuleArticle {
@@ -364,49 +364,28 @@ export async function runAuditRulings(
     const articles = await fetchRelatedArticles(sql, ruling.id);
     if (articles.length === 0) return;
 
-    let verdict: AuditVerdict;
+    // コントロール (--control) と**同じ経路**で判定する。ここを分けると、
+    // コントロールが通るのに本番の監査だけ壊れている、という状態が起こりうる。
+    let result: Awaited<ReturnType<typeof judgeRuling>>;
     try {
-      verdict = await generateStructured(buildAuditPrompt(ruling.text, articles), VERDICT_ZOD, {
-        responseSchema: VERDICT_RESPONSE_SCHEMA,
-        temperature: 0, // 監査は再現性を優先する
-      });
+      result = await judgeRuling(ruling.text, articles);
     } catch (err) {
+      // 検証できなかったものは落とす (安全側)。握りつぶさず数える。
       errors++;
-      console.warn(`  qa_id ${ruling.qaId}: 判定失敗 ${(err as Error).message}`);
+      console.warn(`  qa_id ${ruling.qaId}: 判定失敗のため不採用 ${(err as Error).message}`);
       return;
     }
     judged++;
 
-    const check = verifyGrounding(verdict, articles, ruling.text);
-    if (!check.ok) {
-      // LLM が矛盾と言ったのに裏取りできなかったものは、握りつぶさず数える。
-      // ここが多いほど LLM の判定を信用できない (= 閾値やプロンプトを見直す材料)。
+    const { flagged, verdict, detail } = result;
+    if (!flagged) {
+      // LLM が矛盾と言ったのに裏取り/反証で落ちたものは、内訳を数えておく。
+      // ここが多いほど LLM の判定を信用できない (= プロンプトを見直す材料)。
       if (verdict.contradicts) {
-        rejected++;
-        console.warn(`  qa_id ${ruling.qaId}: 却下 (${check.reason})`);
+        if (detail.startsWith("機械照合")) rejected++;
+        else refuted++;
+        console.warn(`  qa_id ${ruling.qaId}: ${detail.slice(0, 70)}`);
       }
-      return;
-    }
-
-    // 裏取りを通っても、まだ採らない。役割を反転させた弁護人に反証させ、耐えたものだけ残す。
-    // verifyGrounding が通った時点で必ず見つかる (枝番は親チャンクへ解決される)。
-    const article = findArticle(articles, verdict.article.trim());
-    if (!article) return;
-    try {
-      const defense = await generateStructured(
-        buildRefutePrompt(ruling.text, article, verdict.reason),
-        REFUTE_ZOD,
-        { responseSchema: REFUTE_RESPONSE_SCHEMA, temperature: 0 },
-      );
-      if (defense.compatible) {
-        refuted++;
-        console.warn(`  qa_id ${ruling.qaId}: 反証で棄却 (${defense.reason.slice(0, 50)})`);
-        return;
-      }
-    } catch (err) {
-      // 反証できなかった=採用、にはしない。検証できないものは落とす (安全側)。
-      errors++;
-      console.warn(`  qa_id ${ruling.qaId}: 反証失敗のため不採用 ${(err as Error).message}`);
       return;
     }
 
@@ -444,10 +423,103 @@ export async function runAuditRulings(
   return report;
 }
 
-/** CLI 引数: [--limit=N] [--out=path]。 */
-export function parseAuditArgs(argv: string[]): { limit?: number; out?: string } {
-  const opts: { limit?: number; out?: string } = {};
+/**
+ * プロンプトが「本物の矛盾」と「正しい裁定」を判別できるかを確かめるコントロール。
+ *
+ * この2件は**同じ質問に対する改定前/訂正後のペア**で、公式サイトが自ら出し直したもの。
+ * 正解が確定しているので、プロンプトを触ったらここで必ず退行を検知できる。
+ *
+ * 実測 (2026-07-14): 旧プロンプト (「迷ったら両立と答えろ」) は **BAD を取り落とした**。
+ * モデルが「裁定は分かりやすさのための説明にすぎない」という弁解を作ったため。
+ * また **1段目の検出器は GOOD も矛盾と誤判定する**。判別しているのは反証パスであって
+ * 検出器ではない —— この2件を回さずにプロンプトを変えてはいけない。
+ */
+export const CONTROL_CASES = [
+  {
+    label: "qa_id 34932 (改定前・アンタップとトリガーの順序が逆)",
+    // https://dm.takaratomy.co.jp/rule/qa_old/34932/ (#82 の重複排除で corpus からは消えている)
+    text: `Q: 「自分のターンのはじめに」で始まる能力があります。このタイミングがよくわからないのですが。
+A: 自分のターンが始まった時、何よりもまず最初に行ってください。順番としては、「自分のターンのはじめに」とあるトリガー能力をすべて使ってから、バトルゾーンとマナゾーンのカードをアンタップします。それからカードを１枚引きます。`,
+    shouldFlag: true,
+  },
+  {
+    label: "qa_id 37341 (訂正後・現行ルールと一致)",
+    text: `Q: 【基本ルール】 「自分のターンのはじめに」で始まる能力があります。このタイミングがよくわからないのですが。
+A: 自分のターンが始まった時、まず最初にバトルゾーンとマナゾーンのカードをアンタップします。それから「自分のターンのはじめに」とあるトリガー能力をすべて使い、それからカードを１枚引きます。`,
+    shouldFlag: false,
+  },
+] as const;
+
+/** 1件の裁定文に対して 検出 → 機械照合 → 反証 を通し、最終的に矛盾と認めるかを返す。 */
+async function judgeRuling(
+  text: string,
+  articles: RuleArticle[],
+): Promise<{ flagged: boolean; verdict: AuditVerdict; detail: string }> {
+  const verdict = await generateStructured(buildAuditPrompt(text, articles), VERDICT_ZOD, {
+    responseSchema: VERDICT_RESPONSE_SCHEMA,
+    temperature: 0,
+  });
+
+  const check = verifyGrounding(verdict, articles, text);
+  if (!check.ok) return { flagged: false, verdict, detail: `機械照合で却下: ${check.reason}` };
+
+  const article = findArticle(articles, verdict.article.trim());
+  if (!article) return { flagged: false, verdict, detail: "条文を解決できず" };
+
+  const defense = await generateStructured(
+    buildRefutePrompt(text, article, verdict.reason),
+    REFUTE_ZOD,
+    { responseSchema: REFUTE_RESPONSE_SCHEMA, temperature: 0 },
+  );
+  if (defense.compatible) {
+    return { flagged: false, verdict, detail: `反証で棄却: ${defense.reason}` };
+  }
+  return { flagged: true, verdict, detail: defense.reason };
+}
+
+/** コントロール2件を回し、判別できているかを報告する。通らなければ非ゼロ終了。 */
+export async function runAuditControl(): Promise<boolean> {
+  const sql = getSql();
+  let passed = 0;
+
+  for (const c of CONTROL_CASES) {
+    const vec = `[${(await embedSingle(c.text)).join(",")}]`;
+    const rows = await sql`
+      SELECT chunk_meta->>'article' AS article, chunk_text
+      FROM rule_chunks
+      WHERE doc_type = 'comprehensive_rules' AND embedding IS NOT NULL
+      ORDER BY embedding <=> ${vec}::vector
+      LIMIT ${ARTICLES_PER_RULING}`;
+    const articles = rows
+      .filter((r) => r.article)
+      .map((r) => ({ article: String(r.article), text: String(r.chunk_text) }));
+
+    const { flagged, detail } = await judgeRuling(c.text, articles);
+    const ok = flagged === c.shouldFlag;
+    if (ok) passed++;
+    console.log(
+      `${ok ? "✅" : "❌"} ${c.label}\n   期待=${c.shouldFlag ? "検出" : "検出せず"} / 実際=${flagged ? "検出" : "検出せず"}\n   ${detail.slice(0, 110)}`,
+    );
+  }
+
+  const ok = passed === CONTROL_CASES.length;
+  console.log(`\n=== コントロール: ${passed}/${CONTROL_CASES.length} ${ok ? "通過" : "失敗"} ===`);
+  if (!ok) {
+    console.error("プロンプトが本物の矛盾と正しい裁定を判別できていない。監査を回してはいけない。");
+  }
+  await closeDb();
+  return ok;
+}
+
+/** CLI 引数: [--limit=N] [--out=path] [--control]。 */
+export function parseAuditArgs(argv: string[]): {
+  limit?: number;
+  out?: string;
+  control?: boolean;
+} {
+  const opts: { limit?: number; out?: string; control?: boolean } = {};
   for (const a of argv) {
+    if (a === "--control") opts.control = true;
     const limit = a.match(/^--limit=(\d+)$/);
     if (limit) opts.limit = parseInt(limit[1], 10);
     const out = a.match(/^--out=(.+)$/);
@@ -457,10 +529,12 @@ export function parseAuditArgs(argv: string[]): { limit?: number; out?: string }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runAuditRulings(parseAuditArgs(process.argv.slice(2)))
-    .then(() => process.exit(0))
-    .catch((err) => {
-      console.error("Error:", err);
-      process.exit(1);
-    });
+  const opts = parseAuditArgs(process.argv.slice(2));
+  const run = opts.control
+    ? runAuditControl().then((ok) => (ok ? 0 : 1))
+    : runAuditRulings(opts).then(() => 0);
+  run.then((code) => process.exit(code)).catch((err) => {
+    console.error("Error:", err);
+    process.exit(1);
+  });
 }
