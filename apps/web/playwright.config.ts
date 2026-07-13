@@ -20,13 +20,18 @@ export default defineConfig({
   // E2E は Supabase を構成しないため、ログイン必須のままでは何も操作できない。
   // ALLOW_ANONYMOUS で明示的に opt-out する。既定 (本番) は認証必須。
   // 本番 Worker への混入は deploy.yml が検査して落とす。
+  //
+  // `webServer.env` は **process.env にマージされる** (置き換えではない)。開発者のシェルに
+  // GEMINI_API_KEY や DATABASE_URL があると、劣化動作を前提にしたテスト
+  // (デッキ評価の固定スコア 30/100、チャットのエラー表示) が本物の応答を受けて落ちる。
+  // 明示的に空へ潰して、どの環境でも同じ劣化動作でスモークする。
   webServer: [
     {
       command: "pnpm --filter @dm-ai/api dev",
       port: 3001,
       reuseExistingServer: true,
       timeout: 60000,
-      env: { ALLOW_ANONYMOUS: "true" },
+      env: { ALLOW_ANONYMOUS: "true", GEMINI_API_KEY: "", DATABASE_URL: "" },
     },
     {
       command: "pnpm dev",

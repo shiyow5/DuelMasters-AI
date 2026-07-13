@@ -107,11 +107,21 @@ export function chunkText(chunk: unknown): string {
   return "";
 }
 
-/** state の末尾 AIMessage が要求しているツール名 (無ければ空)。 */
-export function pendingToolNames(state: GraphState): string[] {
+/**
+ * state の末尾 AIMessage が要求しているツール呼び出し (無ければ空)。
+ *
+ * **名前ではなく呼び出し ID で識別する。** グラフはツールループを回すので、同じツールを
+ * クエリを変えて2回呼ぶことがある (search_rules → search_rules)。名前で重複排除すると
+ * 2回目の `tool` イベントが出ず、クライアントが2回目の前置きトークンを捨てられない。
+ */
+export function pendingToolCalls(state: GraphState): Array<{ id: string; name: string }> {
   const last = state.messages.at(-1);
   if (!last || !AIMessage.isInstance(last)) return [];
-  return (last.tool_calls ?? []).map((tc) => tc.name);
+  return (last.tool_calls ?? []).map((tc, i) => ({
+    // id はモデルが付けるが、無い場合もあるので位置とメッセージ id で補う
+    id: tc.id ?? `${last.id ?? "msg"}:${i}:${tc.name}`,
+    name: tc.name,
+  }));
 }
 
 /**
@@ -146,10 +156,11 @@ export async function* streamAgent(input: AgentInput): AsyncGenerator<AgentEvent
       const state = payload as GraphState;
       final = state;
       // ツール呼び出しが決まった時点で進捗を出す (実行前に「何をしているか」を見せる)。
-      for (const name of pendingToolNames(state)) {
-        if (announced.has(name)) continue;
-        announced.add(name);
-        yield { type: "tool", name };
+      // 同じ state が複数回流れてくるので呼び出し ID で重複を除く。
+      for (const call of pendingToolCalls(state)) {
+        if (announced.has(call.id)) continue;
+        announced.add(call.id);
+        yield { type: "tool", name: call.name };
       }
     }
   }

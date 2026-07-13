@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { AIMessageChunk, ToolMessage, HumanMessage } from "@langchain/core/messages";
-import { chunkText, pendingToolNames } from "../src/index.js";
+import { chunkText, pendingToolCalls } from "../src/index.js";
 
 describe("chunkText", () => {
   it("AI のチャンクからテキストを取り出す", () => {
@@ -30,8 +30,8 @@ describe("chunkText", () => {
   });
 });
 
-describe("pendingToolNames", () => {
-  it("末尾 AIMessage のツール呼び出し名を返す", () => {
+describe("pendingToolCalls", () => {
+  it("末尾 AIMessage のツール呼び出しを ID つきで返す", () => {
     const state = {
       messages: [
         new HumanMessage("質問"),
@@ -45,14 +45,53 @@ describe("pendingToolNames", () => {
       ],
       citations: [],
     };
-    expect(pendingToolNames(state)).toEqual(["search_rules", "search_cards"]);
+    expect(pendingToolCalls(state)).toEqual([
+      { id: "1", name: "search_rules" },
+      { id: "2", name: "search_cards" },
+    ]);
+  });
+
+  it("同じツールを2回呼んでも別の呼び出しとして返す", () => {
+    // グラフはツールループを回すので search_rules → search_rules がありうる。
+    // 名前で重複排除すると2回目の tool イベントが出ず、前置きトークンを捨てられない。
+    const state = {
+      messages: [
+        new AIMessageChunk({
+          content: "",
+          tool_calls: [
+            { name: "search_rules", args: { query: "a" }, id: "1" },
+            { name: "search_rules", args: { query: "b" }, id: "2" },
+          ],
+        }),
+      ],
+      citations: [],
+    };
+    expect(pendingToolCalls(state).map((c) => c.id)).toEqual(["1", "2"]);
+  });
+
+  it("id が無くても呼び出しごとに別のキーになる", () => {
+    const state = {
+      messages: [
+        new AIMessageChunk({
+          id: "m1",
+          content: "",
+          tool_calls: [
+            { name: "search_rules", args: {} },
+            { name: "search_rules", args: {} },
+          ],
+        }),
+      ],
+      citations: [],
+    };
+    const ids = pendingToolCalls(state).map((c) => c.id);
+    expect(new Set(ids).size).toBe(2);
   });
 
   it("ツール呼び出しが無ければ空", () => {
     expect(
-      pendingToolNames({ messages: [new AIMessageChunk({ content: "回答" })], citations: [] }),
+      pendingToolCalls({ messages: [new AIMessageChunk({ content: "回答" })], citations: [] }),
     ).toEqual([]);
-    expect(pendingToolNames({ messages: [], citations: [] })).toEqual([]);
+    expect(pendingToolCalls({ messages: [], citations: [] })).toEqual([]);
   });
 
   it("末尾が ToolMessage なら空 (実行済み)", () => {
@@ -60,6 +99,6 @@ describe("pendingToolNames", () => {
       messages: [new ToolMessage({ content: "結果", tool_call_id: "1", name: "search_rules" })],
       citations: [],
     };
-    expect(pendingToolNames(state)).toEqual([]);
+    expect(pendingToolCalls(state)).toEqual([]);
   });
 });

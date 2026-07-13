@@ -119,6 +119,11 @@ export async function streamChat(
   if (!res.ok) throw await toApiError(res);
   if (!res.body) throw new ApiError("ストリームを受信できませんでした", res.status);
 
+  // done も error も来ないままストリームが閉じることがある (Worker/プロキシがヘッダだけ返して
+  // 切る、最後のフレームが壊れて捨てられる、など)。そのまま正常終了すると UI の streaming
+  // フラグが下りず、タイピング表示が永久に残って何も起きない。終端イベントの有無を見張る。
+  let terminated = false;
+
   const parser = createSseParser((event, data) => {
     let payload: Record<string, unknown>;
     try {
@@ -126,6 +131,7 @@ export async function streamChat(
     } catch {
       return; // 壊れたフレームは捨てる (done さえ届けば回答は出せる)
     }
+    if (event === "done" || event === "error") terminated = true;
     onEvent({ type: event, ...payload } as ChatStreamEvent);
   });
 
@@ -139,5 +145,12 @@ export async function streamChat(
     parser.end();
   } finally {
     reader.releaseLock();
+  }
+
+  if (!terminated) {
+    onEvent({
+      type: "error",
+      message: "回答の途中で接続が切れました。もう一度お試しください。",
+    });
   }
 }
