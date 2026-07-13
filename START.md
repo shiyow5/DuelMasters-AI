@@ -280,12 +280,13 @@ Supabase Dashboard の SQL Editor でテーブルを作成します。
 #### テーブルの確認
 
 1. 左メニュー **「Table Editor」** をクリック
-2. 以下の 7 テーブルが表示されていれば成功:
+2. 以下の 8 テーブルが表示されていれば成功:
    - `cards`
    - `regulations`
    - `rule_chunks`
    - `decks`
    - `tournament_results`
+   - `archetype_weekly_stats`
    - `meta_snapshots`
    - `user_settings`
 
