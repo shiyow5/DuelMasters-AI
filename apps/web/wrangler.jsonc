@@ -13,6 +13,11 @@
   // 独自ドメイン。shiyow.dev は既に Cloudflare のゾーンなので、custom_domain を宣言すれば
   // deploy 時に DNS レコードと証明書が自動で作られる (ダッシュボードでの手作業は不要)。
   // ルートの shiyow.dev はポートフォリオが使っているため触らず、サブドメインだけを使う。
+  //
+  // routes を足すと workers_dev は false と推論され、既存の dm-ai-web.shiyow.workers.dev が
+  // 次の deploy で無効化される。移行期は両方のオリジンを生かすため明示的に true にする
+  // (api の CORS も両方を許可している)。
+  "workers_dev": true,
   "routes": [
     {
       "pattern": "dm-ai.shiyow.dev",
