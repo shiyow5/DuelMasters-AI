@@ -224,7 +224,10 @@ async function handleMeta(interaction: ChatInputCommandInteraction, sub: string)
 
     const embed = new EmbedBuilder()
       .setTitle(`ティア表 (${format === "original" ? "オリジナル" : "アドバンス"})`)
-      .setColor(EMBED_COLORS.accent);
+      .setColor(EMBED_COLORS.accent)
+      // CS の入賞数集計は田園補完計画から取り込んでいる。Workers 側 (interactions/embeds.ts)
+      // と同じ出典を出す。
+      .setFooter({ text: "大会結果の出典: 田園補完計画 (supersolenoid.jp)" });
 
     for (const tier of ["Tier1", "Tier2", "Tier3"]) {
       const entries = res.tier_data.filter((e) => e.tier === tier);

@@ -31,6 +31,8 @@ import { getSql, closeDb } from "@dm-ai/db";
 import { type Format } from "@dm-ai/core";
 import { sleep } from "../lib.js";
 
+type Sql = ReturnType<typeof getSql>;
+
 const SITE_BASE_URL = "https://supersolenoid.jp";
 /** デュエル・マスターズ カテゴリ (DM情報)。ページ送りは blog-category-12-<n>.html */
 const DM_CATEGORY_ID = 12;
@@ -111,7 +113,14 @@ function basePlacement(label: string): number | null {
 
 const CS_TITLE_PATTERN =
   /^【デュエマ\s*(.+?)CS】\s*「(.+)\((\d{4})\/(\d{1,2})\/(\d{1,2})\)」\s*結果\s*(.*)$/;
-const PLACEMENT_PATTERN = /^(.+)が(優勝|準優勝|\d+位入賞|ベスト\d+)$/;
+/**
+ * 「<デッキ名>が<順位>」。1つのデッキが複数入賞したときは順位が「・」で連なる
+ * (例: 「ミラダンテ槍＆ロマネスク入り白緑ウィリデが準優勝・3位入賞」)。
+ * デッキ名自体にも「・」が入りうる (「ボルメテウス・ソル」) ので、
+ * 順位ラベルの連なりを末尾に固定し、名前は貪欲に取る。
+ */
+const PLACEMENT_LABEL = "(?:優勝|準優勝|\\d+位入賞|ベスト\\d+)";
+const PLACEMENT_PATTERN = new RegExp(`^(.+)が(${PLACEMENT_LABEL}(?:・${PLACEMENT_LABEL})*)$`);
 
 /**
  * 個別 CS 記事のタイトルを構造化する。対応フォーマット外 (2ブロック等) や
@@ -136,34 +145,68 @@ export function parseCsResultTitle(title: string): CsResult | null {
   for (const token of m[6].split(/[\s　]+/)) {
     const p = token.match(PLACEMENT_PATTERN);
     if (!p) continue;
-    const base = basePlacement(p[2]);
-    if (base === null) continue;
+    const archetype = p[1].trim();
 
-    // 同順位が並ぶ (3位入賞 ×2、ベスト4 ×2 など)。ユニーク制約
-    // (event_name, event_date, format, deck_archetype, placement) で潰れて入賞数を
-    // 取りこぼさないよう、空いている順位を順に割り当てる。
-    let placement = base;
-    while (used.has(placement)) placement++;
-    used.add(placement);
+    for (const label of p[2].split("・")) {
+      const base = basePlacement(label);
+      if (base === null) continue;
 
-    results.push({ deck_archetype: p[1].trim(), placement });
+      // 同順位が並ぶ (3位入賞 ×2、ベスト4 ×2 など)。ユニーク制約
+      // (event_name, event_date, format, deck_archetype, placement) で潰れて入賞数を
+      // 取りこぼさないよう、空いている順位を順に割り当てる。
+      let placement = base;
+      while (used.has(placement)) placement++;
+      used.add(placement);
+
+      results.push({ deck_archetype: archetype, placement });
+    }
   }
 
   if (results.length === 0) return null;
   return { format, event_name: eventName, event_date: eventDate, results };
 }
 
-const RANKING_TITLE_PATTERN = /^(オリジナル|アドバンス)CS入賞数ランキング/;
+/**
+ * 週次ランキング記事のタイトルには2つの形がある。
+ *
+ * - 記事本来のタイトル (カテゴリ一覧の記事リンク):
+ *     「【デュエマ オリジナルCS】「入賞数ランキング(7/6～7/12)」 逆札篇第2弾環境…」
+ * - サイドバー「人気の記事」の短いタイトル:
+ *     「オリジナルCS入賞数ランキング(7/6～7/12)」
+ *
+ * 短い形だけを見ていると、記事が「人気の記事」から外れた瞬間に取り逃す
+ * (過去週の埋め戻しが効かなくなる)。両方を受ける。
+ */
+const RANKING_TITLE_PATTERNS = [
+  /^【デュエマ\s*(.+?)CS】\s*「入賞数ランキング/,
+  /^(オリジナル|アドバンス|2ブロック)CS入賞数ランキング/,
+];
+
+/** タイトルからフォーマットを取り出す。対応フォーマット外 (2ブロック) や非ランキングは null。 */
+export function weeklyRankingFormat(title: string): Format | null {
+  const t = title.trim();
+  for (const pattern of RANKING_TITLE_PATTERNS) {
+    const m = t.match(pattern);
+    if (m) return FORMAT_LABELS[m[1].trim()] ?? null;
+  }
+  return null;
+}
 
 /** 週次ランキング記事のタイトルか (対応フォーマットのものだけ true) */
 export function isWeeklyRankingTitle(title: string): boolean {
-  return RANKING_TITLE_PATTERN.test(title.trim());
+  return weeklyRankingFormat(title) !== null;
 }
 
-/** タイトルからフォーマットを取り出す (週次ランキング記事用) */
-export function weeklyRankingFormat(title: string): Format | null {
-  const m = title.trim().match(RANKING_TITLE_PATTERN);
-  return m ? (FORMAT_LABELS[m[1]] ?? null) : null;
+/**
+ * 巡回するカテゴリページの URL。
+ *
+ * FC2 の「現在のページ」は**サフィックス無し** (`blog-category-12.html`)。
+ * `-1` から始めると最新の記事を毎回取り逃す
+ * (実測: サフィックス無しにしか無い CS 記事が4本あった)。先頭に必ず含める。
+ */
+export function categoryPageUrls(maxPages: number): string[] {
+  const base = `${SITE_BASE_URL}/blog-category-${DM_CATEGORY_ID}`;
+  return [`${base}.html`, ...Array.from({ length: maxPages }, (_, i) => `${base}-${i + 1}.html`)];
 }
 
 const PERIOD_PATTERN =
@@ -304,18 +347,25 @@ export async function runIngestTournaments(
   const { maxPages = DEFAULT_MAX_PAGES } = options;
   const sql = getSql();
 
-  // 既に取り込んだ週は本文を取りに行かない (タイトルだけで期間が分かる)
+  // 既に「完全に」取り込んだ週は本文を取りに行かない。
+  // 1行でもあれば取込済みとみなすと、途中で落ちた週が永久に部分データのまま残り、
+  // その週のティア割合が狂う。母数と入賞数の合計が一致する週だけを完了扱いにする。
   const ingestedWeeks = new Set<string>(
-    (await sql`SELECT DISTINCT format, period_start, period_end FROM archetype_weekly_stats`).map(
-      (r) => `${r.format}|${(r.period_start as Date).toISOString().split("T")[0]}`,
-    ),
+    (
+      await sql`
+        SELECT format, period_start
+        FROM archetype_weekly_stats
+        GROUP BY format, period_start, period_end, total_entries
+        HAVING SUM(entries) = total_entries
+      `
+    ).map((r) => `${r.format}|${(r.period_start as Date).toISOString().split("T")[0]}`),
   );
 
-  const csResults: CsResult[] = [];
+  const csResults: Array<{ cs: CsResult; url: string }> = [];
   const rankingLinks: Array<{ url: string; format: Format }> = [];
+  const seenEntry = new Set<string>();
 
-  for (let page = 1; page <= maxPages; page++) {
-    const url = `${SITE_BASE_URL}/blog-category-${DM_CATEGORY_ID}-${page}.html`;
+  for (const url of categoryPageUrls(maxPages)) {
     let html: string;
     try {
       html = await fetchPage(url);
@@ -325,14 +375,21 @@ export async function runIngestTournaments(
     }
 
     for (const entry of parseEntryList(html)) {
+      // サフィックス無しのページと -1 以降は内容が重なるうえ、サイドバー (人気の記事) は
+      // どのページにも出る。記事 URL で重複を除く。
+      if (seenEntry.has(entry.url)) continue;
+
       const cs = parseCsResultTitle(entry.title);
       if (cs) {
-        csResults.push(cs);
+        seenEntry.add(entry.url);
+        csResults.push({ cs, url: entry.url });
         continue;
       }
-      if (isWeeklyRankingTitle(entry.title)) {
-        const format = weeklyRankingFormat(entry.title);
-        if (format) rankingLinks.push({ url: entry.url, format });
+
+      const format = weeklyRankingFormat(entry.title);
+      if (format) {
+        seenEntry.add(entry.url);
+        rankingLinks.push({ url: entry.url, format });
       }
     }
 
@@ -373,17 +430,25 @@ export async function runIngestTournaments(
       continue;
     }
 
-    for (const e of ranking.entries) {
-      await sql`
-        INSERT INTO archetype_weekly_stats
-          (format, period_start, period_end, deck_archetype, entries, total_entries, source_url)
-        VALUES (${ranking.format}, ${ranking.period_start}, ${ranking.period_end},
-                ${e.deck_archetype}, ${e.entries}, ${ranking.total_entries}, ${link.url})
-        ON CONFLICT (format, period_start, period_end, deck_archetype)
-        DO UPDATE SET entries = EXCLUDED.entries, total_entries = EXCLUDED.total_entries
-      `;
-      weeklyEntries++;
-    }
+    // 週の行はトランザクションでまとめて入れる。途中で落ちて一部だけ残ると、
+    // 次回以降その週は「取込済み」と誤認されかねず、ティア割合が狂ったまま固定される。
+    const week = ranking;
+    await sql.begin(async (tx) => {
+      // postgres.js の TransactionSql はタグ付きテンプレートとして呼べる型になっていない
+      // (packages/rag/src/search.ts の withIterativeScan と同じ回避)
+      const txSql = tx as unknown as Sql;
+      for (const e of week.entries) {
+        await txSql`
+          INSERT INTO archetype_weekly_stats
+            (format, period_start, period_end, deck_archetype, entries, total_entries, source_url)
+          VALUES (${week.format}, ${week.period_start}, ${week.period_end},
+                  ${e.deck_archetype}, ${e.entries}, ${week.total_entries}, ${link.url})
+          ON CONFLICT (format, period_start, period_end, deck_archetype)
+          DO UPDATE SET entries = EXCLUDED.entries, total_entries = EXCLUDED.total_entries
+        `;
+      }
+    });
+    weeklyEntries += week.entries.length;
     weeks++;
     console.log(
       `[tournaments] 週次ランキング ${ranking.format} ${ranking.period_start}〜${ranking.period_end}: ` +
@@ -395,14 +460,16 @@ export async function runIngestTournaments(
   let events = 0;
   let placements = 0;
 
-  for (const cs of csResults) {
+  for (const { cs, url } of csResults) {
     let insertedHere = 0;
     for (const r of cs.results) {
+      // source_url は記事の URL を入れる。サイトのトップを入れると
+      // /api/meta/archetype/:name の recent_results から元記事に辿れなくなる。
       const res = await sql`
         INSERT INTO tournament_results
           (event_name, event_date, format, deck_archetype, placement, source_url)
         VALUES (${cs.event_name}, ${cs.event_date}, ${cs.format},
-                ${r.deck_archetype}, ${r.placement}, ${SITE_BASE_URL})
+                ${r.deck_archetype}, ${r.placement}, ${url})
         ON CONFLICT (event_name, event_date, format, deck_archetype, placement) DO NOTHING
       `;
       if (res.count > 0) insertedHere++;

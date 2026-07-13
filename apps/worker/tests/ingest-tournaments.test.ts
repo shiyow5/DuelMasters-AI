@@ -4,6 +4,8 @@ import {
   parseWeeklyRanking,
   parseEntryList,
   isWeeklyRankingTitle,
+  weeklyRankingFormat,
+  categoryPageUrls,
 } from "../src/jobs/ingest-tournaments.js";
 
 describe("parseCsResultTitle", () => {
@@ -63,6 +65,17 @@ describe("parseCsResultTitle", () => {
     expect(parsed?.event_date).toBe("2026-07-12");
   });
 
+  it("1つのデッキが複数入賞したときの「準優勝・3位入賞」を展開する", () => {
+    // 実在する形。名前自体に「・」を含むもの (ボルメテウス・ソル) と両立する必要がある。
+    const t =
+      "【デュエマ オリジナルCS】「第1回テストCS(2026/7/12)」結果　クロムウェル＆ボルメテウス・ソル入り赤白ウィリデが優勝　ミラダンテ槍＆ロマネスク入り白緑ウィリデが準優勝・3位入賞";
+    expect(parseCsResultTitle(t)?.results).toEqual([
+      { deck_archetype: "クロムウェル＆ボルメテウス・ソル入り赤白ウィリデ", placement: 1 },
+      { deck_archetype: "ミラダンテ槍＆ロマネスク入り白緑ウィリデ", placement: 2 },
+      { deck_archetype: "ミラダンテ槍＆ロマネスク入り白緑ウィリデ", placement: 3 },
+    ]);
+  });
+
   it("2ブロックは対応フォーマット外なので null を返す", () => {
     const t = "【デュエマ 2ブロックCS】「イケブクロ龍星杯(2026/7/11)」結果　4C邪眼帝が優勝";
     expect(parseCsResultTitle(t)).toBeNull();
@@ -75,15 +88,48 @@ describe("parseCsResultTitle", () => {
   });
 });
 
-describe("isWeeklyRankingTitle", () => {
-  it("週次ランキング記事のタイトルを見分ける", () => {
-    expect(isWeeklyRankingTitle("オリジナルCS入賞数ランキング(7/6～7/12)")).toBe(true);
-    expect(isWeeklyRankingTitle("アドバンスCS入賞数ランキング(7/6～7/12)")).toBe(true);
-    // 2ブロックは対応フォーマット外
+describe("isWeeklyRankingTitle / weeklyRankingFormat", () => {
+  it("記事本来の (長い) タイトルを見分ける", () => {
+    // カテゴリ一覧の記事リンクはこの形。サイドバー (人気の記事) だけが短い形を使う。
+    const t = "【デュエマ オリジナルCS】「入賞数ランキング(7/6～7/12)」 逆札篇第2弾環境…";
+    expect(isWeeklyRankingTitle(t)).toBe(true);
+    expect(weeklyRankingFormat(t)).toBe("original");
+    expect(
+      weeklyRankingFormat(
+        "【デュエマ アドバンスCS】「入賞数ランキング(7/6～7/12)」 バイクが再びトップに",
+      ),
+    ).toBe("advance");
+  });
+
+  it("サイドバーの (短い) タイトルも見分ける", () => {
+    expect(weeklyRankingFormat("オリジナルCS入賞数ランキング(7/6～7/12)")).toBe("original");
+    expect(weeklyRankingFormat("アドバンスCS入賞数ランキング(7/6～7/12)")).toBe("advance");
+  });
+
+  it("2ブロックは対応フォーマット外", () => {
     expect(isWeeklyRankingTitle("2ブロックCS入賞数ランキング(4/13～6/14)")).toBe(false);
+    expect(isWeeklyRankingTitle("【デュエマ 2ブロックCS】「入賞数ランキング(4/13～6/14)」 …")).toBe(
+      false,
+    );
+  });
+
+  it("CS 結果記事はランキングではない", () => {
     expect(
       isWeeklyRankingTitle("【デュエマ オリジナルCS】「第89回 DMまめすけ杯(2026/7/11)」結果"),
     ).toBe(false);
+  });
+});
+
+describe("categoryPageUrls", () => {
+  it("サフィックス無しのページを先頭に含める", () => {
+    // FC2 の「現在のページ」はサフィックス無し。-1 から始めると最新記事を取り逃す
+    // (実測: blog-category-12.html にしか無い CS 記事が4本あった)。
+    expect(categoryPageUrls(3)).toEqual([
+      "https://supersolenoid.jp/blog-category-12.html",
+      "https://supersolenoid.jp/blog-category-12-1.html",
+      "https://supersolenoid.jp/blog-category-12-2.html",
+      "https://supersolenoid.jp/blog-category-12-3.html",
+    ]);
   });
 });
 
