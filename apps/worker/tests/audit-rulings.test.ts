@@ -30,16 +30,26 @@ describe("isCardSpecific", () => {
   it("一般ルールの質問はカード個別ではない", () => {
     // 実データ: qa_id 34932 (総合ルール 501.1/501.2 と矛盾する既知の廃止裁定)
     expect(
-      isCardSpecific("「自分のターンのはじめに」で始まる能力があります。このタイミングがよくわからないのですが。"),
+      isCardSpecific(
+        "「自分のターンのはじめに」で始まる能力があります。このタイミングがよくわからないのですが。",
+      ),
     ).toBe(false);
-    expect(isCardSpecific("オレガ・オーラが付いたクリーチャーが進化したらどうなりますか？")).toBe(false);
-    expect(isCardSpecific("マナゾーンにすべての文明が揃っているかどうか見るのは、どのタイミングでですか？")).toBe(false);
+    expect(isCardSpecific("オレガ・オーラが付いたクリーチャーが進化したらどうなりますか？")).toBe(
+      false,
+    );
+    expect(
+      isCardSpecific(
+        "マナゾーンにすべての文明が揃っているかどうか見るのは、どのタイミングでですか？",
+      ),
+    ).toBe(false);
   });
 
   it("鉤括弧「」はキーワード表記なのでカード名として扱わない", () => {
     // 「革命チェンジ」「Jチェンジ」等の能力名は「」で囲まれる。これをカード名と誤認すると
     // 一般ルール裁定 (最も矛盾しやすい) が監査対象から丸ごと漏れる。
-    expect(isCardSpecific("「革命チェンジ」と「Jチェンジ」を同時に使うことは出来ますか？")).toBe(false);
+    expect(isCardSpecific("「革命チェンジ」と「Jチェンジ」を同時に使うことは出来ますか？")).toBe(
+      false,
+    );
   });
 });
 
@@ -49,7 +59,10 @@ describe("verifyGrounding", () => {
       article: "501.1",
       text: "501. ターン開始ステップ 501.1. ターン・プレイヤーは、自分のカードのうちでどれをアンタップするかを決定し、それ\nらを同時にアンタップします。これはターン起因処理です。",
     },
-    { article: "502.1", text: "502. ドローステップ 502.1. ターン・プレイヤーはカードを1枚引きます。" },
+    {
+      article: "502.1",
+      text: "502. ドローステップ 502.1. ターン・プレイヤーはカードを1枚引きます。",
+    },
   ];
   const RULING =
     "Q: 「自分のターンのはじめに」で始まる能力があります。\nA: トリガー能力をすべて使ってから、バトルゾーンとマナゾーンのカードをアンタップします。";
@@ -58,7 +71,8 @@ describe("verifyGrounding", () => {
     contradicts: true,
     article: "501.1",
     quote: "自分のカードのうちでどれをアンタップするかを決定し",
-    rulingQuote: "トリガー能力をすべて使ってから、バトルゾーンとマナゾーンのカードをアンタップします",
+    rulingQuote:
+      "トリガー能力をすべて使ってから、バトルゾーンとマナゾーンのカードをアンタップします",
     reason: "順序が逆",
     ...over,
   });
@@ -76,7 +90,11 @@ describe("verifyGrounding", () => {
   });
 
   it("存在しない条番号は落とす (ハルシネーション対策)", () => {
-    const v = verifyGrounding(verdict({ article: "999.9", quote: "そんな条文はない" }), articles, RULING);
+    const v = verifyGrounding(
+      verdict({ article: "999.9", quote: "そんな条文はない" }),
+      articles,
+      RULING,
+    );
     expect(v.ok).toBe(false);
     expect(v.reason).toContain("条文が存在しない");
   });
