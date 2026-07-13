@@ -31,6 +31,7 @@ services:
       - ./infra/sql/002_cards_official_id_unique.sql:/docker-entrypoint-initdb.d/002_cards_official_id_unique.sql
       - ./infra/sql/003_features.sql:/docker-entrypoint-initdb.d/003_features.sql
       - ./infra/sql/004_enable_rls.sql:/docker-entrypoint-initdb.d/004_enable_rls.sql
+      - ./infra/sql/005_pgvector_update.sql:/docker-entrypoint-initdb.d/005_pgvector_update.sql
 
 volumes:
   pgdata:

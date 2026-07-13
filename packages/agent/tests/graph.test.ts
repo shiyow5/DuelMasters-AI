@@ -156,6 +156,16 @@ describe("formatRagContext", () => {
     expect(ctx).toContain("[2] 【裁定Q&A】");
   });
 
+  it("faq を裁定と偽らない (公式裁定ではないため)", () => {
+    const ctx = formatRagContext([
+      { text: "よくある質問の本文", meta: { doc_type: "faq" } },
+      { text: "由来不明の本文", meta: {} },
+    ]);
+    expect(ctx).toContain("[1] 【FAQ】");
+    expect(ctx).not.toContain("【裁定Q&A】");
+    expect(ctx).toContain("[2] 【参考】");
+  });
+
   it("条番号が無い条文でもラベルは付く", () => {
     const ctx = formatRagContext([
       { text: "512. 次のターンに移行する時", meta: { doc_type: "comprehensive_rules" } },

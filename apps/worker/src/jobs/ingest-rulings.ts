@@ -76,11 +76,14 @@ export async function fetchRulingList(limit?: number): Promise<RulingItem[]> {
 /**
  * 質問文の同一性判定用に正規化する。
  * 「【基本ルール】」等の接頭ラベルは改定時に付くことがあるので落とし、空白差・半角カナ差も潰す。
+ *
+ * 落とすのは**先頭のラベルだけ**。質問文の途中にある【マナ武装】のような括弧まで消すと、
+ * 別々の裁定が同じキーに潰れてしまい、全件取込の prune で正当な裁定が DELETE される。
  */
 function normalizeQuestion(q: string): string {
   return q
     .normalize("NFKC")
-    .replace(/【[^】]*】/g, "")
+    .replace(/^\s*【[^】]*】/, "")
     .replace(/\s+/g, "");
 }
 
@@ -155,12 +158,16 @@ export async function runIngestRulings(
 
   // 全件取込のときだけ、対象から外れた裁定を掃除する。upsert は qa_id 単位で行うため、
   // これをやらないと重複質問の古い方 (改定前の裁定) や公式から消えた裁定が残り続ける。
+  //
+  // qa_id を持たない ruling 行は、URL 単位で入れる旧 runIngestFaq('ruling', ...) 経路の残骸。
+  // SQL の NOT IN は NULL に対して UNKNOWN を返し行が残ってしまうため、明示的に消す。
   let pruned = 0;
   if (opts.limit === undefined && list.length > 0) {
     const keep = list.map((i) => String(i.id));
     const deleted = await sql`
       DELETE FROM rule_chunks
-      WHERE doc_type = 'ruling' AND chunk_meta->>'qa_id' NOT IN ${sql(keep)}
+      WHERE doc_type = 'ruling'
+        AND (chunk_meta->>'qa_id' IS NULL OR chunk_meta->>'qa_id' NOT IN ${sql(keep)})
       RETURNING id
     `;
     pruned = deleted.length;

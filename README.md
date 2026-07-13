@@ -129,6 +129,7 @@ psql $DATABASE_URL -f infra/sql/001_init.sql
 psql $DATABASE_URL -f infra/sql/002_cards_official_id_unique.sql
 psql $DATABASE_URL -f infra/sql/003_features.sql
 psql $DATABASE_URL -f infra/sql/004_enable_rls.sql
+psql $DATABASE_URL -f infra/sql/005_pgvector_update.sql
 ```
 
 `docker compose up db -d` で起動する場合は 001〜004 が初回に自動適用されます。

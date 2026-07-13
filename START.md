@@ -261,7 +261,7 @@ Supabase Dashboard の SQL Editor でテーブルを作成します。
 4. `infra/sql/001_init.sql` の内容を **全文コピー** してエディタに貼り付け
 5. **「Run」** をクリック
 6. 同様に `infra/sql/002_cards_official_id_unique.sql`、`infra/sql/003_features.sql`、
-   `infra/sql/004_enable_rls.sql` も この順で貼り付けて実行
+   `infra/sql/004_enable_rls.sql` `infra/sql/005_pgvector_update.sql` も この順で貼り付けて実行
 
 `Success. No rows returned` と表示されればOKです。
 

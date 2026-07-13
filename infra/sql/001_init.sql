@@ -1,10 +1,6 @@
 -- DM-AI: 初期DDL
 -- pgvector 拡張を有効化
 CREATE EXTENSION IF NOT EXISTS vector;
--- 検索は pgvector 0.8 の反復スキャン (hnsw.iterative_scan) に依存する。HNSW は近傍を先に取って
--- から WHERE を適用するため、これが無いと doc_type で絞った検索が 0 行を返す。
--- 既存 DB は CREATE EXTENSION では上がらないので、明示的に最新へ更新する (冪等)。
-ALTER EXTENSION vector UPDATE;
 
 -- カードマスタ
 CREATE TABLE IF NOT EXISTS cards (

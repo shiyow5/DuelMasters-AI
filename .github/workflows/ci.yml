@@ -109,7 +109,7 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          for f in infra/sql/001_init.sql infra/sql/002_cards_official_id_unique.sql infra/sql/003_features.sql infra/sql/004_enable_rls.sql; do
+          for f in infra/sql/001_init.sql infra/sql/002_cards_official_id_unique.sql infra/sql/003_features.sql infra/sql/004_enable_rls.sql infra/sql/005_pgvector_update.sql; do
             echo "Applying $f"
             psql -h localhost -U postgres -d dm_ai -v ON_ERROR_STOP=1 -f "$f"
           done

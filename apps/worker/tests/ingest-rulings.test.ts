@@ -67,6 +67,16 @@ describe("dedupeRulingList", () => {
     expect(dedupeRulingList(items).map((i) => i.id)).toEqual([1, 2]);
   });
 
+  it("先頭以外の【】は落とさない (別の裁定を同一視して消してしまわない)", () => {
+    // 質問文中の【マナ武装】のような括弧を落とすと、別々の裁定が同じキーに潰れる。
+    // 全件取込では新しい qa_id 以外が prune で DELETE されるため、正当な裁定が消える。
+    const items = [
+      { id: 100, question: "《A》の【マナ武装】は使えますか？", link: "a" },
+      { id: 200, question: "《A》の【革命チェンジ】は使えますか？", link: "b" },
+    ];
+    expect(dedupeRulingList(items).map((i) => i.id)).toEqual([100, 200]);
+  });
+
   it("元の並び順を保つ", () => {
     const items = [
       { id: 10, question: "質問A", link: "a" },

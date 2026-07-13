@@ -21,8 +21,8 @@ export const MAX_ITERATIONS = 5;
  * 公式サイトには改定前の裁定が残っており、現行の総合ルールと結論が逆のものがある。
  */
 export const RAG_CONTEXT_HEADER = `以下の資料を根拠に回答してください。
-【総合ルール】は現行の一次情報です。【裁定Q&A】は個別事例の公式回答ですが、改定前の古い回答が混じっていることがあります。
-両者が食い違う場合は【総合ルール】を優先してください。
+【総合ルール】は現行の一次情報です。【裁定Q&A】は個別事例の公式回答ですが、改定前の古い回答が混じっていることがあります。【FAQ】【参考】はそれより弱い資料です。
+食い違う場合は【総合ルール】を優先してください。
 資料に無いことは推測で断定せず、分からないと述べてください。`;
 
 /** メッセージからテキストを取り出す (v1 の .text getter、無ければ content)。 */
@@ -50,15 +50,24 @@ function latestUserQuery(messages: BaseMessage[]): string {
 export function formatRagContext(
   chunks: Array<{ text: string; meta: Record<string, unknown> }>,
 ): string {
-  return chunks
-    .map((ch, i) => {
-      const label =
-        ch.meta.doc_type === "comprehensive_rules"
-          ? `【総合ルール${ch.meta.article ? ` ${ch.meta.article}` : ""}】`
-          : "【裁定Q&A】";
-      return `[${i + 1}] ${label} ${ch.text}`;
-    })
-    .join("\n\n");
+  return chunks.map((ch, i) => `[${i + 1}] ${sourceLabel(ch.meta)} ${ch.text}`).join("\n\n");
+}
+
+/**
+ * 出典ラベル。doc_type ごとに分ける。
+ * faq (公式サイトの一般的な Q&A) を「裁定」と呼ぶと、個別事例の公式回答と誤認させてしまう。
+ */
+function sourceLabel(meta: Record<string, unknown>): string {
+  switch (meta.doc_type) {
+    case "comprehensive_rules":
+      return `【総合ルール${meta.article ? ` ${meta.article}` : ""}】`;
+    case "ruling":
+      return "【裁定Q&A】";
+    case "faq":
+      return "【FAQ】";
+    default:
+      return "【参考】";
+  }
 }
 
 /**
