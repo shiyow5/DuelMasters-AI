@@ -13,6 +13,9 @@ const REGULATION_URL = `${OFFICIAL_SITE_BASE_URL}/rule/regulation/`;
 /** 施行日はページから確実に取れないため既定値 (既知の制限)。 */
 const EFFECTIVE_FROM = "2024-01-01";
 
+/** 殿堂レギュレーションを適用するフォーマット (公式の殿堂リストは両者共通)。 */
+const REGULATION_FORMATS = ["original", "advance"] as const;
+
 /** h2 見出しテキスト → 制限種別。順序は「より限定的な語」を先に判定する。 */
 const CATEGORIES: Array<{ re: RegExp; type: string }> = [
   { re: /使用禁止カード/, type: "使用禁止" },
@@ -75,15 +78,22 @@ export async function runIngestRegulations(): Promise<{ inserted: number }> {
   }
 
   const sql = getSql();
-  // original のみ入れ替える (他 format のデータは保持)。失敗時に消えたままにならないよう transaction。
+  // 殿堂レギュレーションは両フォーマット共通。公式の殿堂ページ (/rule/regulation/) は
+  // フォーマット別に分かれておらず (「アドバンス」「オリジナル」の語が1度も出てこない)、
+  // オリジナルとアドバンスの違いは超次元/超GRゾーンを使えるか (総合ルール 100.3 / 100.4) で
+  // あって殿堂リストではない。以前は 'original' 決め打ちで入れていたため advance が0件になり、
+  // validateRegulation(deck, 'advance') が殿堂違反を1件も検出できなかった。
+  // 失敗時に消えたままにならないよう transaction で入れ替える。
   await sql.begin(async (tx) => {
     const txSql = tx as unknown as typeof sql;
-    await txSql`DELETE FROM regulations WHERE format = 'original'`;
-    for (const e of entries) {
-      await txSql`
-        INSERT INTO regulations (format, restriction_type, card_name, effective_from)
-        VALUES ('original', ${e.restriction_type}, ${e.card_name}, ${EFFECTIVE_FROM})
-      `;
+    await txSql`DELETE FROM regulations WHERE format IN ('original', 'advance')`;
+    for (const format of REGULATION_FORMATS) {
+      for (const e of entries) {
+        await txSql`
+          INSERT INTO regulations (format, restriction_type, card_name, effective_from)
+          VALUES (${format}, ${e.restriction_type}, ${e.card_name}, ${EFFECTIVE_FROM})
+        `;
+      }
     }
   });
 

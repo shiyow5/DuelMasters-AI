@@ -1,5 +1,13 @@
-import { describe, it, expect } from "vitest";
-import { parseRegulations } from "../src/jobs/ingest-regulations.js";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
+import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/helpers/db.js";
+import { parseRegulations, runIngestRegulations } from "../src/jobs/ingest-regulations.js";
+
+// 公式サイトの取得はモックする (ネットワークに依存させない)。
+const fetchWithRetryMock = vi.hoisted(() => vi.fn());
+vi.mock("../src/lib.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib.js")>()),
+  fetchWithRetry: (...a: unknown[]) => fetchWithRetryMock(...a),
+}));
 
 const HTML = `
 <h1>殿堂レギュレーション</h1>
@@ -46,5 +54,35 @@ describe("parseRegulations", () => {
 
   it("広告(【】)リンクは除外", () => {
     expect(entries.some((e) => /【/.test(e.card_name))).toBe(false);
+  });
+});
+
+describe.skipIf(!hasTestDb)("runIngestRegulations フォーマット (統合)", () => {
+  const sql = getTestSql()!;
+  beforeAll(() => enableAppDb());
+  beforeEach(async () => {
+    await truncateAll(sql);
+    fetchWithRetryMock.mockResolvedValue(HTML);
+  });
+  afterAll(async () => {
+    await sql.end();
+  });
+
+  it("殿堂リストを original と advance の両方に取り込む", async () => {
+    // 以前は 'original' 決め打ちで advance が0件になり、アドバンスで殿堂違反を検出できなかった。
+    await runIngestRegulations();
+    const rows = await sql`SELECT format, count(*)::int AS n FROM regulations GROUP BY format`;
+    const byFormat = Object.fromEntries(rows.map((r) => [r.format, r.n]));
+    expect(byFormat.original).toBeGreaterThan(0);
+    expect(byFormat.advance).toBe(byFormat.original);
+  });
+
+  it("再実行しても重複しない (両フォーマットとも入れ替わる)", async () => {
+    await runIngestRegulations();
+    await runIngestRegulations();
+    const rows = await sql`SELECT format, count(*)::int AS n FROM regulations GROUP BY format`;
+    const byFormat = Object.fromEntries(rows.map((r) => [r.format, r.n]));
+    expect(byFormat.advance).toBe(byFormat.original);
+    expect(byFormat.original).toBe(parseRegulations(HTML).length);
   });
 });
