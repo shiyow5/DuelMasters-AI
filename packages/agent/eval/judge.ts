@@ -1,5 +1,6 @@
 import { generateStructured, Type } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
+import { searchRules } from "@dm-ai/rag";
 import { z } from "zod";
 
 const JudgeSchema = z.object({
@@ -75,27 +76,70 @@ export async function buildCardGrounding(response: string): Promise<string> {
   }
 }
 
+/** judge に渡す公式裁定の最大件数。 */
+const MAX_RULINGS = 5;
+
+/**
+ * 質問に関連する公式裁定を RAG で引き、judge に渡す grounding 文を作る。
+ *
+ * judge (LLM) は DM のルール知識も誤る。実測では「単色カードの召喚に文明一致は不要」
+ * 「マナはコスト以上を支払ってよい」といった、公式裁定が明確に否定する主張を根拠に
+ * 正答を減点した。judge の記憶ではなく一次情報 (取込済みの公式裁定 3246件) を
+ * 判断根拠にさせるため、質問に関連する裁定を添える。
+ *
+ * 失敗時は空文字を返し (grounding 無しで続行)、judge を落とさない。
+ */
+export async function buildRuleGrounding(question: string): Promise<string> {
+  try {
+    const result = await searchRules(question);
+    const chunks = result.chunks.slice(0, MAX_RULINGS);
+    if (chunks.length === 0) return "";
+    const lines = ["# 公式裁定 (一次情報。ルールの正誤はこれを根拠とすること)"];
+    chunks.forEach((ch, i) => {
+      lines.push(`[裁定${i + 1}] ${ch.text.replace(/\s+/g, " ").slice(0, 400)}`);
+    });
+    lines.push(
+      "上記の公式裁定に反する判断をあなた自身の記憶で下さないこと。裁定に無い論点は、回答の内容だけで判断すること。",
+    );
+    return lines.join("\n");
+  } catch (err) {
+    if (process.env.JUDGE_DEBUG) console.error("[buildRuleGrounding]", (err as Error).message);
+    return "";
+  }
+}
+
 /**
  * LLM-as-judge。回答を採点基準 (rubric) に対して 1-5 で採点する。
  * 再現性のため temperature=0。判定モデルは core の構造化チェーン (Gemini 系) を使う。
- * カード名は事前に DB 照合し、judge の実在性ハルシネーションを抑える。
+ *
+ * judge 自身のハルシネーションを 2 系統の grounding で抑える:
+ * - カード実在性: 回答本文に登場する実在カードを DB 逆引きして提示 (buildCardGrounding)
+ * - ルールの正誤: 質問に関連する公式裁定を RAG で提示 (buildRuleGrounding)
  */
 export async function judgeAnswer(
   question: string,
   rubric: string,
   response: string,
 ): Promise<Judgement> {
-  const grounding = await buildCardGrounding(response);
+  const [cardGrounding, ruleGrounding] = await Promise.all([
+    buildCardGrounding(response),
+    buildRuleGrounding(question),
+  ]);
   const prompt = [
     "あなたはデュエル・マスターズに精通した厳格な採点者です。",
-    "以下の回答を、採点基準に照らして 1〜5 で採点してください。",
+    "以下の『回答』を、『採点基準』に照らして 1〜5 で採点してください。",
     "1=誤り/無関係, 2=不十分, 3=概ね妥当, 4=正確で有用, 5=完全に正確かつ根拠明快。",
-    "ハルシネーション(存在しないルール/カードの捏造)があれば大きく減点してください。",
-    "ただしカードの実在性は下記 grounding を根拠とし、あなたが知らないだけのカードを架空と決めつけないこと。",
+    "",
+    "採点の鉄則:",
+    "- 採点対象は『回答』の記述だけである。『採点基準』に書かれた内容を『回答』の主張と取り違えないこと。",
+    "- ルールの正誤は下記の公式裁定を根拠とすること。裁定に反する判断をあなた自身の記憶で下さないこと。",
+    "- カードの実在性は下記の grounding を根拠とすること。あなたが知らないだけのカードを架空と決めつけないこと。",
+    "- 上記を踏まえてなお、存在しないルール/カードの捏造があれば大きく減点すること。",
     "",
     `# 質問\n${question}`,
     `# 採点基準\n${rubric}`,
-    grounding ? grounding + "\n" : "",
+    ruleGrounding ? ruleGrounding + "\n" : "",
+    cardGrounding ? cardGrounding + "\n" : "",
     `# 回答\n${response}`,
   ].join("\n");
 

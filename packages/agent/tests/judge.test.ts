@@ -1,6 +1,32 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/helpers/db.js";
-import { extractCardCandidates, buildCardGrounding } from "../eval/judge.js";
+import { extractCardCandidates, buildCardGrounding, buildRuleGrounding } from "../eval/judge.js";
+
+// 公式裁定の RAG はモックする (埋め込み API を叩かせない)。
+const searchRulesMock = vi.hoisted(() => vi.fn());
+vi.mock("@dm-ai/rag", () => ({ searchRules: (...a: unknown[]) => searchRulesMock(...a) }));
+
+describe("buildRuleGrounding (単体)", () => {
+  it("関連裁定を一次情報として提示し、記憶で反する判断をしないよう指示する", async () => {
+    searchRulesMock.mockResolvedValueOnce({
+      chunks: [{ text: "マナの数字の合計が、コストと同じであることが条件です。", meta: {} }],
+    });
+    const g = await buildRuleGrounding("マナはどう支払いますか？");
+    expect(g).toContain("公式裁定");
+    expect(g).toContain("コストと同じ");
+    expect(g).toContain("あなた自身の記憶で下さないこと");
+  });
+
+  it("裁定が無ければ空文字", async () => {
+    searchRulesMock.mockResolvedValueOnce({ chunks: [] });
+    expect(await buildRuleGrounding("無関係な質問")).toBe("");
+  });
+
+  it("RAG が落ちても judge を落とさず空文字を返す", async () => {
+    searchRulesMock.mockRejectedValueOnce(new Error("embedding API down"));
+    expect(await buildRuleGrounding("質問")).toBe("");
+  });
+});
 
 describe("extractCardCandidates (単体)", () => {
   it("《…》と「…」からカード名を抽出し重複を除く", () => {
