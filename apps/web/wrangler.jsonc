@@ -1,0 +1,17 @@
+{
+  // DM-AI Web (Next.js 16 / OpenNext) — Cloudflare Workers 設定
+  //
+  // NEXT_PUBLIC_* はビルド時にバンドルへ埋め込まれるため Worker の vars ではなく
+  // ビルド環境の環境変数として渡す (CI では GitHub Secrets → env)。
+  // ここに置いても実行時には効かないので置かない。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dm-ai-web",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS",
+  },
+}

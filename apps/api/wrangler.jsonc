@@ -16,9 +16,9 @@
     },
   ],
   "vars": {
-    // 本番 web のオリジン (CORS 許可元)。web を Cloudflare にデプロイする Phase 3 で
-    // 実ドメインを設定する (例 "https://dm-ai-web.shiyow.workers.dev")。
-    // 空のうちは localhost:3000 (ローカル開発) のみ許可される。
-    "WEB_URL": "",
+    // 本番 web のオリジン (CORS 許可元)。カンマ区切りで複数指定できる。
+    // 移行期は workers.dev と独自ドメインの両方から配信されるため両方を許可する。
+    // localhost:3000 (ローカル開発) は常に許可される。
+    "WEB_URL": "https://dm-ai.shiyow.dev,https://dm-ai-web.shiyow.workers.dev",
   },
 }

@@ -14,3 +14,6 @@ coverage/
 CLOUD_ARCHITECTURE_COMPARISON.md
 IMPLEMENTATION_PLAN.md
 REFACTORING_PLAN.md
+
+# OpenNext (Cloudflare) build output
+.open-next/
