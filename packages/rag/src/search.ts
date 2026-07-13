@@ -35,7 +35,10 @@ interface ChunkResult {
 }
 
 /**
- * ハイブリッド検索: キーワード + ベクトル検索の結果をマージ
+ * ハイブリッド検索: キーワード + ベクトル検索の結果をマージ。
+ *
+ * 返るチャンク数は最大 `topK + sectionExpansion` 件。節の展開ぶんは topK の外枠に足す
+ * (topK の中で取ると、本来上位に来るべき検索結果を例外規定が押し出してしまうため)。
  */
 export async function searchRules(
   query: string,
@@ -76,7 +79,31 @@ export async function searchRules(
   return toResult([...chunks, ...siblings]);
 }
 
-/** 最上位の条文と同じ節から、まだ拾っていない兄弟条文をクエリに近い順で補う。 */
+/**
+ * 絞り込み付きの ANN 検索をトランザクション内で反復スキャンにして実行する。
+ *
+ * HNSW は近傍を先に取ってから WHERE を適用する (後置フィルタ) ため、絞り込みが厳しいと
+ * 候補が全部ふるい落とされ、該当行が存在するのに 0 行が返る。pgvector 0.8 の反復スキャンで
+ * 必要件数が埋まるまで走査を続けさせる。SET LOCAL なのでトランザクション外へは漏れない。
+ *
+ * 絞り込みの無い検索には後置フィルタ問題が無いので、トランザクションを張らない (往復を増やさない)。
+ */
+async function withIterativeScan(
+  sql: Sql,
+  run: (scoped: Sql) => Promise<unknown>,
+): Promise<Array<Record<string, unknown>>> {
+  const rows = await sql.begin(async (tx) => {
+    const txSql = tx as unknown as Sql;
+    await txSql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`;
+    return run(txSql);
+  });
+  return rows as unknown as Array<Record<string, unknown>>;
+}
+
+/**
+ * 最上位の条文と同じ節から、まだ拾っていない兄弟条文をクエリに近い順で補う。
+ * doc_type と節の二段絞り込みなので、後置フィルタの影響を最も受けやすい。必ず反復スキャンで引く。
+ */
 async function expandTopSection(
   sql: Sql,
   embedding: number[],
@@ -91,17 +118,20 @@ async function expandTopSection(
 
   const exclude = seen.size > 0 ? Array.from(seen) : [-1];
   const vecParam = `[${embedding.join(",")}]`;
-  const rows = await sql`
-    SELECT id, doc_type, chunk_text, chunk_meta,
-           1 - (embedding <=> ${vecParam}::vector) AS similarity
-    FROM rule_chunks
-    WHERE doc_type = ${RULES_DOC_TYPE}
-      AND chunk_meta->>'section' = ${section}
-      AND embedding IS NOT NULL
-      AND id NOT IN ${sql(exclude)}
-    ORDER BY embedding <=> ${vecParam}::vector
-    LIMIT ${limit}
-  `;
+  const rows = await withIterativeScan(
+    sql,
+    (s) => s`
+      SELECT id, doc_type, chunk_text, chunk_meta,
+             1 - (embedding <=> ${vecParam}::vector) AS similarity
+      FROM rule_chunks
+      WHERE doc_type = ${RULES_DOC_TYPE}
+        AND chunk_meta->>'section' = ${section}
+        AND embedding IS NOT NULL
+        AND id NOT IN ${s(exclude)}
+      ORDER BY embedding <=> ${vecParam}::vector
+      LIMIT ${limit}
+    `,
+  );
   return rows.map((row) => toChunk(row, row.similarity as number));
 }
 
@@ -165,26 +195,22 @@ async function searchByVector(
   docType?: string,
 ): Promise<ChunkResult[]> {
   const vecParam = `[${embedding.join(",")}]`;
+  const run = (s: Sql) => s`
+    SELECT id, doc_type, chunk_text, chunk_meta,
+           1 - (embedding <=> ${vecParam}::vector) AS similarity
+    FROM rule_chunks
+    WHERE embedding IS NOT NULL ${docType ? s`AND doc_type = ${docType}` : s``}
+    ORDER BY embedding <=> ${vecParam}::vector
+    LIMIT ${topK}
+  `;
 
-  // HNSW は近傍を先に取ってから WHERE を適用する (後置フィルタ)。doc_type で絞ると
-  // 候補が全部ふるい落とされ、条文が存在するのに 0 行が返る事象が実際に起きていた。
-  // pgvector 0.8 の反復スキャンで、必要件数が埋まるまで走査を続けさせる。
-  const rows = await sql.begin(async (tx) => {
-    const txSql = tx as unknown as Sql;
-    await txSql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`;
-    return txSql`
-      SELECT id, doc_type, chunk_text, chunk_meta,
-             1 - (embedding <=> ${vecParam}::vector) AS similarity
-      FROM rule_chunks
-      WHERE embedding IS NOT NULL ${docType ? txSql`AND doc_type = ${docType}` : txSql``}
-      ORDER BY embedding <=> ${vecParam}::vector
-      LIMIT ${topK}
-    `;
-  });
+  // doc_type で絞るときだけ反復スキャンが要る (後置フィルタで 0 行になるため)。
+  const rows =
+    docType === undefined
+      ? ((await run(sql)) as unknown as Array<Record<string, unknown>>)
+      : await withIterativeScan(sql, run);
 
-  return (rows as unknown as Array<Record<string, unknown>>).map((row) =>
-    toChunk(row, row.similarity as number),
-  );
+  return rows.map((row) => toChunk(row, row.similarity as number));
 }
 
 /** doc_type は meta に載せて返す。回答時に条文 (一次情報) と裁定 (Q&A) を区別するため。 */

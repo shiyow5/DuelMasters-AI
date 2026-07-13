@@ -86,6 +86,13 @@ describe.skipIf(!hasTestDb)("searchRules (統合)", () => {
     expect(articles).toContain("113.9");
   });
 
+  it("返るチャンク数は topK + sectionExpansion を超えない", async () => {
+    // 節の展開ぶんは topK の外枠に足す。無制限に伸びると system prompt と citations が膨らむ。
+    const r = await searchRules(QUESTION, { topK: 3, sectionExpansion: 2 });
+    expect(r.chunks.length).toBeLessThanOrEqual(5);
+    expect(r.total).toBe(r.chunks.length);
+  });
+
   it("sectionExpansion=0 なら節の展開をしない", async () => {
     const r = await searchRules(QUESTION, { sectionExpansion: 0 });
     expect(r.chunks.map((c) => c.meta.article)).not.toContain("113.9");
