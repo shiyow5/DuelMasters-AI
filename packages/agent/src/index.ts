@@ -82,9 +82,30 @@ function toOutput(result: { messages: BaseMessage[]; citations: Citation[] }, mo
  */
 export type AgentEvent =
   | { type: "token"; text: string }
-  | { type: "tool"; name: string }
+  /** ツール実行が決まった。`args` は「何を」検索/構築しているかを画面に出すため。 */
+  | { type: "tool"; name: string; args: Record<string, unknown> }
+  /** グラフのノードを1つ通過した。進行表示のフェーズ切り替えに使う。 */
+  | { type: "phase"; node: GraphNode }
   | { type: "done"; result: AgentOutput }
   | { type: "error"; message: string };
+
+/**
+ * 進行表示に出すグラフのノード。
+ *
+ * LangGraph の `updates` ストリームは `__start__` のような内部キーも流してくるので、
+ * **知っているノードだけを通す**。未知のキーをそのまま画面に出すと、内部実装が
+ * ユーザーに漏れるうえ、ノードを増やしたときに意味不明な文言が出る。
+ */
+const GRAPH_NODES = ["retrieve", "agent", "tools", "finalize"] as const;
+export type GraphNode = (typeof GRAPH_NODES)[number];
+
+/** `updates` ストリームの payload (`{ ノード名: 差分 }`) から、通過したノード名を取り出す。 */
+export function phasesFromUpdate(payload: unknown): GraphNode[] {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return [];
+  return Object.keys(payload).filter((k): k is GraphNode =>
+    (GRAPH_NODES as readonly string[]).includes(k),
+  );
+}
 
 type GraphState = { messages: BaseMessage[]; citations: Citation[] };
 
@@ -114,7 +135,9 @@ export function chunkText(chunk: unknown): string {
  * クエリを変えて2回呼ぶことがある (search_rules → search_rules)。名前で重複排除すると
  * 2回目の `tool` イベントが出ず、クライアントが2回目の前置きトークンを捨てられない。
  */
-export function pendingToolCalls(state: GraphState): Array<{ id: string; name: string }> {
+export function pendingToolCalls(
+  state: GraphState,
+): Array<{ id: string; name: string; args: Record<string, unknown> }> {
   const last = state.messages.at(-1);
   if (!last || !AIMessage.isInstance(last)) return [];
   return (last.tool_calls ?? []).map((tc, i) => ({
@@ -123,6 +146,9 @@ export function pendingToolCalls(state: GraphState): Array<{ id: string; name: s
     // (固定の接頭辞だと 2周目が 1周目と同じ鍵になり、tool イベントが抑制される)。
     id: tc.id ?? `${state.messages.length}:${i}:${tc.name}`,
     name: tc.name,
+    // 引数を捨てると「ルールを検索しています」までしか出せず、**何を**検索しているかを
+    // 画面に出せない。
+    args: tc.args ?? {},
   }));
 }
 
@@ -141,7 +167,9 @@ export async function* streamAgent(input: AgentInput): AsyncGenerator<AgentEvent
   const announced = new Set<string>();
 
   const stream = await graph().stream(initialState(input), {
-    streamMode: ["values", "messages"],
+    // updates は「どのノードを通ったか」を知る唯一の手段。values は state しか来ないので、
+    // retrieve が終わったのか agent が考えているのかを区別できない。
+    streamMode: ["values", "messages", "updates"],
   });
 
   for await (const part of stream as AsyncIterable<[string, unknown]>) {
@@ -154,6 +182,11 @@ export async function* streamAgent(input: AgentInput): AsyncGenerator<AgentEvent
       continue;
     }
 
+    if (mode === "updates") {
+      for (const node of phasesFromUpdate(payload)) yield { type: "phase", node };
+      continue;
+    }
+
     if (mode === "values") {
       const state = payload as GraphState;
       final = state;
@@ -162,7 +195,7 @@ export async function* streamAgent(input: AgentInput): AsyncGenerator<AgentEvent
       for (const call of pendingToolCalls(state)) {
         if (announced.has(call.id)) continue;
         announced.add(call.id);
-        yield { type: "tool", name: call.name };
+        yield { type: "tool", name: call.name, args: call.args };
       }
     }
   }

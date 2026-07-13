@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { streamChat } from "@/lib/api";
 import { getTime } from "@/lib/format";
-import { toolLabel } from "@/lib/tools";
+import { initialStatus } from "@/lib/tools";
+import { applyChatEvent } from "@/lib/chat-state";
 import type { Message } from "@/lib/types";
 import Header from "@/components/Header";
 import ChatBubble, { TypingDots } from "@/components/ChatBubble";
@@ -41,49 +42,31 @@ export default function ChatPage() {
     setMessages((prev) => [
       ...prev,
       userMsg,
-      { role: "assistant", content: "", timestamp: getTime(), streaming: true },
+      {
+        role: "assistant",
+        content: "",
+        timestamp: getTime(),
+        streaming: true,
+        // 最初のイベントが届くまで数秒かかる。三点リーダーだけだと固まったように見えるので、
+        // その間の文言を先に置く (#98)。
+        status: initialStatus(mode),
+      },
     ]);
     setInput("");
     setLoading(true);
 
     try {
+      // 進行表示の分岐は applyChatEvent (純関数) に切り出してある。
+      // イベントの順序で表示が破綻しないことは chat-state.test.ts で固定している。
       await streamChat({ message: userMsg.content, mode, history }, (ev) => {
-        switch (ev.type) {
-          case "token":
-            updateLast((m) => ({ ...m, content: m.content + ev.text }));
-            break;
-          case "tool":
-            // ツールを呼ぶ前にエージェントが前置きを喋ることがある。その分は捨てて
-            // 「今なにをしているか」に差し替える (最終的な回答は done で確定する)。
-            updateLast((m) => ({ ...m, content: "", activeTool: ev.name }));
-            break;
-          case "done":
-            updateLast((m) => ({
-              ...m,
-              content: ev.result.response,
-              citations: ev.result.citations,
-              toolCalls: ev.result.toolCalls,
-              streaming: false,
-              activeTool: undefined,
-            }));
-            break;
-          case "error":
-            updateLast((m) => ({
-              ...m,
-              content: ev.message,
-              streaming: false,
-              activeTool: undefined,
-              error: true,
-            }));
-            break;
-        }
+        updateLast((m) => applyChatEvent(m, ev));
       });
     } catch (err) {
       updateLast((m) => ({
         ...m,
         content: err instanceof Error ? err.message : "エラーが発生しました",
         streaming: false,
-        activeTool: undefined,
+        status: undefined,
         error: true,
       }));
     } finally {
@@ -244,16 +227,21 @@ export default function ChatPage() {
               ) : undefined
             }
           >
-            {msg.streaming && msg.activeTool && (
-              <p className="mb-2 flex items-center gap-1.5 text-xs text-text-muted">
+            {/* いま何をしているか。回答が流れ始めたら消す (進行表示が残ると回答と二重に見える)。 */}
+            {msg.streaming && msg.status && msg.content === "" && (
+              <p className="flex items-center gap-1.5 text-xs text-text-muted">
                 <span className="material-symbols-outlined animate-spin text-sm">
                   progress_activity
                 </span>
-                {toolLabel(msg.activeTool)}…
+                {msg.status}…
               </p>
             )}
             {msg.content === "" && msg.streaming ? (
-              <TypingDots />
+              // 進行状況が出ているときは三点リーダーを出さない (二重の「待ってます」表示になる)。
+              // status が無いのは、イベントが1つも来ていない一瞬だけ。
+              msg.status ? null : (
+                <TypingDots />
+              )
             ) : (
               <p
                 className={`leading-relaxed whitespace-pre-wrap text-sm ${

@@ -1,6 +1,30 @@
 import { describe, it, expect } from "vitest";
 import { AIMessageChunk, ToolMessage, HumanMessage } from "@langchain/core/messages";
-import { chunkText, pendingToolCalls } from "../src/index.js";
+import { chunkText, pendingToolCalls, phasesFromUpdate } from "../src/index.js";
+
+describe("phasesFromUpdate", () => {
+  // LangGraph の streamMode: "updates" は `{ ノード名: 状態の差分 }` を流す。
+  // これが唯一「グラフのどこを通ったか」を知る手段 (values は state しか来ない)。
+  it("更新のあったノード名を返す", () => {
+    expect(phasesFromUpdate({ retrieve: { citations: [] } })).toEqual(["retrieve"]);
+    expect(phasesFromUpdate({ tools: { messages: [] } })).toEqual(["tools"]);
+  });
+
+  it("複数ノードが同時に更新されても全部返す", () => {
+    expect(phasesFromUpdate({ agent: {}, tools: {} })).toEqual(["agent", "tools"]);
+  });
+
+  it("グラフのノードでないキーは無視する (LangGraph の内部キーを進捗として出さない)", () => {
+    expect(phasesFromUpdate({ __start__: {}, retrieve: {} })).toEqual(["retrieve"]);
+    expect(phasesFromUpdate({ unknown_node: {} })).toEqual([]);
+  });
+
+  it("null や配列は空", () => {
+    expect(phasesFromUpdate(null)).toEqual([]);
+    expect(phasesFromUpdate([1, 2])).toEqual([]);
+    expect(phasesFromUpdate("retrieve")).toEqual([]);
+  });
+});
 
 describe("chunkText", () => {
   it("AI のチャンクからテキストを取り出す", () => {
@@ -31,24 +55,36 @@ describe("chunkText", () => {
 });
 
 describe("pendingToolCalls", () => {
-  it("末尾 AIMessage のツール呼び出しを ID つきで返す", () => {
+  it("末尾 AIMessage のツール呼び出しを ID・引数つきで返す", () => {
+    // 引数を捨てると「ルールを検索しています」までしか出せず、**何を**検索しているかを
+    // 画面に出せない (#98 の主眼)。
     const state = {
       messages: [
         new HumanMessage("質問"),
         new AIMessageChunk({
           content: "",
           tool_calls: [
-            { name: "search_rules", args: {}, id: "1" },
-            { name: "search_cards", args: {}, id: "2" },
+            { name: "search_rules", args: { query: "S・トリガー 任意" }, id: "1" },
+            { name: "search_cards", args: { query: "ボルシャック" }, id: "2" },
           ],
         }),
       ],
       citations: [],
     };
     expect(pendingToolCalls(state)).toEqual([
-      { id: "1", name: "search_rules" },
-      { id: "2", name: "search_cards" },
+      { id: "1", name: "search_rules", args: { query: "S・トリガー 任意" } },
+      { id: "2", name: "search_cards", args: { query: "ボルシャック" } },
     ]);
+  });
+
+  it("引数が無ければ空オブジェクトにする", () => {
+    const state = {
+      messages: [
+        new AIMessageChunk({ content: "", tool_calls: [{ name: "x", args: {}, id: "1" }] }),
+      ],
+      citations: [],
+    };
+    expect(pendingToolCalls(state)[0].args).toEqual({});
   });
 
   it("同じツールを2回呼んでも別の呼び出しとして返す", () => {
