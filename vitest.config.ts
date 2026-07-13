@@ -1,6 +1,14 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // apps/web は Next の tsconfig paths で `@/…` を使う。vitest はそれを知らないので、
+      // ここで解決してやらないと **web のコンポーネントを import するテストが書けない**。
+      "@": fileURLToPath(new URL("./apps/web/src", import.meta.url)),
+    },
+  },
   test: {
     include: ["packages/**/tests/**/*.test.ts", "apps/**/tests/**/*.test.ts", "tests/**/*.test.ts"],
     environment: "node",

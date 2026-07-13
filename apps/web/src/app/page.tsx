@@ -9,6 +9,7 @@ import type { Message } from "@/lib/types";
 import Header from "@/components/Header";
 import ChatBubble, { TypingDots } from "@/components/ChatBubble";
 import Citations from "@/components/Citations";
+import Markdown from "@/components/Markdown";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -242,6 +243,14 @@ export default function ChatPage() {
               msg.status ? null : (
                 <TypingDots />
               )
+            ) : msg.role === "assistant" && !msg.error ? (
+              // エージェントの回答だけ Markdown で描画する (#100)。
+              // **エラー文はプレーンのまま。** LLM 由来ではないので Markdown を通す意味がなく、
+              // 通すと記号が勝手に解釈される。ユーザーの発話も同様にプレーン。
+              <div className={msg.streaming ? "animate-none" : ""}>
+                <Markdown>{msg.content}</Markdown>
+                {msg.streaming && <span className="ml-0.5 animate-pulse">▍</span>}
+              </div>
             ) : (
               <p
                 className={`leading-relaxed whitespace-pre-wrap text-sm ${

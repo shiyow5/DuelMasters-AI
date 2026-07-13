@@ -6,6 +6,7 @@ import { getTime } from "@/lib/format";
 import type { Citation, Message } from "@/lib/types";
 import Header from "@/components/Header";
 import ChatBubble, { ChatAvatar } from "@/components/ChatBubble";
+import Markdown from "@/components/Markdown";
 
 const COMMON_KEYWORDS = [
   "マッハファイター",
@@ -58,6 +59,9 @@ export default function RulePage() {
           role: "assistant",
           content: `エラー: ${err instanceof Error ? err.message : "不明なエラー"}`,
           timestamp: getTime(),
+          // error を立てる。立てないと赤字にならず、Markdown も通ってしまう
+          // (エラー文は LLM 由来ではないので、記号を勝手に解釈させない)。
+          error: true,
         },
       ]);
     } finally {
@@ -127,7 +131,17 @@ export default function RulePage() {
                     ) : undefined
                   }
                 >
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                  {msg.role === "assistant" && !msg.error ? (
+                    <Markdown>{msg.content}</Markdown>
+                  ) : (
+                    <p
+                      className={`whitespace-pre-wrap text-sm leading-relaxed ${
+                        msg.error ? "text-danger" : ""
+                      }`}
+                    >
+                      {msg.content}
+                    </p>
+                  )}
                 </ChatBubble>
               </div>
             ))}
