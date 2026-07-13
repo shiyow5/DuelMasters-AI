@@ -104,4 +104,27 @@ describe.skipIf(!hasTestDb)("searchRules (統合)", () => {
     const r = await searchRules("S・トリガーの使用宣言について");
     expect(r.chunks[0].meta.article).toBe("113.6");
   });
+
+  it("deprecated 印の付いた裁定は検索に出さない (#92)", async () => {
+    // 公式サイトには改定前の裁定が残っている。総合ルールの条文で裏取りして deprecated 印を
+    // 付けたものは、引くと agent の回答が汚れるので検索から外す。行は消さない (印を外せば戻る)。
+    //
+    // この裁定は **クエリと同一のベクトル (類似度1.0) かつ クエリ語を全部含む** ので、
+    // 素通しならベクトル経路でもキーワード経路でも1位に来る。検索は経路ごとに別の SQL
+    // なので、どちらか片方でも絞り忘れるとこのテストが落ちる。
+    await sql`INSERT INTO rule_chunks (doc_type, version, chunk_text, chunk_meta, embedding)
+      VALUES ('ruling', 'v1', 'Q: S・トリガーの使用宣言について\nA: 現行ルールと矛盾する古い回答',
+              ${sql.json({ qa_id: 34932, deprecated: true, deprecated_by: "501.1" })},
+              ${`[${QUERY_VEC.join(",")}]`}::vector)`;
+
+    const r = await searchRules("S・トリガーの使用宣言について");
+    expect(r.chunks.map((c) => c.meta.qa_id)).not.toContain(34932);
+  });
+
+  it("deprecated 印の無い裁定は今までどおり出る", async () => {
+    // 印を「付けたものだけ」外す。裁定全体を落としてしまうと RAG が痩せる。
+    const r = await searchRules(QUESTION);
+    const rulings = r.chunks.filter((c) => c.meta.doc_type === "ruling");
+    expect(rulings.length).toBeGreaterThan(0);
+  });
 });

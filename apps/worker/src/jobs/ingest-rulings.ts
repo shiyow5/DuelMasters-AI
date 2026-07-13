@@ -14,6 +14,7 @@ import { getSql, closeDb } from "@dm-ai/db";
 import { embed } from "@dm-ai/core";
 import { sleep, fetchWithRetry } from "../lib.js";
 import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
+import { applyDeprecations } from "./deprecate-rulings.js";
 
 const QA_API = `${OFFICIAL_SITE_BASE_URL}/wp-json/wp/v2/qa_old`;
 const LIST_PER_PAGE = 100;
@@ -73,6 +74,26 @@ export async function fetchRulingList(limit?: number): Promise<RulingItem[]> {
   return out;
 }
 
+/** 中身が空のカード名括弧 (《》)。公式ページのカード名リンクが壊れている印。 */
+const EMPTY_CARD_BRACKET = /[《≪«『]\s*[》≫»』]/;
+
+/**
+ * 裁定ページの質問文と qa_old API の title から、情報が欠けていない方を選ぶ。
+ *
+ * 公式の裁定ページはカード名リンクを
+ *   `<a href='/card/detail/?id='>《》</a>`
+ * と、**id もカード名も空のまま**出力していることがある (公式側の不具合)。ページ側を
+ * 無条件に優先すると、カード名の落ちた質問文が RAG に入り、そのカード名では二度と引けない。
+ * API の title にはカード名が残っているので、そちらへ倒す。
+ */
+export function pickQuestion(pageQuestion: string, apiTitle: string): string {
+  if (!pageQuestion) return apiTitle;
+  if (EMPTY_CARD_BRACKET.test(pageQuestion) && apiTitle && !EMPTY_CARD_BRACKET.test(apiTitle)) {
+    return apiTitle;
+  }
+  return pageQuestion;
+}
+
 /**
  * 質問文の同一性判定用に正規化する。
  * 「【基本ルール】」等の接頭ラベルは改定時に付くことがあるので落とし、空白差・半角カナ差も潰す。
@@ -103,7 +124,13 @@ export function dedupeRulingList(items: RulingItem[]): RulingItem[] {
 
 export async function runIngestRulings(
   opts: { limit?: number; version?: string } = {},
-): Promise<{ inserted: number; skipped: number; pruned: number; total: number }> {
+): Promise<{
+  inserted: number;
+  skipped: number;
+  pruned: number;
+  total: number;
+  deprecated: number;
+}> {
   const sql = getSql();
   const version = opts.version ?? today();
   const fetched = await fetchRulingList(opts.limit);
@@ -141,7 +168,7 @@ export async function runIngestRulings(
     try {
       const html = await fetchWithRetry(item.link);
       const { question, answer } = parseRulingHtml(html);
-      const q = question || item.question;
+      const q = pickQuestion(question, item.question);
       if (!answer) {
         skipped++;
         continue;
@@ -173,11 +200,16 @@ export async function runIngestRulings(
     pruned = deleted.length;
   }
 
+  // 取込は qa_id 単位の DELETE+INSERT なので、前回付けた廃止印 (#92) はここで消えている。
+  // レビュー済みの一覧から貼り直す。これを忘れると、週次 cron が回るたびに
+  // 現行ルールと矛盾する裁定が RAG に復活する。
+  const deprecated = await applyDeprecations(sql);
+
   console.log(
-    `=== 裁定取り込み完了: ${inserted}件挿入 / ${skipped}スキップ / ${pruned}件削除 / 対象${list.length} ===`,
+    `=== 裁定取り込み完了: ${inserted}件挿入 / ${skipped}スキップ / ${pruned}件削除 / 対象${list.length} / 廃止印${deprecated.flagged}件 ===`,
   );
   await closeDb();
-  return { inserted, skipped, pruned, total: list.length };
+  return { inserted, skipped, pruned, total: list.length, deprecated: deprecated.flagged };
 }
 
 /** CLI 引数: [limit]。省略時は全件。 */

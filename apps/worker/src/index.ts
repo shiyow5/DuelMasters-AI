@@ -26,6 +26,24 @@ async function main() {
       await runIngestRulings(parseRulingsArgs(process.argv.slice(3)));
       break;
     }
+    case "audit-rulings": {
+      const { runAuditRulings, runAuditControl, parseAuditArgs } =
+        await import("./jobs/audit-rulings.js");
+      const opts = parseAuditArgs(process.argv.slice(3));
+      if (opts.control) {
+        // 正解の分かっている2件でプロンプトの判別能力を確かめる。通らなければ監査を回さない。
+        const ok = await runAuditControl();
+        if (!ok) process.exit(1);
+        break;
+      }
+      await runAuditRulings(opts);
+      break;
+    }
+    case "deprecate": {
+      const { runDeprecateRulings } = await import("./jobs/deprecate-rulings.js");
+      await runDeprecateRulings();
+      break;
+    }
     case "tags": {
       const { runIngestTags } = await import("./jobs/ingest-tags.js");
       await runIngestTags({ onlyEmpty: !process.argv.includes("--all") });
@@ -59,12 +77,14 @@ async function main() {
     }
     default:
       console.log(
-        "使用法: tsx src/index.ts <rules|cards|regulations|rulings|tags|faq|tournaments|snapshot>",
+        "使用法: tsx src/index.ts <rules|cards|regulations|rulings|audit-rulings|deprecate|tags|faq|tournaments|snapshot>",
       );
       console.log("  rules       - ルールPDF取り込み");
       console.log("  cards       - カードデータ取り込み");
       console.log("  regulations - 殿堂レギュレーション取り込み");
       console.log("  rulings     - 裁定Q&A取り込み");
+      console.log("  audit-rulings - 現行ルールと矛盾する裁定を検出 (--limit=N --out=path)");
+      console.log("  deprecate   - レビュー済みの廃止裁定一覧を DB に反映");
       console.log("  tags        - カード役割タグ付与 (--all で全カード)");
       console.log("  faq         - FAQ/裁定取り込み <faq|ruling> <url...>");
       console.log("  tournaments - 大会結果取り込み (--pages=N で遡るページ数)");
