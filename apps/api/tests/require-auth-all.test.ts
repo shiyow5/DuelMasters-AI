@@ -94,3 +94,42 @@ describe("全 API がログイン必須", () => {
     expect((await req("POST", "/api/deck/parse", { decklist: "4 x" })).status).toBe(401);
   });
 });
+
+describe("内部キーのみのリクエスト (X-User-Id 無し)", () => {
+  beforeEach(() => {
+    process.env.INTERNAL_API_KEY = "test-key";
+    delete process.env.ALLOW_ANONYMOUS;
+    // ガードを通過するとハンドラが実際に URL を取得しに行くので、外部通信を止める。
+    // ここでは「401 で止まっていないこと」だけを確認したい。
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("外部通信は行わない");
+      }),
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("X-User-Id 無しの内部キーでもグローバルガードを通す", async () => {
+    // POST /api/meta/ingest/url は requireInternal だけで守られており、X-User-Id を送らない。
+    // グローバルガードが userId 必須のままだと、requireInternal に到達する前に 401 になり
+    // 大会結果の取り込みが本番で使えなくなる。
+    const res = await req(
+      "POST",
+      "/api/meta/ingest/url",
+      { url: "https://x" },
+      { "X-Internal-Key": "test-key" },
+    );
+    expect(res.status).not.toBe(401);
+  });
+
+  it("不正な内部キーは 401", async () => {
+    const res = await req(
+      "POST",
+      "/api/meta/ingest/url",
+      { url: "https://x" },
+      { "X-Internal-Key": "wrong" },
+    );
+    expect(res.status).toBe(401);
+  });
+});

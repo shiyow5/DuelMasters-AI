@@ -61,15 +61,27 @@ function allowAnonymous(c: Context): boolean {
   return (env?.ALLOW_ANONYMOUS ?? process.env.ALLOW_ANONYMOUS) === "true";
 }
 
+/** 正しい内部キーが付いているか (X-User-Id の有無は問わない)。 */
+function hasValidInternalKey(c: Context): boolean {
+  const key = c.req.header("x-internal-key");
+  const configured = getInternalApiKey(c);
+  return Boolean(configured) && key === configured;
+}
+
 /**
  * API 全体のログイン必須ガード。
  *
  * /api/chat は Gemini を叩くため、無認証で開けておくと**第三者に課金を消費される**。
  * デッキ構築も DB を重く叩く。読み取り系 (ティア表など) も含めて一律に閉じる。
- * bot は X-Internal-Key + X-User-Id で userId が入るのでこのガードを通過する。
+ *
+ * bot は X-Internal-Key + X-User-Id で userId が入るので通過する。
+ * 一方 POST /api/meta/ingest/url は requireInternal だけで守られており X-User-Id を送らない。
+ * userId 必須のままだと requireInternal に到達する前に 401 になり、大会結果の取り込みが
+ * 使えなくなる。正しい内部キーが付いていれば userId が無くても通す。
  */
 export const requireAuthUnlessAnonymous: MiddlewareHandler = async (c, next) => {
   if (allowAnonymous(c)) return next();
+  if (hasValidInternalKey(c)) return next();
   return requireAuth(c, next);
 };
 

@@ -26,15 +26,23 @@
   },
   // レート制限。ダッシュボードの Rate Limiting Rules はゾーン単位で *.workers.dev には
   // 適用できないため、Workers ネイティブの binding を使う。
-  // キーはユーザー単位 (middleware/rate-limit.ts)。IP だと NAT 配下が巻き添えになるうえ、
-  // IP を変えれば回避できてしまう。
+  // 2段構え (middleware/rate-limit.ts):
+  //   IP 単位   = 認証より前。不正 Bearer の連投で Supabase の auth API を叩かせない。
+  //   ユーザー単位 = 認証より後 (本命)。IP だと NAT 配下が巻き添えになり、IP を変えれば回避できる。
+  // namespace_id は Worker 内で一意ならよい (Cloudflare 側のリソース ID ではない)。
   "unsafe": {
     "bindings": [
       {
-        "name": "RATE_LIMITER",
+        "name": "RATE_LIMITER_IP",
         "type": "ratelimit",
-        // namespace_id は Worker 内で一意ならよい (Cloudflare 側のリソース ID ではない)。
         "namespace_id": "1001",
+        // 認証前なので少し緩め。ここは「壊れた/敵対的なクライアント」を止めるための網。
+        "simple": { "limit": 60, "period": 60 },
+      },
+      {
+        "name": "RATE_LIMITER_USER",
+        "type": "ratelimit",
+        "namespace_id": "1002",
         // 60秒あたり30リクエスト。チャットは1回で Gemini を数回叩くため控えめにする。
         "simple": { "limit": 30, "period": 60 },
       },

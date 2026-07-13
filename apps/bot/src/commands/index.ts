@@ -87,10 +87,11 @@ async function handleRule(interaction: ChatInputCommandInteraction): Promise<voi
   const question = interaction.options.getString("question", true);
   await interaction.deferReply();
 
-  const res = await apiPost<{ response: string }>("/api/chat", {
-    message: question,
-    mode: "rule",
-  });
+  const res = await apiPost<{ response: string }>(
+    "/api/chat",
+    { message: question, mode: "rule" },
+    internalHeaders(interaction.user.id),
+  );
 
   const embed = new EmbedBuilder()
     .setTitle("ルール回答")
@@ -112,10 +113,7 @@ async function handleDeck(interaction: ChatInputCommandInteraction, sub: string)
     const res = await apiPost<{
       score: DeckScore;
       validation: ValidationResult;
-    }>("/api/deck/evaluate", {
-      decklist: list,
-      format,
-    });
+    }>("/api/deck/evaluate", { decklist: list, format }, internalHeaders(interaction.user.id));
 
     const score = res.score;
     const embed = new EmbedBuilder()
@@ -154,7 +152,7 @@ async function handleDeck(interaction: ChatInputCommandInteraction, sub: string)
 
     const res = await apiPost<{
       entries: Array<{ name: string; count: number }>;
-    }>("/api/deck/build", { theme, format });
+    }>("/api/deck/build", { theme, format }, internalHeaders(interaction.user.id));
     const deckText = res.entries.map((e) => `${e.count} ${e.name}`).join("\n");
 
     const embed = new EmbedBuilder()
@@ -169,10 +167,7 @@ async function handleDeck(interaction: ChatInputCommandInteraction, sub: string)
     const res = await apiPost<{
       score: DeckScore;
       validation: ValidationResult;
-    }>("/api/deck/evaluate", {
-      decklist: list,
-      format,
-    });
+    }>("/api/deck/evaluate", { decklist: list, format }, internalHeaders(interaction.user.id));
 
     const v = res.validation;
     const embed = new EmbedBuilder()
@@ -219,6 +214,7 @@ async function handleMeta(interaction: ChatInputCommandInteraction, sub: string)
 
     const res = await apiGet<{ tier_data: TierEntry[] }>(
       `/api/meta/tier?format=${format}&period=${period}`,
+      internalHeaders(interaction.user.id),
     );
 
     if (!res.tier_data || res.tier_data.length === 0) {
@@ -247,7 +243,10 @@ async function handleMeta(interaction: ChatInputCommandInteraction, sub: string)
     const res = await apiGet<{
       archetype: string;
       stats: { total_entries: number; wins: number; top8: number } | null;
-    }>(`/api/meta/archetype/${encodeURIComponent(name)}?format=${format}`);
+    }>(
+      `/api/meta/archetype/${encodeURIComponent(name)}?format=${format}`,
+      internalHeaders(interaction.user.id),
+    );
 
     const embed = new EmbedBuilder().setTitle(res.archetype).setColor(EMBED_COLORS.accent);
 
@@ -271,16 +270,19 @@ async function handleChat(interaction: ChatInputCommandInteraction): Promise<voi
   const message = interaction.options.getString("message", true);
   await interaction.deferReply();
 
-  const res = await apiPost<{ response: string }>("/api/chat", {
-    message,
-    mode: "integrated",
-  });
+  const res = await apiPost<{ response: string }>(
+    "/api/chat",
+    { message, mode: "integrated" },
+    internalHeaders(interaction.user.id),
+  );
 
   await interaction.editReply(truncate(res.response, 2000));
 }
 
 // --- helpers ---
 
+// api は全エンドポイントがログイン必須。Discord ユーザーは Supabase ログインを持たないため、
+// bot は内部キー + Discord ID で認証する (headers は internalHeaders(discordId) を渡す)。
 async function apiPost<T>(
   path: string,
   body: unknown,

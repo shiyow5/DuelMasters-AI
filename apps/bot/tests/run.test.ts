@@ -106,4 +106,63 @@ describe("runCommand", () => {
     const build = calls.find((c) => c.url === "/api/deck/build")!;
     expect(build.body).toMatchObject({ format: "original" });
   });
+
+  it("すべての api 呼び出しに内部認証ヘッダを付ける", async () => {
+    // api は全エンドポイントがログイン必須になった。Discord ユーザーは Supabase ログインを
+    // 持たないため、bot は内部キー + Discord ID で認証する。1つでも欠けるとそのコマンドが 401。
+    const cases: Array<[Parameters<typeof runCommand>[0], Record<string, unknown>]> = [
+      [
+        { group: undefined, sub: "rule", options: { question: "q" } },
+        { "/api/chat": { response: "a" } },
+      ],
+      [
+        { group: undefined, sub: "chat", options: { message: "m" } },
+        { "/api/chat": { response: "a" } },
+      ],
+      [
+        { group: "deck", sub: "build", options: { theme: "t" } },
+        { "/api/user/settings": { format: "original" }, "/api/deck/build": { entries: [] } },
+      ],
+      [
+        { group: "deck", sub: "rate", options: { list: "4 x" } },
+        {
+          "/api/user/settings": { format: "original" },
+          "/api/deck/evaluate": {
+            score: {
+              overall: 1,
+              triggerCount: 0,
+              rainbowCount: 0,
+              openingHandRate: 0,
+              costCurve: { low: 0, mid: 0, high: 0 },
+              warnings: [],
+            },
+            validation: { valid: true, errors: [], warnings: [] },
+          },
+        },
+      ],
+      [
+        { group: "meta", sub: "tier", options: {} },
+        {
+          "/api/user/settings": { format: "original" },
+          "/api/meta/tier": { tier_data: [{ tier: "Tier1", archetype: "a", usage_rate: 1 }] },
+        },
+      ],
+      [
+        { group: "meta", sub: "deck", options: { name: "a" } },
+        {
+          "/api/user/settings": { format: "original" },
+          "/api/meta/archetype": { archetype: "a", stats: null },
+        },
+      ],
+    ];
+
+    for (const [parsed, routes] of cases) {
+      const calls = mockFetch(routes);
+      await runCommand(parsed, "42", ENV);
+      for (const call of calls) {
+        expect(call.headers.get("X-Internal-Key"), `${parsed.sub} → ${call.url}`).toBe("secret");
+        expect(call.headers.get("X-User-Id"), `${parsed.sub} → ${call.url}`).toBe("discord:42");
+      }
+    }
+  });
 });
