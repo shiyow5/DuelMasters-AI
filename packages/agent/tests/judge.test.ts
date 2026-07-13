@@ -48,9 +48,9 @@ describe.skipIf(!hasTestDb)("buildCardGrounding (統合)", () => {
   beforeAll(() => enableAppDb());
   beforeEach(async () => {
     await truncateAll(sql);
-    await sql`INSERT INTO cards (name, civilizations, cost, type, text) VALUES
-      ('忍蛇の聖沌 c0br4', '["darkness"]', 5, 'creature', 'テスト'),
-      ('ボルシャック・ドラゴン', '["fire"]', 7, 'creature', 'テスト')`;
+    await sql`INSERT INTO cards (name, civilizations, cost, type, power, text) VALUES
+      ('忍蛇の聖沌 c0br4', '["darkness"]', 5, 'creature', 3000, 'テスト'),
+      ('ボルシャック・ドラゴン', '["fire"]', 7, 'creature', 6000, 'テスト')`;
   });
   afterAll(async () => {
     await sql.end();
@@ -65,6 +65,17 @@ describe.skipIf(!hasTestDb)("buildCardGrounding (統合)", () => {
     expect(g).toContain("ボルシャック・ドラゴン");
     expect(g).toContain("DB未検出");
     expect(g).toContain("存在しないカードqwerty");
+  });
+
+  it("文明/コスト/種別/パワーを正解として提示する", async () => {
+    // judge は実在カードのスペックも捏造する (火の《死亡遊戯》を「闇文明」と断じた等)。
+    // 名前だけの grounding では防げないため、スペックまで渡す。
+    const g = await buildCardGrounding("4x ボルシャック・ドラゴン");
+    expect(g).toContain("スペック");
+    expect(g).toContain("ボルシャック・ドラゴン (火 / コスト7 / creature / パワー6000)");
+    // grounding が記憶より優先されることを judge に明示している
+    expect(g).toContain("絶対的な正解");
+    expect(g).toContain("誤っているのはあなたの記憶");
   });
 
   it("《》の無い素のデッキリスト表記でも実在カードを拾う (逆引き)", async () => {
