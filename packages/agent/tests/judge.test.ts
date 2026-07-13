@@ -34,14 +34,24 @@ describe.skipIf(!hasTestDb)("buildCardGrounding (統合)", () => {
     const g = await buildCardGrounding(
       "《忍蛇の聖沌 c0br4》と《ボルシャック・ドラゴン》、それに《存在しないカードqwerty》を使う。",
     );
-    expect(g).toContain("実在確認済み");
+    expect(g).toContain("実在が確認できたカード");
     expect(g).toContain("忍蛇の聖沌 c0br4");
     expect(g).toContain("ボルシャック・ドラゴン");
     expect(g).toContain("DB未検出");
     expect(g).toContain("存在しないカードqwerty");
   });
 
-  it("候補が無ければ空文字", async () => {
-    expect(await buildCardGrounding("括弧なしのテキスト")).toBe("");
+  it("《》の無い素のデッキリスト表記でも実在カードを拾う (逆引き)", async () => {
+    // 抽出方式では拾えず judge が誤って「架空」と減点していたケース。
+    const g = await buildCardGrounding(
+      "火文明の速攻デッキです。\n4x ボルシャック・ドラゴン\n4x 忍蛇の聖沌 c0br4",
+    );
+    expect(g).toContain("実在が確認できたカード");
+    expect(g).toContain("ボルシャック・ドラゴン");
+    expect(g).toContain("忍蛇の聖沌 c0br4");
+  });
+
+  it("実在カードが登場しなければ空文字", async () => {
+    expect(await buildCardGrounding("S・トリガーの一般的な説明のみ。")).toBe("");
   });
 });
