@@ -14,11 +14,26 @@ const app = new Hono<{ Bindings: Bindings }>();
 app.use("*", logger());
 // env 注入 + リクエストスコープ DB (Workers)。他のミドルウェアより前に実行する。
 app.use("*", dbEnv);
+/**
+ * CORS の許可オリジン。WEB_URL はカンマ区切りで複数指定できる。
+ *
+ * 移行期は workers.dev と独自ドメイン (dm-ai.shiyow.dev) の両方から web が配信されるため、
+ * 単一オリジンしか許可できないとどちらかの web から api を叩けなくなる。
+ * ローカル開発 (localhost:3000) は常に許可する。
+ */
+export function allowedOrigins(webUrl: string | undefined): string[] {
+  const configured = (webUrl ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  return ["http://localhost:3000", ...configured];
+}
+
 // CORS。WEB_URL は env 由来 (Workers=c.env / Node=process.env) のため per-request で解決する。
 app.use("*", (c, next) => {
-  const webUrl = c.env.WEB_URL ?? process.env.WEB_URL ?? "";
+  const webUrl = c.env.WEB_URL ?? process.env.WEB_URL;
   return cors({
-    origin: ["http://localhost:3000", webUrl].filter(Boolean),
+    origin: allowedOrigins(webUrl),
     // 許可ヘッダ/メソッドを明示 (Hono の既定エコー挙動に頼らず堅牢化する)
     allowHeaders: ["Content-Type", "Authorization", "X-Internal-Key", "X-User-Id"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],

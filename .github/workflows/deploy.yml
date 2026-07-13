@@ -17,7 +17,7 @@ on:
       target:
         description: "デプロイ対象"
         type: choice
-        options: [api, bot, all]
+        options: [api, web, bot, all]
         default: api
 
 concurrency:
@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [api, bot]
+        app: [api, web, bot]
     steps:
       - name: Skip (対象外)
         id: scope
@@ -50,13 +50,13 @@ jobs:
           TARGET: ${{ github.event.inputs.target }}
           APP: ${{ matrix.app }}
         run: |
-          # bot Worker は現状 /dm ping しか処理しない PoC (Phase 2b で実コマンドを配線する)。
-          # 自動デプロイの対象にすると、未完成のまま本番へ出し続けることになるため api だけを出す。
+          # bot Worker は Discord の Interactions Endpoint URL を設定するまで実配信されない。
+          # 誤って未設定の状態で出し続けないよう、自動デプロイの対象は api / web に限る。
           # bot を出したいときは workflow_dispatch で明示的に選ぶ。
           if [ "$EVENT" = "workflow_dispatch" ]; then
             if [ "$TARGET" = "all" ] || [ "$TARGET" = "$APP" ]; then run=true; else run=false; fi
           else
-            if [ "$APP" = "api" ]; then run=true; else run=false; fi
+            case "$APP" in api | web) run=true ;; *) run=false ;; esac
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
           if [ "$run" != "true" ]; then echo "::notice::$APP は対象外のためスキップ"; fi
@@ -88,6 +88,35 @@ jobs:
       - name: Build workspace packages
         if: steps.scope.outputs.run == 'true'
         run: pnpm build
+
+      # Secrets が未設定でもビルドは通ってしまう: lib/supabase.ts は env が空だと supabase を
+      # null にするため、ログイン・デッキ保存が黙って無効な web が本番に出る。
+      # 公開前に落とす。
+      - name: Supabase の env が揃っているか確認 (web)
+        if: steps.scope.outputs.run == 'true' && matrix.app == 'web'
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          missing=""
+          [ -n "$SUPABASE_URL" ] || missing="$missing NEXT_PUBLIC_SUPABASE_URL"
+          [ -n "$SUPABASE_ANON_KEY" ] || missing="$missing NEXT_PUBLIC_SUPABASE_ANON_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::web のビルドに必要な GitHub Secrets が未設定です:$missing"
+            echo "::error::この状態でビルドするとログイン機能が無効な web が本番に出ます。"
+            exit 1
+          fi
+
+      # web は OpenNext で Workers 用にバンドルし直す (.open-next/worker.js を作る)。
+      # NEXT_PUBLIC_* はビルド時にバンドルへ埋め込まれるため、ここで渡さないと反映されない。
+      - name: OpenNext build (web)
+        if: steps.scope.outputs.run == 'true' && matrix.app == 'web'
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.API_URL || 'https://dm-ai-api.shiyow.workers.dev' }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: pnpm cf:build
 
       - name: Deploy to Cloudflare Workers
         if: steps.scope.outputs.run == 'true'
