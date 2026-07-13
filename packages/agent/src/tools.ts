@@ -110,7 +110,9 @@ export async function runTool(
           required_cards: z.array(z.string()).optional(),
           civilizations: z.array(z.enum(CIVILIZATIONS)).nonempty().optional(),
           max_cost: z.number().optional(),
-          min_creatures: z.number().int().positive().optional(),
+          // .positive() は排他境界 (exclusiveMinimum) になり Gemini の function declaration が
+          // 400 を返す。.min(1) で包含境界にする。
+          min_creatures: z.number().int().min(1).optional(),
         });
         const parsed = schema.safeParse(args);
         if (!parsed.success) {
@@ -207,7 +209,7 @@ export const AGENT_TOOLS = [
       min_creatures: z
         .number()
         .int()
-        .positive()
+        .min(1)
         .optional()
         .describe("クリーチャーの最低枚数。未指定なら40枚デッキの55%(22枚)"),
     }),
