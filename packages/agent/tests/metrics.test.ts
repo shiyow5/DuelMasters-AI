@@ -118,8 +118,20 @@ describe("checkThresholds (CI 回帰ゲート)", () => {
     expect(r.failures.join()).toContain("ツール recall");
   });
 
-  it("judge を回していない (null) 指標は評価しない", () => {
-    // --no-judge の高速実行でもゲートを通せるようにする (judge 以外は評価する)。
-    expect(checkThresholds({ ...OK, judgeMean: null }).passed).toBe(true);
+  it("--no-judge なら judge 指標を評価しない", () => {
+    // 高速実行でもゲートを通せるようにする (judge 以外は評価する)。
+    expect(checkThresholds({ ...OK, judgeMean: null }, { judgeExpected: false }).passed).toBe(true);
+  });
+
+  it("judge を回すつもりだったのにスコアが1つも無ければ落とす", () => {
+    // quota 切れ・スキーマエラー・キー不正で judgeAnswer が全問失敗すると judgeMean が null に
+    // なる。null をスキップすると「合格」と表示され、judge 障害にゲートが盲目になる。
+    const r = checkThresholds({ ...OK, judgeMean: null }, { judgeExpected: true });
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("judge");
+  });
+
+  it("既定は judge を回した前提 (安全側)", () => {
+    expect(checkThresholds({ ...OK, judgeMean: null }).passed).toBe(false);
   });
 });

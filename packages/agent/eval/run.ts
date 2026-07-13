@@ -125,7 +125,8 @@ async function main(): Promise<number> {
 
   // --gate: 閾値割れで失敗させる (CI の回帰ゲート)。
   if (gate) {
-    const { passed, failures } = checkThresholds(agg);
+    // --no-judge は意図的な省略。judge を回したのにスコアが無い場合は障害として落とす。
+    const { passed, failures } = checkThresholds(agg, { judgeExpected: !noJudge });
     if (!passed) {
       console.error("\n=== 回帰ゲート失敗 ===");
       for (const f of failures) console.error(`  - ${f}`);

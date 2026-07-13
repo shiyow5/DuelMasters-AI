@@ -37,15 +37,32 @@ export interface GateResult {
   failures: string[];
 }
 
+export interface GateOptions {
+  /**
+   * judge を回した前提か (既定 true = 安全側)。
+   *
+   * `--no-judge` の高速実行では judgeMean が null になるが、それは意図した省略なので
+   * 評価しない。一方、judge を回したのに quota 切れ・スキーマエラー・キー不正で
+   * judgeAnswer が全問失敗しても judgeMean は null になる。両者を区別しないと、
+   * judge 障害のときに「合格」と表示され、ゲートが judge の退行に盲目になる。
+   */
+  judgeExpected?: boolean;
+}
+
 /**
- * 閾値判定。null の指標 (--no-judge 実行時の judgeMean など) は評価しない。
- * 計測していない値で落とすと、高速実行のゲートが使えなくなる。
+ * 閾値判定。計測していない指標 (null) は評価しない — ただし judge だけは
+ * 「回すつもりだったのに取れなかった」を失敗として扱う (上記 GateOptions 参照)。
  */
-export function checkThresholds(agg: Aggregate): GateResult {
+export function checkThresholds(agg: Aggregate, options: GateOptions = {}): GateResult {
+  const { judgeExpected = true } = options;
   const failures: string[] = [];
 
   if (agg.errors > THRESHOLDS.maxErrors) {
     failures.push(`エラー ${agg.errors}件 (上限 ${THRESHOLDS.maxErrors})`);
+  }
+
+  if (judgeExpected && agg.judgeMean === null) {
+    failures.push("judge スコアが1件も取れていない (judge 障害の可能性)");
   }
 
   const checks: Array<[string, number | null, number]> = [
