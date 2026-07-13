@@ -41,6 +41,20 @@ describe("toolSubject", () => {
     expect(s!.endsWith("…")).toBe(true);
   });
 
+  it("切り詰めでサロゲートペアを割らない", () => {
+    // slice は UTF-16 コードユニット単位なので、絵文字を途中で割ると壊れた文字が出る。
+    const s = toolSubject("search_rules", { query: "🔥".repeat(50) })!;
+    expect(s).not.toContain("�"); // 置換文字 (壊れた文字) が出ていない
+    expect(Array.from(s)).toHaveLength(41); // コードポイントで 40 + 省略記号
+  });
+
+  it("フォーマットの日本語化は format 引数のときだけ (検索クエリを化けさせない)", () => {
+    // 「アドバンスのルールを知りたい」で query が "advance" 一語になることがある。
+    // 全ツールに変換を当てると、実際に投げたクエリと表示が食い違う。
+    expect(toolSubject("search_rules", { query: "advance" })).toBe("advance");
+    expect(toolSubject("get_tier_list", { format: "advance" })).toBe("アドバンス");
+  });
+
   it("改行は空白に潰す (進行表示が複数行にならないように)", () => {
     expect(toolSubject("search_rules", { query: "S・トリガー\nの任意性" })).toBe(
       "S・トリガー の任意性",

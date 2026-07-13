@@ -34,14 +34,20 @@ describe("streamChat", () => {
     vi.restoreAllMocks();
   });
 
-  it("token / tool / done を順に通知する", async () => {
+  it("phase / tool / token / done を順に通知する", async () => {
+    // tool は **args** を、phase は **node** を運ぶ (#98)。ここが欠けると進行表示に
+    // 「何を」検索しているかを出せない。SSE のパース経路まで通して確かめる。
     const events = await collect([
-      'event: tool\ndata: {"name":"search_rules"}\n\n',
+      'event: phase\ndata: {"node":"agent"}\n\n',
+      'event: tool\ndata: {"name":"search_rules","args":{"query":"S・トリガー 任意"}}\n\n',
+      'event: phase\ndata: {"node":"tools"}\n\n',
       'event: token\ndata: {"text":"結論"}\n\n',
       'event: done\ndata: {"result":{"response":"答え","citations":[]}}\n\n',
     ]);
     expect(events).toEqual([
-      { type: "tool", name: "search_rules" },
+      { type: "phase", node: "agent" },
+      { type: "tool", name: "search_rules", args: { query: "S・トリガー 任意" } },
+      { type: "phase", node: "tools" },
       { type: "token", text: "結論" },
       { type: "done", result: { response: "答え", citations: [] } },
     ]);

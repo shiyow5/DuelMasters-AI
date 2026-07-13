@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { streamChat } from "@/lib/api";
 import { getTime } from "@/lib/format";
-import { toolLabel, phaseLabel, initialStatus } from "@/lib/tools";
+import { initialStatus } from "@/lib/tools";
+import { applyChatEvent } from "@/lib/chat-state";
 import type { Message } from "@/lib/types";
 import Header from "@/components/Header";
 import ChatBubble, { TypingDots } from "@/components/ChatBubble";
@@ -55,48 +56,10 @@ export default function ChatPage() {
     setLoading(true);
 
     try {
+      // 進行表示の分岐は applyChatEvent (純関数) に切り出してある。
+      // イベントの順序で表示が破綻しないことは chat-state.test.ts で固定している。
       await streamChat({ message: userMsg.content, mode, history }, (ev) => {
-        switch (ev.type) {
-          case "token":
-            updateLast((m) => ({ ...m, content: m.content + ev.text }));
-            break;
-          case "phase": {
-            // ノードを通過した「あと」に届く。画面には「次に何をしているか」を出す。
-            // トークンが流れ始めていたら上書きしない (回答が出ている最中に進行表示へ戻ると
-            // ちらつくうえ、回答が消えたように見える)。
-            const label = phaseLabel(ev.node);
-            if (label) updateLast((m) => (m.content === "" ? { ...m, status: label } : m));
-            break;
-          }
-          case "tool":
-            // ツールを呼ぶ前にエージェントが前置きを喋ることがある。その分は捨てて
-            // 「今なにをしているか」に差し替える (最終的な回答は done で確定する)。
-            updateLast((m) => ({
-              ...m,
-              content: "",
-              status: toolLabel(ev.name, ev.args ?? {}),
-            }));
-            break;
-          case "done":
-            updateLast((m) => ({
-              ...m,
-              content: ev.result.response,
-              citations: ev.result.citations,
-              toolCalls: ev.result.toolCalls,
-              streaming: false,
-              status: undefined,
-            }));
-            break;
-          case "error":
-            updateLast((m) => ({
-              ...m,
-              content: ev.message,
-              streaming: false,
-              status: undefined,
-              error: true,
-            }));
-            break;
-        }
+        updateLast((m) => applyChatEvent(m, ev));
       });
     } catch (err) {
       updateLast((m) => ({

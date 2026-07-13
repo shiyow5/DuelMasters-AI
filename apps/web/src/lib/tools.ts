@@ -37,6 +37,17 @@ const FORMAT_LABELS: Record<string, string> = {
 /** 進行表示は1行に収める。長いクエリはここで切る。 */
 const MAX_SUBJECT_LENGTH = 40;
 
+/**
+ * 文字数で切り詰める (サロゲートペアを割らない)。
+ *
+ * `String.prototype.slice` は UTF-16 コードユニット単位なので、絵文字や CJK 拡張面の文字を
+ * 途中で割って壊れた文字を出しうる。コードポイント単位で切る。
+ */
+function truncate(text: string, max: number): string {
+  const chars = Array.from(text);
+  return chars.length > max ? `${chars.slice(0, max).join("")}…` : text;
+}
+
 /** そのツール呼び出しが「何について」なのかを1行で返す。出すものが無ければ null。 */
 export function toolSubject(name: string, args: Record<string, unknown>): string | null {
   const key = SUBJECT_KEY[name];
@@ -49,10 +60,11 @@ export function toolSubject(name: string, args: Record<string, unknown>): string
   const text = raw.replace(/\s+/g, " ").trim();
   if (text === "") return null;
 
-  const labelled = FORMAT_LABELS[text] ?? text;
-  return labelled.length > MAX_SUBJECT_LENGTH
-    ? `${labelled.slice(0, MAX_SUBJECT_LENGTH)}…`
-    : labelled;
+  // フォーマットの日本語化は **format 引数のときだけ**。全ツールに当てると、
+  // 「アドバンスのルールを知りたい」という検索クエリ (query が "advance" 一語) まで
+  // 「アドバンス」に化けて、実際に投げたクエリと表示が食い違う。
+  const labelled = key === "format" ? (FORMAT_LABELS[text] ?? text) : text;
+  return truncate(labelled, MAX_SUBJECT_LENGTH);
 }
 
 /** 「ルールを検索しています: 「S・トリガー」」のような1行を作る。 */
