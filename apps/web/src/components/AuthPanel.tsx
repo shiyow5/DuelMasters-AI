@@ -41,6 +41,35 @@ export default function AuthPanel() {
     await supabase!.auth.signOut();
   }
 
+  /**
+   * パスワード再設定メールを送る。
+   *
+   * 招待リンクは一度使うと (あるいは期限が切れると) 二度と使えない。管理者に再招待を
+   * 頼まなくても本人が復旧できる導線がないと、招待制の運用が詰まる。
+   *
+   * `redirectTo` を明示する。Supabase の Site URL が既定 (http://localhost:3000) のままだと
+   * メールのリンクがローカルへ飛んで接続拒否になる —— 実際にそれで招待が失敗した。
+   */
+  async function handleReset() {
+    setError("");
+    setInfo("");
+    if (!email) {
+      setError("メールアドレスを入力してください。");
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase!.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    setLoading(false);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    // 登録の有無を教えない (アカウントの存在を外部から探れてしまう)。
+    setInfo("再設定メールを送信しました。メールをご確認ください。");
+  }
+
   if (userEmail) {
     return (
       <div className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-xl border border-border-subtle">
@@ -87,6 +116,13 @@ export default function AuthPanel() {
       </button>
       {/* 招待制なので新規登録の導線は出さない。Supabase 側でもサインアップを閉じている。
           第三者がアカウントを作れると Gemini の課金を消費されるため。 */}
+      <button
+        onClick={handleReset}
+        disabled={loading || !email}
+        className="text-[10px] text-primary hover:underline disabled:opacity-50 disabled:no-underline"
+      >
+        パスワードを忘れた / 招待リンクが切れた
+      </button>
       <p className="text-[10px] text-text-dim">招待されたメールアドレスでログインしてください。</p>
     </div>
   );

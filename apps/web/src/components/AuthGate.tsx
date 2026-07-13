@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, initialAuthHash } from "@/lib/supabase";
 import AuthPanel from "./AuthPanel";
+import SetPassword from "./SetPassword";
 
 /**
  * ログインしていないユーザーにアプリ本体を見せない。
@@ -46,6 +47,39 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <Centered>
         <p className="text-text-sub">読み込み中…</p>
+      </Centered>
+    );
+  }
+
+  // 招待/再設定リンクが失敗して戻ってきた場合。放置すると真っ白な画面になり、
+  // 何が起きたのか利用者に分からない (期限切れリンクを踏むと実際にそうなった)。
+  //
+  // **未ログインのときだけ出す。** initialAuthHash はモジュール読み込み時の不変値なので、
+  // state を見ずに先頭で返すと、この画面のログインフォームから**ログインに成功しても
+  // 画面から抜けられない** (リロードするまでアプリに入れない)。
+  if (initialAuthHash.error && state === "guest") {
+    const expired = initialAuthHash.error === "otp_expired";
+    return (
+      <Centered>
+        <div className="w-full max-w-sm">
+          <h1 className="mb-2 text-2xl font-bold">リンクを開けませんでした</h1>
+          <p className="mb-6 text-sm text-text-sub">
+            {expired
+              ? "招待リンクの有効期限が切れているか、既に使用済みです。下のフォームからログインするか、「パスワードを忘れた」で再設定してください。"
+              : (initialAuthHash.description ?? "リンクが無効です。")}
+          </p>
+          <AuthPanel />
+        </div>
+      </Centered>
+    );
+  }
+
+  // 招待 / パスワード再設定の着地。**セッションはあるがパスワードが未設定**なので、
+  // ここでアプリ本体に通してしまうと、セッションが切れた瞬間に二度と入れなくなる。
+  if (state === "authed" && initialAuthHash.type) {
+    return (
+      <Centered>
+        <SetPassword mode={initialAuthHash.type as "invite" | "recovery"} />
       </Centered>
     );
   }
