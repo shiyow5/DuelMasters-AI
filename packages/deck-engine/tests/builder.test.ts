@@ -66,3 +66,56 @@ describe.skipIf(!hasTestDb)("autoBuild 制約 (統合)", () => {
     expect(r.weaknesses.some((w) => w.includes("プレミアム殿堂のため採用できません"))).toBe(true);
   });
 });
+
+describe.skipIf(!hasTestDb)("autoBuild クリーチャー比率とコスト0除外 (統合)", () => {
+  const sql = getTestSql()!;
+  beforeAll(() => enableAppDb());
+  beforeEach(async () => {
+    await truncateAll(sql);
+    // テーマ「速攻」に一致するのは呪文だけ。クリーチャーはテーマ外にしかない状況を作る。
+    // (実データの「火の速攻」がまさにこれで、クリーチャー0枚のデッキを返していた)
+    for (let i = 0; i < 10; i++) {
+      await sql`INSERT INTO cards (name, civilizations, cost, type, text, is_shield_trigger)
+        VALUES (${"速攻呪文" + i}, '["fire"]', ${1 + (i % 3)}, 'spell', '速攻で攻める', true)`;
+    }
+    for (let i = 0; i < 10; i++) {
+      await sql`INSERT INTO cards (name, civilizations, cost, type, text)
+        VALUES (${"火クリーチャー" + i}, '["fire"]', ${1 + (i % 3)}, 'creature', 'アタッカー')`;
+    }
+    // コスト0の特殊カード (禁断・零龍など)。通常デッキに入れてはいけない。
+    await sql`INSERT INTO cards (name, civilizations, cost, type, text)
+      VALUES ('禁断カード', '["fire"]', 0, 'creature', '速攻'),
+             ('零龍の儀', '["fire"]', 0, 'creature', 'アタッカー')`;
+  });
+  afterAll(async () => {
+    await sql.end();
+  });
+
+  it("テーマに呪文しか一致しなくてもクリーチャーを最低枚数まで確保する", async () => {
+    const r = await autoBuild("速攻", "original", { civilizations: ["fire"] });
+    const rows =
+      await sql`SELECT name, type FROM cards WHERE name IN ${sql(r.entries.map((e) => e.name))}`;
+    const typeOf = new Map(rows.map((x) => [x.name as string, x.type as string]));
+    const creatures = r.entries
+      .filter((e) => (typeOf.get(e.name) ?? "").includes("creature"))
+      .reduce((s, e) => s + e.count, 0);
+    expect(creatures).toBeGreaterThanOrEqual(22); // DECK_SIZE 40 * 0.55
+  });
+
+  it("minCreatures を明示すればその枚数を満たす", async () => {
+    const r = await autoBuild("速攻", "original", { civilizations: ["fire"], minCreatures: 8 });
+    const rows =
+      await sql`SELECT name, type FROM cards WHERE name IN ${sql(r.entries.map((e) => e.name))}`;
+    const typeOf = new Map(rows.map((x) => [x.name as string, x.type as string]));
+    const creatures = r.entries
+      .filter((e) => (typeOf.get(e.name) ?? "").includes("creature"))
+      .reduce((s, e) => s + e.count, 0);
+    expect(creatures).toBeGreaterThanOrEqual(8);
+  });
+
+  it("コスト0の特殊カード(禁断/零龍)は入らない", async () => {
+    const r = await autoBuild("速攻", "original", { civilizations: ["fire"] });
+    expect(r.entries.find((e) => e.name === "禁断カード")).toBeUndefined();
+    expect(r.entries.find((e) => e.name === "零龍の儀")).toBeUndefined();
+  });
+});
