@@ -138,3 +138,45 @@ describe("runAgent グラフ制御フロー", () => {
     expect(passedMessages.length).toBe(4);
   });
 });
+
+const { formatRagContext, RAG_CONTEXT_HEADER } = await import("../src/index.js");
+
+describe("formatRagContext", () => {
+  // 公式サイトには改定前の裁定が残り、現行の条文と結論が逆のものがある。
+  // どちらが一次情報かをラベルで示さないと、モデルが古い裁定を根拠にしてしまう。
+  it("総合ルール条文と裁定Q&Aをラベルで区別する", () => {
+    const ctx = formatRagContext([
+      {
+        text: "113.6. 使用宣言を行えます。",
+        meta: { doc_type: "comprehensive_rules", article: "113.6" },
+      },
+      { text: "Q: 使えますか？\nA: はい。", meta: { doc_type: "ruling", qa_id: 123 } },
+    ]);
+    expect(ctx).toContain("[1] 【総合ルール 113.6】");
+    expect(ctx).toContain("[2] 【裁定Q&A】");
+  });
+
+  it("faq を裁定と偽らない (公式裁定ではないため)", () => {
+    const ctx = formatRagContext([
+      { text: "よくある質問の本文", meta: { doc_type: "faq" } },
+      { text: "由来不明の本文", meta: {} },
+    ]);
+    expect(ctx).toContain("[1] 【FAQ】");
+    expect(ctx).not.toContain("【裁定Q&A】");
+    expect(ctx).toContain("[2] 【参考】");
+  });
+
+  it("条番号が無い条文でもラベルは付く", () => {
+    const ctx = formatRagContext([
+      { text: "512. 次のターンに移行する時", meta: { doc_type: "comprehensive_rules" } },
+    ]);
+    expect(ctx).toContain("[1] 【総合ルール】");
+  });
+});
+
+describe("RAG_CONTEXT_HEADER", () => {
+  it("条文が裁定より優先することを明示する", () => {
+    expect(RAG_CONTEXT_HEADER).toContain("【総合ルール】を優先");
+    expect(RAG_CONTEXT_HEADER).toContain("改定前の古い回答");
+  });
+});

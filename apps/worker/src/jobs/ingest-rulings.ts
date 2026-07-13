@@ -1,9 +1,12 @@
 /**
  * 公式「よくある質問(裁定)」を RAG (rule_chunks) に取り込むジョブ。
- * 公式サイトは WordPress 化され総合ルール PDF は廃止。代わりに WP REST API の
- * カスタム投稿タイプ `qa_old` (3000件超) が裁定 Q&A の実質的な一次情報源。
+ * 公式サイトの WP REST API のカスタム投稿タイプ `qa_old` (3000件超) が裁定 Q&A の一次情報源。
  * API は質問(title)とリンクのみ返すため、回答は各 HTML ページの .answer から取得する。
  * doc_type='ruling' で qa_id 単位に冪等 upsert。
+ *
+ * 公式サイトには改定前の裁定がそのまま残っており、同じ質問で結論が逆のペアがある。
+ * 古い方を取り込むと RAG が現行ルールに反する答えを引くため、質問文で名寄せして
+ * qa_id の新しい方だけを採る (dedupeRulingList)。
  */
 import { pathToFileURL } from "node:url";
 import * as cheerio from "cheerio";
@@ -70,13 +73,45 @@ export async function fetchRulingList(limit?: number): Promise<RulingItem[]> {
   return out;
 }
 
+/**
+ * 質問文の同一性判定用に正規化する。
+ * 「【基本ルール】」等の接頭ラベルは改定時に付くことがあるので落とし、空白差・半角カナ差も潰す。
+ *
+ * 落とすのは**先頭のラベルだけ**。質問文の途中にある【マナ武装】のような括弧まで消すと、
+ * 別々の裁定が同じキーに潰れてしまい、全件取込の prune で正当な裁定が DELETE される。
+ */
+function normalizeQuestion(q: string): string {
+  return q
+    .normalize("NFKC")
+    .replace(/^\s*【[^】]*】/, "")
+    .replace(/\s+/g, "");
+}
+
+/**
+ * 同じ質問の裁定が複数あれば、qa_id が最大 (＝新しい) ものだけ残す。並び順は元のまま。
+ * 公式サイトに残る改定前の裁定が現行ルールと矛盾するため、新しい方へ寄せる。
+ */
+export function dedupeRulingList(items: RulingItem[]): RulingItem[] {
+  const newestId = new Map<string, number>();
+  for (const item of items) {
+    const key = normalizeQuestion(item.question);
+    const current = newestId.get(key);
+    if (current === undefined || item.id > current) newestId.set(key, item.id);
+  }
+  return items.filter((item) => newestId.get(normalizeQuestion(item.question)) === item.id);
+}
+
 export async function runIngestRulings(
   opts: { limit?: number; version?: string } = {},
-): Promise<{ inserted: number; skipped: number; total: number }> {
+): Promise<{ inserted: number; skipped: number; pruned: number; total: number }> {
   const sql = getSql();
   const version = opts.version ?? today();
-  const list = await fetchRulingList(opts.limit);
-  console.log(`=== 裁定取り込み開始: 対象 ${list.length}件 ===`);
+  const fetched = await fetchRulingList(opts.limit);
+  const list = dedupeRulingList(fetched);
+  const duplicates = fetched.length - list.length;
+  console.log(
+    `=== 裁定取り込み開始: 対象 ${list.length}件 (重複質問 ${duplicates}件を新しい裁定へ寄せた) ===`,
+  );
 
   let inserted = 0;
   let skipped = 0;
@@ -121,11 +156,28 @@ export async function runIngestRulings(
   }
   await flush();
 
+  // 全件取込のときだけ、対象から外れた裁定を掃除する。upsert は qa_id 単位で行うため、
+  // これをやらないと重複質問の古い方 (改定前の裁定) や公式から消えた裁定が残り続ける。
+  //
+  // qa_id を持たない ruling 行は、URL 単位で入れる旧 runIngestFaq('ruling', ...) 経路の残骸。
+  // SQL の NOT IN は NULL に対して UNKNOWN を返し行が残ってしまうため、明示的に消す。
+  let pruned = 0;
+  if (opts.limit === undefined && list.length > 0) {
+    const keep = list.map((i) => String(i.id));
+    const deleted = await sql`
+      DELETE FROM rule_chunks
+      WHERE doc_type = 'ruling'
+        AND (chunk_meta->>'qa_id' IS NULL OR chunk_meta->>'qa_id' NOT IN ${sql(keep)})
+      RETURNING id
+    `;
+    pruned = deleted.length;
+  }
+
   console.log(
-    `=== 裁定取り込み完了: ${inserted}件挿入 / ${skipped}スキップ / 対象${list.length} ===`,
+    `=== 裁定取り込み完了: ${inserted}件挿入 / ${skipped}スキップ / ${pruned}件削除 / 対象${list.length} ===`,
   );
   await closeDb();
-  return { inserted, skipped, total: list.length };
+  return { inserted, skipped, pruned, total: list.length };
 }
 
 /** CLI 引数: [limit]。省略時は全件。 */

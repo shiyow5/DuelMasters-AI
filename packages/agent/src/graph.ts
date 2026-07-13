@@ -16,6 +16,15 @@ import { SYSTEM_PROMPTS } from "./prompts.js";
 /** ツール呼び出しループの上限 (暴走防止)。 */
 export const MAX_ITERATIONS = 5;
 
+/**
+ * RAG context の前置き。条文が一次情報で、裁定 Q&A より優先することを明示する。
+ * 公式サイトには改定前の裁定が残っており、現行の総合ルールと結論が逆のものがある。
+ */
+export const RAG_CONTEXT_HEADER = `以下の資料を根拠に回答してください。
+【総合ルール】は現行の一次情報です。【裁定Q&A】は個別事例の公式回答ですが、改定前の古い回答が混じっていることがあります。【FAQ】【参考】はそれより弱い資料です。
+食い違う場合は【総合ルール】を優先してください。
+資料に無いことは推測で断定せず、分からないと述べてください。`;
+
 /** メッセージからテキストを取り出す (v1 の .text getter、無ければ content)。 */
 function messageText(msg: BaseMessage | undefined): string {
   if (!msg) return "";
@@ -32,6 +41,36 @@ function latestUserQuery(messages: BaseMessage[]): string {
 }
 
 /**
+ * RAG のヒットを context 文字列に整形する。
+ *
+ * 総合ルール条文と裁定 Q&A を明示的にラベル分けする。公式サイトには改定前の裁定が残っており
+ * 現行の条文と食い違うことがあるため (実例: 「ターンのはじめに」の処理順)、どちらが一次情報かを
+ * モデルに伝えないと古い裁定を根拠にしてしまう。
+ */
+export function formatRagContext(
+  chunks: Array<{ text: string; meta: Record<string, unknown> }>,
+): string {
+  return chunks.map((ch, i) => `[${i + 1}] ${sourceLabel(ch.meta)} ${ch.text}`).join("\n\n");
+}
+
+/**
+ * 出典ラベル。doc_type ごとに分ける。
+ * faq (公式サイトの一般的な Q&A) を「裁定」と呼ぶと、個別事例の公式回答と誤認させてしまう。
+ */
+function sourceLabel(meta: Record<string, unknown>): string {
+  switch (meta.doc_type) {
+    case "comprehensive_rules":
+      return `【総合ルール${meta.article ? ` ${meta.article}` : ""}】`;
+    case "ruling":
+      return "【裁定Q&A】";
+    case "faq":
+      return "【FAQ】";
+    default:
+      return "【参考】";
+  }
+}
+
+/**
  * rule モードの事前 RAG。条文を context として注入し citations を state に載せる。
  * ヒットが無ければ何もしない (通常のチャットにフォールバック)。
  */
@@ -40,23 +79,18 @@ async function retrieveNode(state: AgentStateType): Promise<Partial<AgentStateTy
   if (!query) return {};
   const result = await searchRules(query);
   if (result.chunks.length === 0) return {};
-  const context = result.chunks
-    .map((ch, i) => `[${i + 1}] ${ch.meta.article ? `条${ch.meta.article}: ` : ""}${ch.text}`)
-    .join("\n\n");
   const citations: Citation[] = result.chunks.map((ch) => ({
     text: ch.text.slice(0, 100),
     ...ch.meta,
   }));
   // context は messages に human として積まず、ragContext として system へ畳み込む。
-  return { ragContext: context, citations };
+  return { ragContext: formatRagContext(result.chunks), citations };
 }
 
 /** system 指示を組み立てる (rule モードは RAG 条文を畳み込む)。 */
 function buildSystemPrompt(state: AgentStateType): SystemMessage {
   const base = SYSTEM_PROMPTS[state.mode];
-  const text = state.ragContext
-    ? `${base}\n\n以下のルール条文を参考に回答してください:\n\n${state.ragContext}`
-    : base;
+  const text = state.ragContext ? `${base}\n\n${RAG_CONTEXT_HEADER}\n\n${state.ragContext}` : base;
   return new SystemMessage(text);
 }
 

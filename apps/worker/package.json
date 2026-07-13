@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "ingest:rules": "tsx src/jobs/ingest-rules.ts",
+    "ingest:rulings": "tsx src/jobs/ingest-rulings.ts",
     "ingest:cards": "tsx src/jobs/ingest-cards.ts",
     "ingest:regulations": "tsx src/jobs/ingest-regulations.ts",
     "ingest:tags": "tsx src/jobs/ingest-tags.ts",
