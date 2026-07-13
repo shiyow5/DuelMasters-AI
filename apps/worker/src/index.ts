@@ -42,9 +42,8 @@ async function main() {
       break;
     }
     case "tournaments": {
-      const { runIngestTournaments, parseTournamentsArgs } = await import(
-        "./jobs/ingest-tournaments.js"
-      );
+      const { runIngestTournaments, parseTournamentsArgs } =
+        await import("./jobs/ingest-tournaments.js");
       await runIngestTournaments(parseTournamentsArgs(process.argv.slice(3)));
       break;
     }
