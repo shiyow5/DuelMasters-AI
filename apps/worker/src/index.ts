@@ -6,9 +6,11 @@ const job = process.argv[2];
 
 async function main() {
   switch (job) {
-    case "rules":
-      await import("./jobs/ingest-rules.js");
+    case "rules": {
+      const { runIngestRules } = await import("./jobs/ingest-rules.js");
+      await runIngestRules();
       break;
+    }
     case "cards": {
       const { runIngestCards, parseCardsArgs } = await import("./jobs/ingest-cards.js");
       await runIngestCards(parseCardsArgs(process.argv.slice(3)));
