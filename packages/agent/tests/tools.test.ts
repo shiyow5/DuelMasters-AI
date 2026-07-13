@@ -95,3 +95,37 @@ describe.skipIf(!hasTestDb)("runTool build_deck 文明制約 (統合)", () => {
     expect(r.text).toContain("水クリーチャー");
   });
 });
+
+describe.skipIf(!hasTestDb)("runTool build_deck クリーチャー下限 (統合)", () => {
+  const sql = getTestSql()!;
+  beforeAll(() => enableAppDb());
+  beforeEach(async () => {
+    await truncateAll(sql);
+    // テーマに一致するのは呪文だけ。クリーチャーはテーマ外から補充される。
+    for (let i = 0; i < 10; i++) {
+      await sql`INSERT INTO cards (name, civilizations, cost, type, text, is_shield_trigger) VALUES
+        (${"速攻呪文" + i}, '["fire"]', 2, 'spell', '速攻で攻める', false)`;
+    }
+    for (let i = 0; i < 10; i++) {
+      await sql`INSERT INTO cards (name, civilizations, cost, type, text) VALUES
+        (${"火クリーチャー" + i}, '["fire"]', 2, 'creature', 'アタッカー')`;
+    }
+  });
+  afterAll(async () => {
+    await sql.end();
+  });
+
+  it("min_creatures がツール経由で autoBuild まで届く", async () => {
+    // zod schema に無いキーは黙って捨てられるため、既定の 22 枚に落ちていないかを枚数で見る。
+    const r = await runTool(
+      "build_deck",
+      { theme: "速攻", civilizations: ["fire"], min_creatures: 4 },
+      "original",
+    );
+    const result = JSON.parse(r.text) as { entries: Array<{ name: string; count: number }> };
+    const creatures = result.entries
+      .filter((e) => e.name.startsWith("火クリーチャー"))
+      .reduce((s, e) => s + e.count, 0);
+    expect(creatures).toBe(4);
+  });
+});

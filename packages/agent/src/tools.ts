@@ -110,6 +110,7 @@ export async function runTool(
           required_cards: z.array(z.string()).optional(),
           civilizations: z.array(z.enum(CIVILIZATIONS)).nonempty().optional(),
           max_cost: z.number().optional(),
+          min_creatures: z.number().int().positive().optional(),
         });
         const parsed = schema.safeParse(args);
         if (!parsed.success) {
@@ -119,11 +120,12 @@ export async function runTool(
               .join(", ")}`,
           };
         }
-        const { theme, required_cards, civilizations, max_cost } = parsed.data;
+        const { theme, required_cards, civilizations, max_cost, min_creatures } = parsed.data;
         const result = await autoBuild(theme, resolveFormat(parsed.data.format, format), {
           requiredCards: required_cards,
           civilizations,
           maxCost: max_cost,
+          minCreatures: min_creatures,
         });
         return { text: JSON.stringify(result, null, 2) };
       }
@@ -202,6 +204,12 @@ export const AGENT_TOOLS = [
         .optional()
         .describe('中心となる文明の内部コード配列 (例: ["fire"] や ["fire","nature"])'),
       max_cost: z.number().optional().describe("最大コスト。速攻なら低め(例: 5)を指定"),
+      min_creatures: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("クリーチャーの最低枚数。未指定なら40枚デッキの55%(22枚)"),
     }),
   }),
   tool(async (a: Record<string, unknown>) => (await runTool("get_tier_list", a)).text, {
