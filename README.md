@@ -164,7 +164,18 @@ pnpm --filter @dm-ai/worker ingest:cards
 pnpm --filter @dm-ai/worker ingest:regulations
 
 # 公式裁定 Q&A 取り込み (3000件超。改定前の重複質問は新しい裁定へ名寄せされる)
+# 取込の最後に、レビュー済みの廃止裁定一覧 (src/data/deprecated-rulings.ts) を貼り直す
 pnpm --filter @dm-ai/worker ingest:rulings
+
+# 現行ルールと矛盾する裁定の検出 (#92)。総合ルールと突き合わせて候補を出すだけで、DB は変えない。
+#   公式サイトには改定前の裁定が残っており、RAG が引くと回答が汚れる。
+#   LLM の判定は単体では採らず、「条番号 + 条文からの逐語引用」を機械検証したものだけ残す。
+#   出力を人がレビューして src/data/deprecated-rulings.ts に載せる。
+pnpm --filter @dm-ai/worker audit:rulings -- --out=/tmp/audit.json
+
+# 廃止裁定一覧を DB に反映 (chunk_meta.deprecated)。ingest:rulings が最後に自動で呼ぶので、
+# 一覧を編集した直後に再取込せず反映したいときだけ手で打つ。一覧から消せば印も剥がれる。
+pnpm --filter @dm-ai/worker deprecate:rulings
 
 # カード役割タグ付与 (ルール → LLM フォールバック。--all で全カード)
 pnpm --filter @dm-ai/worker ingest:tags

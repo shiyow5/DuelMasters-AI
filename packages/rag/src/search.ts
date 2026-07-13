@@ -157,6 +157,20 @@ async function hybridSearch(
   return mergeResults(keywordResults, vectorResults, topK);
 }
 
+/**
+ * 廃止印の付いたチャンクを除く条件 (#92)。
+ *
+ * 公式サイトの裁定 Q&A には改定前の回答が残っている。総合ルールの条文で裏取りして
+ * `chunk_meta.deprecated` を立てたものは、引くと agent の回答が汚れるので検索から外す。
+ * 行自体は消さない — 誤検出だったときは印を外すだけで戻せる。
+ *
+ * 印が無い (キーが無い) チャンクは NULL になるので `IS DISTINCT FROM` で拾う
+ * (`<> 'true'` だと NULL が UNKNOWN になり、印の無いチャンクまで落ちる)。
+ */
+function notDeprecated(s: Sql) {
+  return s`chunk_meta->>'deprecated' IS DISTINCT FROM 'true'`;
+}
+
 /** キーワード検索 (ILIKE ベース) */
 async function searchByKeyword(
   sql: Sql,
@@ -179,7 +193,8 @@ async function searchByKeyword(
     SELECT id, doc_type, chunk_text, chunk_meta,
            (${matchExpr}) AS match_count
     FROM rule_chunks
-    WHERE (${whereExpr}) ${docType ? sql`AND doc_type = ${docType}` : sql``}
+    WHERE (${whereExpr}) AND ${notDeprecated(sql)}
+      ${docType ? sql`AND doc_type = ${docType}` : sql``}
     ORDER BY match_count DESC
     LIMIT ${topK}
   `;
@@ -199,16 +214,17 @@ async function searchByVector(
     SELECT id, doc_type, chunk_text, chunk_meta,
            1 - (embedding <=> ${vecParam}::vector) AS similarity
     FROM rule_chunks
-    WHERE embedding IS NOT NULL ${docType ? s`AND doc_type = ${docType}` : s``}
+    WHERE embedding IS NOT NULL AND ${notDeprecated(s)}
+      ${docType ? s`AND doc_type = ${docType}` : s``}
     ORDER BY embedding <=> ${vecParam}::vector
     LIMIT ${topK}
   `;
 
-  // doc_type で絞るときだけ反復スキャンが要る (後置フィルタで 0 行になるため)。
-  const rows =
-    docType === undefined
-      ? ((await run(sql)) as unknown as Array<Record<string, unknown>>)
-      : await withIterativeScan(sql, run);
+  // 絞り込みが常に1つ以上ある (廃止印の除外) ので、常に反復スキャンで引く。
+  // HNSW は近傍を先に取ってから WHERE を適用する後置フィルタなので、絞り込みを足すと
+  // 候補が削られて LIMIT 未満しか返らないこと (最悪 0 行) がある。doc_type 絞り込みで
+  // 実際に 0 行になった前科があるため、条件を足した以上ここも反復スキャンに寄せる。
+  const rows = await withIterativeScan(sql, run);
 
   return rows.map((row) => toChunk(row, row.similarity as number));
 }

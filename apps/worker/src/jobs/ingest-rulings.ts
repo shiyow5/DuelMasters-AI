@@ -14,6 +14,7 @@ import { getSql, closeDb } from "@dm-ai/db";
 import { embed } from "@dm-ai/core";
 import { sleep, fetchWithRetry } from "../lib.js";
 import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
+import { applyDeprecations } from "./deprecate-rulings.js";
 
 const QA_API = `${OFFICIAL_SITE_BASE_URL}/wp-json/wp/v2/qa_old`;
 const LIST_PER_PAGE = 100;
@@ -103,7 +104,13 @@ export function dedupeRulingList(items: RulingItem[]): RulingItem[] {
 
 export async function runIngestRulings(
   opts: { limit?: number; version?: string } = {},
-): Promise<{ inserted: number; skipped: number; pruned: number; total: number }> {
+): Promise<{
+  inserted: number;
+  skipped: number;
+  pruned: number;
+  total: number;
+  deprecated: number;
+}> {
   const sql = getSql();
   const version = opts.version ?? today();
   const fetched = await fetchRulingList(opts.limit);
@@ -173,11 +180,16 @@ export async function runIngestRulings(
     pruned = deleted.length;
   }
 
+  // 取込は qa_id 単位の DELETE+INSERT なので、前回付けた廃止印 (#92) はここで消えている。
+  // レビュー済みの一覧から貼り直す。これを忘れると、週次 cron が回るたびに
+  // 現行ルールと矛盾する裁定が RAG に復活する。
+  const deprecated = await applyDeprecations(sql);
+
   console.log(
-    `=== 裁定取り込み完了: ${inserted}件挿入 / ${skipped}スキップ / ${pruned}件削除 / 対象${list.length} ===`,
+    `=== 裁定取り込み完了: ${inserted}件挿入 / ${skipped}スキップ / ${pruned}件削除 / 対象${list.length} / 廃止印${deprecated.flagged}件 ===`,
   );
   await closeDb();
-  return { inserted, skipped, pruned, total: list.length };
+  return { inserted, skipped, pruned, total: list.length, deprecated: deprecated.flagged };
 }
 
 /** CLI 引数: [limit]。省略時は全件。 */
