@@ -240,6 +240,15 @@ export interface StructuredOptions {
   responseSchema: Record<string, unknown>;
   systemPrompt?: string;
   temperature?: number;
+  /**
+   * 出力トークンの上限。**暴走生成のコスト止め**。
+   *
+   * 未指定だとモデルが延々と生成し続けることがある。実際、裁定監査 (#92) で
+   * 12万文字を吐いて JSON が途中で切れた例が出た。結果は検証に落ちて捨てられるのに、
+   * 出力トークンぶんの課金だけが残る (月次上限に到達した一因)。
+   * 想定される最長の応答より少し大きい値を必ず渡すこと。
+   */
+  maxTokens?: number;
 }
 
 /**
@@ -260,6 +269,7 @@ export async function generateStructured<T>(
   };
   if (options.systemPrompt) config.systemInstruction = options.systemPrompt;
   if (options.temperature !== undefined) config.temperature = options.temperature;
+  if (options.maxTokens !== undefined) config.maxOutputTokens = options.maxTokens;
 
   // モデルチェーン: レート制限時は次モデルへ。各モデル内で JSON 検証を最大2回試行する。
   return withModelFallback(getStructuredModels(), async (model) => {

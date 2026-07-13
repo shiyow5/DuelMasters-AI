@@ -81,6 +81,15 @@ const ARTICLES_PER_RULING = 10;
 const CONCURRENCY = 4;
 
 /**
+ * 1判定あたりの出力トークン上限。
+ *
+ * 判定は「条番号 + 短い逐語引用 + 理由」なので数百トークンで足りる。上限が無いと
+ * モデルが暴走することがあり、実際に**12万文字**を吐いて JSON が途中で切れた例が出た。
+ * 捨てる結果に課金だけ乗るので必ず塞ぐ。
+ */
+const MAX_VERDICT_TOKENS = 1024;
+
+/**
  * 質問文が特定のカードについてのものか。
  *
  * カード個別の裁定 (2589件) は「そのカードのテキストをどう解釈するか」であって、
@@ -457,7 +466,8 @@ async function judgeRuling(
 ): Promise<{ flagged: boolean; verdict: AuditVerdict; detail: string }> {
   const verdict = await generateStructured(buildAuditPrompt(text, articles), VERDICT_ZOD, {
     responseSchema: VERDICT_RESPONSE_SCHEMA,
-    temperature: 0,
+    temperature: 0, // 監査は再現性を優先する
+    maxTokens: MAX_VERDICT_TOKENS,
   });
 
   const check = verifyGrounding(verdict, articles, text);
@@ -469,7 +479,7 @@ async function judgeRuling(
   const defense = await generateStructured(
     buildRefutePrompt(text, article, verdict.reason),
     REFUTE_ZOD,
-    { responseSchema: REFUTE_RESPONSE_SCHEMA, temperature: 0 },
+    { responseSchema: REFUTE_RESPONSE_SCHEMA, temperature: 0, maxTokens: MAX_VERDICT_TOKENS },
   );
   if (defense.compatible) {
     return { flagged: false, verdict, detail: `反証で棄却: ${defense.reason}` };
