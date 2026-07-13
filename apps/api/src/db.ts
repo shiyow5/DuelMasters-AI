@@ -50,11 +50,41 @@ export const dbEnv: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) 
     await next();
     return;
   }
-  // Workers: Hyperdrive のリクエストスコープ接続を ALS に載せ、応答後に閉じる
+  // Workers: Hyperdrive のリクエストスコープ接続を ALS に載せ、**本文を書き終えてから**閉じる
   const sql = createSql(connectionString);
   try {
     await runWithSql(sql, () => next());
-  } finally {
+  } catch (err) {
     c.executionCtx.waitUntil(sql.end());
+    throw err;
   }
+  const { res, closed } = closeAfterBody(c.res, () => sql.end());
+  c.res = res;
+  c.executionCtx.waitUntil(closed);
 };
+
+/**
+ * 応答**本文の書き出しが完了してから** close() する。
+ *
+ * `next()` の解決は「本文を書き終えた」ことを意味しない。`streamSSE` は本文を書く前に
+ * Response を返すため、next() 直後に接続を閉じると **ストリーム中に走るツールの DB クエリが
+ * `write CONNECTION_ENDED` で全滅する** (#112。本番で search_cards / search_rules が全て死んでいた)。
+ *
+ * ルート側の opt-in (「ストリームするルートは寿命を延ばしてね」) にはしない。忘れれば無言で
+ * 同じ壊れ方に戻り、しかも eval では検出できないため。**本文を包み直して構造的に保証する。**
+ */
+function closeAfterBody(
+  original: Response,
+  close: () => Promise<void>,
+): { res: Response; closed: Promise<void> } {
+  if (!original.body) return { res: original, closed: close() };
+
+  const { readable, writable } = new TransformStream();
+  const closed = original.body
+    .pipeTo(writable)
+    // クライアント切断 (ブラウザを閉じた等) で reject する。接続は下で必ず閉じる。
+    .catch(() => {})
+    .then(close);
+
+  return { res: new Response(readable, original), closed };
+}
