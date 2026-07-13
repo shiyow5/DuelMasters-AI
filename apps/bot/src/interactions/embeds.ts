@@ -35,9 +35,17 @@ export interface TierEntry {
   usage_rate: number;
 }
 
+/** Discord の embed title の文字数上限。超えると PATCH が拒否され deferred のまま固まる。 */
+const TITLE_MAX = 256;
+
 /** Discord の文字数上限で切る。 */
 export function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 3) + "..." : text;
+}
+
+/** embed タイトル。theme / アーキタイプ名はユーザー入力なので必ず上限で切る。 */
+function title(text: string): string {
+  return truncate(text, TITLE_MAX);
 }
 
 export function formatLabel(format: string): string {
@@ -84,7 +92,7 @@ export function deckBuildEmbed(
 ): Embed {
   const deckText = entries.map((e) => `${e.count} ${e.name}`).join("\n");
   return {
-    title: `自動構築: ${theme}`,
+    title: title(`自動構築: ${theme}`),
     description: `\`\`\`\n${truncate(deckText, 3900)}\n\`\`\``,
     color: EMBED_COLORS.accent,
   };
@@ -139,7 +147,7 @@ export function archetypeEmbed(
   stats: { total_entries: number; wins: number; top8: number } | null,
 ): Embed {
   return {
-    title: archetype,
+    title: title(archetype),
     color: EMBED_COLORS.accent,
     ...(stats
       ? {
