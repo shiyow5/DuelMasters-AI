@@ -17,8 +17,8 @@ on:
       target:
         description: "デプロイ対象"
         type: choice
-        options: [all, api, bot]
-        default: all
+        options: [api, bot, all]
+        default: api
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -30,10 +30,13 @@ env:
 jobs:
   deploy:
     name: Deploy ${{ matrix.app }} Worker
-    # workflow_run の場合は CI が成功したときだけ。手動実行は対象の絞り込みに従う。
+    # CI は pull_request でも走る。conclusion == 'success' だけを見ると、未マージの PR コードが
+    # workflow_run を発火させ、本番の Cloudflare 認証情報でデプロイされうる (fork の main ブランチ
+    # からの PR は branches: [main] フィルタも通る)。push 起因の CI に限定する。
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -43,15 +46,20 @@ jobs:
       - name: Skip (対象外)
         id: scope
         env:
-          TARGET: ${{ github.event.inputs.target || 'all' }}
+          EVENT: ${{ github.event_name }}
+          TARGET: ${{ github.event.inputs.target }}
           APP: ${{ matrix.app }}
         run: |
-          if [ "$TARGET" = "all" ] || [ "$TARGET" = "$APP" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
+          # bot Worker は現状 /dm ping しか処理しない PoC (Phase 2b で実コマンドを配線する)。
+          # 自動デプロイの対象にすると、未完成のまま本番へ出し続けることになるため api だけを出す。
+          # bot を出したいときは workflow_dispatch で明示的に選ぶ。
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$TARGET" = "all" ] || [ "$TARGET" = "$APP" ]; then run=true; else run=false; fi
           else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::$APP は対象外のためスキップ"
+            if [ "$APP" = "api" ]; then run=true; else run=false; fi
           fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          if [ "$run" != "true" ]; then echo "::notice::$APP は対象外のためスキップ"; fi
 
       - name: Checkout
         if: steps.scope.outputs.run == 'true'

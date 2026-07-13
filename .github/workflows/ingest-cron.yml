@@ -19,14 +19,19 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: "実行するジョブ"
+        # all は cron で回している取込 (regulations / rules / cards / rulings) をまとめて実行する。
+        # tags は全カードに LLM を当てるので高価、snapshot は大会結果の取込後に打つものなので、
+        # どちらも all には含めない。必要なときに個別に選ぶ。
+        description: "実行するジョブ (all = regulations + rules + cards + rulings)"
         type: choice
         options: [regulations, rules, cards, rulings, tags, snapshot, all]
         default: regulations
 
 concurrency:
-  # 同じジョブの多重実行を避ける (取込は DB を書き換えるため)。
-  group: ingest-${{ github.event.inputs.job || github.event.schedule }}
+  # 取込は同じ本番 DB を書き換えるので、cron と手動実行を含めて全体を直列化する。
+  # キーを job や schedule で分けると、週次 cron の裁定取込と手動の all が重なりうる。
+  # ingest-rulings は qa_id 単位で DELETE→INSERT するため、重なると重複チャンクが残る。
+  group: ingest
   cancel-in-progress: false
 
 env:
@@ -41,7 +46,9 @@ jobs:
       fail-fast: false
       max-parallel: 1 # 公式サイトへの負荷と DB 書き込みの競合を避けるため直列
       matrix:
-        job: [regulations, rules, cards, rulings]
+        # tags / snapshot は cron では回さない (tags は全カードに LLM を当てるので高価、
+        # snapshot は大会結果の取込後に打つもの)。workflow_dispatch から明示的に選ぶ。
+        job: [regulations, rules, cards, rulings, tags, snapshot]
     steps:
       - name: 実行対象か判定
         id: scope
@@ -52,8 +59,12 @@ jobs:
         run: |
           run=false
           if [ -n "$INPUT_JOB" ]; then
-            # 手動実行: 指定ジョブ (all なら全部)
-            if [ "$INPUT_JOB" = "all" ] || [ "$INPUT_JOB" = "$JOB" ]; then run=true; fi
+            # 手動実行: 指定ジョブ。all は cron 対象の取込のみ (tags/snapshot は個別選択)。
+            if [ "$INPUT_JOB" = "$JOB" ]; then
+              run=true
+            elif [ "$INPUT_JOB" = "all" ]; then
+              case "$JOB" in regulations | rules | cards | rulings) run=true ;; esac
+            fi
           elif [ "$SCHEDULE" = "0 18 * * *" ]; then
             # 毎日: 殿堂のみ
             if [ "$JOB" = "regulations" ]; then run=true; fi
@@ -92,4 +103,15 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: pnpm --filter @dm-ai/worker ingest:${{ matrix.job }}
+          JOB: ${{ matrix.job }}
+        run: |
+          # snapshot だけ script 名と引数が違う (メタ集計はフォーマットと期間を取る)。
+          case "$JOB" in
+            snapshot)
+              pnpm --filter @dm-ai/worker snapshot:meta original 4
+              pnpm --filter @dm-ai/worker snapshot:meta advance 4
+              ;;
+            *)
+              pnpm --filter @dm-ai/worker "ingest:$JOB"
+              ;;
+          esac
