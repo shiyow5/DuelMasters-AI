@@ -8,7 +8,10 @@ describe("runTool search_cards バリデーション (単体)", () => {
       query: "x",
       civilization: "purple",
     });
-    expect(result.text).toContain("ツール引数が不正です");
+    // throw せずにメッセージで返すこと (throw すると catch に飲まれて
+    // 「一時的なエラー」に化け、agent が誤報する) と、**何が悪かったかを名指しする**こと。
+    expect(result.text).toContain("不正です");
+    expect(result.text).toContain("purple");
   });
 });
 

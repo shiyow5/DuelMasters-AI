@@ -10,6 +10,7 @@ import {
   suggestReplacements,
 } from "@dm-ai/deck-engine";
 import { getSql } from "@dm-ai/db";
+import { buildCardSearchArgs, normalizeCardName } from "./card-search.js";
 import type { Citation } from "./state.js";
 
 export interface ToolResult {
@@ -50,41 +51,64 @@ export async function runTool(
       }
 
       case "search_cards": {
-        const schema = z.object({
-          query: z.string(),
-          civilization: z.enum(CIVILIZATIONS).optional(),
-          max_cost: z.number().optional(),
-          type: z.enum(CARD_TYPES).optional(),
-        });
-        const parsed = schema.safeParse(args);
-        if (!parsed.success) {
-          return {
-            text: `ツール引数が不正です: ${parsed.error.issues
-              .map((i) => `${i.path.join(".")}: ${i.message}`)
-              .join(", ")}`,
-          };
-        }
-        const { query, civilization, max_cost, type } = parsed.data;
+        // 引数の検証・正規化は card-search.ts (query 必須をやめ、日本語の文明/種別も受ける)。
+        const built = buildCardSearchArgs(args);
+        if (!built.ok) return { text: `検索条件が不正です: ${built.reason}` };
+        const { query, civilization, min_cost, max_cost, type } = built.args;
+
         const sql = getSql();
+
+        /**
+         * **カード名は正規化して突き合わせる。**
+         * 《ヘブンズ・ゲート》を「ヘブンズゲート」(中黒なし) で探しても引けるように、
+         * DB 側の name にも同じ正規化 (中黒・空白・囲みを落として小文字化) をかける。
+         * これをやらないと素朴な部分一致が 0件になり、agent がそれを「ツールのエラー」と
+         * 誤解して「一時的なエラーが発生している」と誤報する (本番で実際に起きた)。
+         */
+        const normalized = query ? normalizeCardName(query) : "";
+        const nameFrag = query
+          ? sql`AND (
+              lower(translate(name, '・･ 　《》「」『』【】', '')) LIKE ${"%" + normalized + "%"}
+              OR text ILIKE ${"%" + query + "%"}
+            )`
+          : sql``;
         const civFrag = civilization
           ? sql`AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(civilizations) c WHERE c = ${civilization})`
           : sql``;
-        const costFrag = max_cost !== undefined ? sql`AND cost <= ${max_cost}` : sql``;
+        const minFrag = min_cost !== undefined ? sql`AND cost >= ${min_cost}` : sql``;
+        const maxFrag = max_cost !== undefined ? sql`AND cost <= ${max_cost}` : sql``;
         const typeFrag = type ? sql`AND type = ${type}` : sql``;
+
         const rows = await sql`
           SELECT name, civilizations, cost, type, races, text, power
           FROM cards
-          WHERE (name ILIKE ${"%" + query + "%"} OR text ILIKE ${"%" + query + "%"})
-            ${civFrag} ${costFrag} ${typeFrag}
-          LIMIT 10
+          WHERE TRUE ${nameFrag} ${civFrag} ${minFrag} ${maxFrag} ${typeFrag}
+          ORDER BY cost, name
+          LIMIT 15
         `;
+        if (rows.length === 0) {
+          // **0件は「エラー」ではない。** そう伝えないと agent が「ツールの一時的なエラー」と
+          // 誤解して誤報する (本番で実際に起きた)。何で絞ったかも返し、条件を緩める判断材料にする。
+          const cond = [
+            query && `名前/テキスト「${query}」`,
+            civilization && `文明=${civilization}`,
+            min_cost !== undefined && `コスト>=${min_cost}`,
+            max_cost !== undefined && `コスト<=${max_cost}`,
+            type && `種別=${type}`,
+          ]
+            .filter(Boolean)
+            .join(" / ");
+          return {
+            text: `検索は成功しましたが、条件に一致するカードは0件でした (条件: ${cond})。これはエラーではありません。条件を緩めて再検索するか、該当するカードが無い旨を回答してください。`,
+          };
+        }
         const text = rows
           .map(
             (r) =>
-              `${r.name} (${r.cost}コスト, ${(r.civilizations as string[]).join("/")}): ${(r.text as string).slice(0, 100)}`,
+              `${r.name} (${r.cost}コスト, ${(r.civilizations as string[]).join("/")}, ${r.type}): ${String(r.text ?? "").slice(0, 100)}`,
           )
           .join("\n");
-        return { text: text || "該当するカードが見つかりませんでした" };
+        return { text };
       }
 
       case "evaluate_deck": {
@@ -177,11 +201,17 @@ export const AGENT_TOOLS = [
   }),
   tool(async (a: Record<string, unknown>) => (await runTool("search_cards", a)).text, {
     name: "search_cards",
-    description: "カードを名前やテキストで検索します",
+    description:
+      "カードを検索します。名前・文明・コスト・種別のいずれかで絞り込めます。" +
+      "「コスト7以上のクリーチャー」のように名前を使わない検索もできます (query は省略可)。" +
+      "名前は中黒 (・) の有無を問いません。",
     schema: z.object({
-      query: z.string().describe("検索クエリ"),
-      civilization: z.enum(CIVILIZATIONS).optional().describe("文明フィルタ"),
-      max_cost: z.number().optional().describe("最大コスト"),
+      // **必須にしない。** 必須だと「コスト7以上のクリーチャー」を表現できず、
+      // モデルが意味的な語 ("コスト7以上") を部分一致検索に突っ込んで 0件になる (本番で発生)。
+      query: z.string().optional().describe("カード名またはテキストに含まれる語 (省略可)"),
+      civilization: z.enum(CIVILIZATIONS).optional().describe("文明"),
+      min_cost: z.number().optional().describe("最小コスト (これ以上)"),
+      max_cost: z.number().optional().describe("最大コスト (これ以下)"),
       type: z.enum(CARD_TYPES).optional().describe("カード種別"),
     }),
   }),
