@@ -26,41 +26,45 @@ export function extractCardCandidates(response: string): string[] {
   return [...names];
 }
 
+/** 逆引きで拾うカード名の最小長。短すぎる名前が地の文に偶然一致するのを避ける。 */
+const MIN_NAME_LEN = 3;
+/** grounding に載せる実在カードの上限 (プロンプト肥大の防止)。 */
+const MAX_CONFIRMED = 60;
+
 /**
- * 抽出したカード名候補を DB で実在確認し、judge に渡す grounding 文を作る。
- * LLM-as-judge はカードプールを知らず実在カードを「架空」と誤判定しがちなため、
- * 実在確認済み / DB 未検出 を明示して捏造判定の根拠を与える。
+ * judge に渡す「カード実在性」grounding を作る。
+ * LLM-as-judge はカードプール (11563枚) を知らず、実在カードを「架空」と誤判定しがち。
+ *
+ * 実在判定は **DB のカード名を回答本文へ逆引き** して行う。回答からカード名を抽出する方式だと
+ * 《…》表記しか拾えず、素のデッキリスト (例: "4x 最期の竜炎") が grounding から漏れて
+ * judge が従来どおり推測で減点してしまうため。逆引きなら表記に依存しない。
+ * 《…》で明示された名前のうち逆引きに掛からなかったものだけを「捏造の疑い」として挙げる。
+ *
  * DB 障害時は空文字を返し (grounding 無しで続行)、judge を落とさない。
  */
 export async function buildCardGrounding(response: string): Promise<string> {
-  const candidates = extractCardCandidates(response);
-  if (candidates.length === 0) return "";
+  if (!response.trim()) return "";
   try {
     const sql = getSql();
-    // まず完全一致をまとめて確認 (1 クエリ)。
-    const exactRows = await sql`SELECT DISTINCT name FROM cards WHERE name IN ${sql(candidates)}`;
-    const exactNames = new Set(exactRows.map((r) => r.name as string));
-    const ok: string[] = [];
-    const miss: string[] = [];
-    for (const c of candidates) {
-      if (exactNames.has(c)) {
-        ok.push(c);
-        continue;
-      }
-      // 未一致のみ表記揺れ (双方向部分一致) を確認。
-      // 逆方向 (候補がカード名を含む) は、短いカード名が偶然部分一致して誤って
-      // 「実在」と判定するのを避けるため、4文字以上のカード名に限る。
-      const fuzzy = await sql`
-        SELECT 1 FROM cards
-        WHERE name ILIKE ${"%" + c + "%"}
-           OR (length(name) >= 4 AND ${c} ILIKE '%' || name || '%')
-        LIMIT 1
-      `;
-      (fuzzy.length ? ok : miss).push(c);
-    }
+    const rows = await sql`
+      SELECT name FROM cards
+      WHERE length(name) >= ${MIN_NAME_LEN} AND ${response} ILIKE '%' || name || '%'
+      ORDER BY length(name) DESC
+      LIMIT ${MAX_CONFIRMED}
+    `;
+    const confirmed = rows.map((r) => r.name as string);
+
+    // 明示表記の候補のうち、実在カード名と全く重ならないものは捏造の疑い。
+    const suspicious = extractCardCandidates(response).filter(
+      (c) => !confirmed.some((n) => c.includes(n) || n.includes(c)),
+    );
+
+    if (confirmed.length === 0 && suspicious.length === 0) return "";
     const lines: string[] = ["# カード実在性 grounding (カードDB照合)"];
-    if (ok.length) lines.push(`実在確認済み: ${ok.join(", ")}`);
-    if (miss.length) lines.push(`DB未検出 (表記揺れ or 架空の可能性): ${miss.join(", ")}`);
+    if (confirmed.length)
+      lines.push(`回答中に登場し実在が確認できたカード: ${confirmed.join(", ")}`);
+    if (suspicious.length)
+      lines.push(`DB未検出 (表記揺れ or 架空の可能性): ${suspicious.join(", ")}`);
     lines.push(
       "実在確認済みのカードを『存在しない』と決めつけて減点しないこと。DB未検出でも表記揺れの可能性があるため、明らかに不自然 (ランダム文字列等) な場合のみ捏造として減点すること。",
     );
