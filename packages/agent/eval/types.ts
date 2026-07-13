@@ -36,11 +36,23 @@ export interface ItemResult {
   mode: AgentMode;
   tool?: PR;
   citation?: PR;
+  /** 本文に書いた条番号が retrieve した資料にあった割合 (#99)。引用なしは null。 */
+  citationGrounding?: number | null;
   factCoverage?: number;
   judgeScore?: number;
   judgeReason?: string;
   /** judge を回したが失敗した (quota/スキーマ/キー不正)。部分障害の検出に使う。 */
   judgeFailed?: boolean;
+  /**
+   * 回答本文。**退行の診断に要る。**
+   * これが無いと「factCoverage が 1.00 → 0.00 に落ちた」と分かっても、なぜ落ちたのかを
+   * レポートから追えず、毎回 eval を回し直すことになる (実際にそうなった)。
+   */
+  response?: string;
+  /** 引いた条番号 (本文から抽出したもの)。捏造した番号を目で確認できるようにする。 */
+  citedArticles?: string[];
+  /** 資料に無く、本文から落とした条番号 (= agent がでっち上げた番号)。 */
+  ungroundedCitations?: string[];
   latencyMs: number;
   error?: string;
 }
