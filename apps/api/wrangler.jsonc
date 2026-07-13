@@ -20,5 +20,24 @@
     // 移行期は workers.dev と独自ドメインの両方から配信されるため両方を許可する。
     // localhost:3000 (ローカル開発) は常に許可される。
     "WEB_URL": "https://dm-ai.shiyow.dev,https://dm-ai-web.shiyow.workers.dev",
+    // ALLOW_ANONYMOUS はここに置かないこと。置くと API がログイン不要になり、
+    // /api/chat 経由で第三者に Gemini の課金を消費される。E2E とローカル開発でのみ使う。
+    // deploy.yml がこのファイルへの混入を検査して落とす。
+  },
+  // レート制限。ダッシュボードの Rate Limiting Rules はゾーン単位で *.workers.dev には
+  // 適用できないため、Workers ネイティブの binding を使う。
+  // キーはユーザー単位 (middleware/rate-limit.ts)。IP だと NAT 配下が巻き添えになるうえ、
+  // IP を変えれば回避できてしまう。
+  "unsafe": {
+    "bindings": [
+      {
+        "name": "RATE_LIMITER",
+        "type": "ratelimit",
+        // namespace_id は Worker 内で一意ならよい (Cloudflare 側のリソース ID ではない)。
+        "namespace_id": "1001",
+        // 60秒あたり30リクエスト。チャットは1回で Gemini を数回叩くため控えめにする。
+        "simple": { "limit": 30, "period": 60 },
+      },
+    ],
   },
 }

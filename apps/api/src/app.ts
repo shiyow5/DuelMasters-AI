@@ -5,7 +5,8 @@ import { chatRouter } from "./routes/chat.js";
 import { deckRouter } from "./routes/deck.js";
 import { metaRouter } from "./routes/meta.js";
 import { userRouter } from "./routes/user.js";
-import { optionalAuth } from "./middleware/auth.js";
+import { optionalAuth, requireAuthUnlessAnonymous } from "./middleware/auth.js";
+import { rateLimit } from "./middleware/rate-limit.js";
 import { dbEnv, type Bindings } from "./db.js";
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -39,12 +40,18 @@ app.use("*", (c, next) => {
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   })(c, next);
 });
-// 認証 (無認証でも通す。userId を設定するだけ)
+// 認証を試みて userId を設定する (ここでは通す。弾くのは下のガード)
 app.use("*", optionalAuth);
 
-// ヘルスチェック
+// ヘルスチェックは無認証で通す (監視のため)
 app.get("/", (c) => c.json({ status: "ok", service: "dm-ai-api" }));
 app.get("/health", (c) => c.json({ status: "ok" }));
+
+// API は全てログイン必須。/api/chat は Gemini を叩くため、無認証で開けておくと第三者に
+// 課金を消費される。読み取り系も含めて一律に閉じる。
+// レート制限は認証の後 (ユーザー単位でカウントするため)。
+app.use("/api/*", requireAuthUnlessAnonymous);
+app.use("/api/*", rateLimit);
 
 // ルーティング
 app.route("/api/chat", chatRouter);
