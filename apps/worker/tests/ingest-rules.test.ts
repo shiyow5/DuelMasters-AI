@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { findRulesPdfUrl, extractVersion } from "../src/jobs/ingest-rules.js";
+// 副作用の無いモジュールから import する。ingest-rules.js 経由だと pdf-parse を
+// 引きずり込んでしまう (ESM 経由だとデバッグ経路でテスト用 PDF を同期読みしうる)。
+import { findRulesPdfUrl, extractVersion } from "../src/rules-pdf.js";
 
 // 実際のルール改訂ページ (/rule/rulechange/) には総合ルール以外の PDF も並ぶ。
 const RULE_CHANGE_HTML = `

@@ -15,37 +15,13 @@ import { getSql, closeDb } from "@dm-ai/db";
 import { chunkRuleText } from "@dm-ai/rag";
 import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
 import { sleep } from "../lib.js";
+// URL/バージョン解決は副作用の無い別モジュールに置く。ここは pdf-parse を top-level import
+// するため、純粋関数のテストからこのファイルを読ませない (Codex #76 P2)。
+import { findRulesPdfUrl, extractVersion } from "../rules-pdf.js";
 
 const RULE_CHANGE_URL = `${OFFICIAL_SITE_BASE_URL}/rule/rulechange/`;
 const DOC_TYPE = "comprehensive_rules";
 const BATCH_SIZE = 20;
-
-/**
- * ルール改訂ページの HTML から総合ゲームルール PDF の URL を取り出す (純粋関数・テスト対象)。
- *
- * 同じページには競技ルール (dm_competition_rule_*) やデュエパーティー (dhueparty_rule_*) の
- * PDF も並ぶため、`dm_rule_<日付>` のものだけを対象にする。複数あればファイル名の日付が
- * 最も新しいものを選ぶ。
- */
-export function findRulesPdfUrl(html: string, baseUrl = OFFICIAL_SITE_BASE_URL): string | null {
-  const hrefs = [...html.matchAll(/href="([^"]+\.pdf)"/g)].map((m) => m[1]);
-  const candidates = hrefs
-    .map((href) => {
-      const file = href.split("/").pop() ?? "";
-      const m = file.match(/^dm_rule_(\d{8})/);
-      return m ? { href, date: m[1] } : null;
-    })
-    .filter((c): c is { href: string; date: string } => c !== null);
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => b.date.localeCompare(a.date));
-  const href = candidates[0].href;
-  return href.startsWith("http") ? href : `${baseUrl}${href}`;
-}
-
-/** PDF 本文からバージョンを取り出す (純粋関数・テスト対象)。例: "Ver.1.50" → "1.50" */
-export function extractVersion(text: string): string {
-  return text.match(/Ver\.\s*([\d.]+)/)?.[1] ?? "unknown";
-}
 
 export async function runIngestRules(): Promise<{ chunks: number; version: string }> {
   console.log("=== 総合ゲームルール取り込み開始 ===");
