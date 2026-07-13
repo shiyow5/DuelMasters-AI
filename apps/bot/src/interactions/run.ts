@@ -57,25 +57,29 @@ async function apiFetch<T>(
   return (await res.json()) as T;
 }
 
-const apiGet = <T>(env: BotEnv, path: string, headers?: Record<string, string>) =>
-  apiFetch<T>(env, path, { method: "GET", headers });
+// api は全エンドポイントがログイン必須。Discord ユーザーは Supabase ログインを持たないため、
+// bot は内部キー + Discord ID で認証する。1つでも付け忘れるとそのコマンドが 401 になるので、
+// ヘッダの付与は呼び出し側に任せず、この2つのヘルパに集約する。
+const apiGet = <T>(env: BotEnv, path: string, discordId: string) =>
+  apiFetch<T>(env, path, { method: "GET", headers: internalHeaders(env, discordId) });
 
 const apiSend = <T>(
   env: BotEnv,
   method: "POST" | "PUT",
   path: string,
   body: unknown,
-  headers?: Record<string, string>,
-) => apiFetch<T>(env, path, { method, body: JSON.stringify(body), headers });
+  discordId: string,
+) =>
+  apiFetch<T>(env, path, {
+    method,
+    body: JSON.stringify(body),
+    headers: internalHeaders(env, discordId),
+  });
 
 /** ユーザーのフォーマット設定。取得に失敗したら既定 (オリジナル) に倒す。 */
 async function resolveFormat(env: BotEnv, discordId: string): Promise<string> {
   try {
-    const res = await apiGet<{ format: string }>(
-      env,
-      "/api/user/settings",
-      internalHeaders(env, discordId),
-    );
+    const res = await apiGet<{ format: string }>(env, "/api/user/settings", discordId);
     return res.format ?? DEFAULT_FORMAT;
   } catch {
     return DEFAULT_FORMAT;
@@ -108,23 +112,29 @@ async function dispatch(
 
   if (group === "format" && sub === "set") {
     const format = options.type ?? DEFAULT_FORMAT;
-    await apiSend(env, "PUT", "/api/user/settings", { format }, internalHeaders(env, discordId));
+    await apiSend(env, "PUT", "/api/user/settings", { format }, discordId);
     return { content: `フォーマットを **${formatLabel(format)}** に設定しました` };
   }
 
   if (sub === "rule") {
-    const res = await apiSend<{ response: string }>(env, "POST", "/api/chat", {
-      message: options.question,
-      mode: "rule",
-    });
+    const res = await apiSend<{ response: string }>(
+      env,
+      "POST",
+      "/api/chat",
+      { message: options.question, mode: "rule" },
+      discordId,
+    );
     return { embeds: [ruleEmbed(res.response)] };
   }
 
   if (sub === "chat") {
-    const res = await apiSend<{ response: string }>(env, "POST", "/api/chat", {
-      message: options.message,
-      mode: "integrated",
-    });
+    const res = await apiSend<{ response: string }>(
+      env,
+      "POST",
+      "/api/chat",
+      { message: options.message, mode: "integrated" },
+      discordId,
+    );
     return { content: truncate(res.response, 2000) };
   }
 
@@ -149,6 +159,7 @@ async function deckCommand(
       "POST",
       "/api/deck/build",
       { theme, format },
+      discordId,
     );
     return { embeds: [deckBuildEmbed(theme, res.entries)] };
   }
@@ -159,6 +170,7 @@ async function deckCommand(
       "POST",
       "/api/deck/evaluate",
       { decklist: options.list, format },
+      discordId,
     );
     return { embeds: [sub === "rate" ? deckRateEmbed(res.score) : deckCheckEmbed(res.validation)] };
   }
@@ -169,7 +181,7 @@ async function deckCommand(
       "POST",
       "/api/deck/save",
       { title: options.name, format, decklist: options.list },
-      internalHeaders(env, discordId),
+      discordId,
     );
     return { embeds: [deckSaveEmbed(options.name, res.scores?.overall)] };
   }
@@ -190,6 +202,7 @@ async function metaCommand(
     const res = await apiGet<{ tier_data: TierEntry[] }>(
       env,
       `/api/meta/tier?format=${format}&period=${encodeURIComponent(period)}`,
+      discordId,
     );
     if (!res.tier_data || res.tier_data.length === 0) {
       return { content: "ティアデータがまだありません" };
@@ -201,7 +214,7 @@ async function metaCommand(
     const res = await apiGet<{
       archetype: string;
       stats: { total_entries: number; wins: number; top8: number } | null;
-    }>(env, `/api/meta/archetype/${encodeURIComponent(options.name)}?format=${format}`);
+    }>(env, `/api/meta/archetype/${encodeURIComponent(options.name)}?format=${format}`, discordId);
     return { embeds: [archetypeEmbed(res.archetype, res.stats)] };
   }
 

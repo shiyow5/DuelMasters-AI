@@ -17,3 +17,7 @@ REFACTORING_PLAN.md
 
 # OpenNext (Cloudflare) build output
 .open-next/
+
+# Playwright の実行結果
+apps/web/test-results/
+apps/web/playwright-report/

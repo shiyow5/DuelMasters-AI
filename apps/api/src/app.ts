@@ -5,7 +5,8 @@ import { chatRouter } from "./routes/chat.js";
 import { deckRouter } from "./routes/deck.js";
 import { metaRouter } from "./routes/meta.js";
 import { userRouter } from "./routes/user.js";
-import { optionalAuth } from "./middleware/auth.js";
+import { optionalAuth, requireAuthUnlessAnonymous } from "./middleware/auth.js";
+import { rateLimitByIp, rateLimitByUser } from "./middleware/rate-limit.js";
 import { dbEnv, type Bindings } from "./db.js";
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -39,12 +40,21 @@ app.use("*", (c, next) => {
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   })(c, next);
 });
-// 認証 (無認証でも通す。userId を設定するだけ)
+// IP 単位のレート制限。**認証より前**に置く: 不正な Bearer を投げ続けると optionalAuth が
+// 毎回 Supabase の auth API を叩くため、認証の後ろにしか制限が無いとこの経路が無制限になる。
+app.use("/api/*", rateLimitByIp);
+// 認証を試みて userId を設定する (ここでは通す。弾くのは下のガード)
 app.use("*", optionalAuth);
 
-// ヘルスチェック
+// ヘルスチェックは無認証で通す (監視のため)
 app.get("/", (c) => c.json({ status: "ok", service: "dm-ai-api" }));
 app.get("/health", (c) => c.json({ status: "ok" }));
+
+// API は全てログイン必須。/api/chat は Gemini を叩くため、無認証で開けておくと第三者に
+// 課金を消費される。読み取り系も含めて一律に閉じる。
+app.use("/api/*", requireAuthUnlessAnonymous);
+// ユーザー単位のレート制限 (本命)。認証の後に置く必要がある (userId を使うため)。
+app.use("/api/*", rateLimitByUser);
 
 // ルーティング
 app.route("/api/chat", chatRouter);

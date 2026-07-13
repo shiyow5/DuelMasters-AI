@@ -17,18 +17,23 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
+  // E2E は Supabase を構成しないため、ログイン必須のままでは何も操作できない。
+  // ALLOW_ANONYMOUS で明示的に opt-out する。既定 (本番) は認証必須。
+  // 本番 Worker への混入は deploy.yml が検査して落とす。
   webServer: [
     {
       command: "pnpm --filter @dm-ai/api dev",
       port: 3001,
       reuseExistingServer: true,
       timeout: 60000,
+      env: { ALLOW_ANONYMOUS: "true" },
     },
     {
       command: "pnpm dev",
       port: 3000,
       reuseExistingServer: true,
       timeout: 60000,
+      env: { NEXT_PUBLIC_ALLOW_ANONYMOUS: "true" },
     },
   ],
 });

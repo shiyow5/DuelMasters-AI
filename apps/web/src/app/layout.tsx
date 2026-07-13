@@ -3,6 +3,7 @@ import "./globals.css";
 import { inter, notoSansJp, materialSymbols } from "./fonts";
 import Sidebar from "@/components/Sidebar";
 import { SidebarProvider } from "@/components/SidebarContext";
+import AuthGate from "@/components/AuthGate";
 
 export const metadata: Metadata = {
   title: "DM-AI | デュエル・マスターズ Q&A ボット",
@@ -20,10 +21,14 @@ export default function RootLayout({
       className={`dark ${inter.variable} ${notoSansJp.variable} ${materialSymbols.variable}`}
     >
       <body className="h-screen flex overflow-hidden bg-bg-dark text-text-main antialiased">
-        <SidebarProvider>
-          <Sidebar />
-          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">{children}</div>
-        </SidebarProvider>
+        {/* 未ログインならサイドバーごと隠してログイン画面を出す。
+            api は全エンドポイントがログイン必須なので、UI を触らせても 401 が並ぶだけ。 */}
+        <AuthGate>
+          <SidebarProvider>
+            <Sidebar />
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">{children}</div>
+          </SidebarProvider>
+        </AuthGate>
       </body>
     </html>
   );

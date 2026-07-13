@@ -89,6 +89,18 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: pnpm build
 
+      # ALLOW_ANONYMOUS は E2E とローカル開発のための opt-out。本番に混入すると API が
+      # ログイン不要になり、/api/chat 経由で第三者に Gemini の課金を消費される。
+      # 設定を消し忘れたまま出さないよう、公開前に検査して落とす。
+      - name: 本番に ALLOW_ANONYMOUS が混入していないか検査
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          # 実際の設定 (クオート付きの JSON キー) だけを検出する。注意書きのコメントには反応しない。
+          if grep -rn '"ALLOW_ANONYMOUS"\|"NEXT_PUBLIC_ALLOW_ANONYMOUS"' apps/*/wrangler.jsonc; then
+            echo "::error::wrangler.jsonc に ALLOW_ANONYMOUS が設定されています。本番で認証を無効化すると /api/chat 経由で第三者に Gemini の課金を消費されます。"
+            exit 1
+          fi
+
       # Secrets が未設定でもビルドは通ってしまう: lib/supabase.ts は env が空だと supabase を
       # null にするため、ログイン・デッキ保存が黙って無効な web が本番に出る。
       # 公開前に落とす。
