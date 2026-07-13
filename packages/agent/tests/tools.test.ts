@@ -44,6 +44,23 @@ describe.skipIf(!hasTestDb)("runTool search_cards フィルタ (統合)", () => 
   });
 });
 
+describe("runTool build_deck バリデーション (単体)", () => {
+  // グラフの tools ノードは zod schema を通さず args を直接渡すため、runTool 側で検証する。
+  // 不正な文明コードを黙って捨てると制約なしで構築が走り混色デッキが返るので、必ずエラーを返す。
+  it("日本語など不正な文明コードは黙って無視せずエラーを返す", async () => {
+    const r = await runTool("build_deck", { theme: "速攻", civilizations: ["火"] });
+    expect(r.text).toContain("ツール引数が不正です");
+  });
+  it("civilizations が空配列ならエラーを返す", async () => {
+    const r = await runTool("build_deck", { theme: "速攻", civilizations: [] });
+    expect(r.text).toContain("ツール引数が不正です");
+  });
+  it("theme が無ければエラーを返す", async () => {
+    const r = await runTool("build_deck", {});
+    expect(r.text).toContain("ツール引数が不正です");
+  });
+});
+
 describe.skipIf(!hasTestDb)("runTool build_deck 文明制約 (統合)", () => {
   const sql = getTestSql()!;
   beforeAll(() => enableAppDb());

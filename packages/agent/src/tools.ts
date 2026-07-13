@@ -101,16 +101,29 @@ export async function runTool(
         // 文明・最大コストは autoBuild の制約に渡す。自然文の theme だけでは
         // 「火文明中心の速攻」等の意図が ILIKE に載らず文明無視のデッキになるため、
         // モデルが抽出した civilizations / max_cost を構造化制約として明示的に渡す。
-        const civs = Array.isArray(args.civilizations)
-          ? (args.civilizations as string[]).filter((c): c is string =>
-              CIVILIZATIONS.includes(c as never),
-            )
-          : undefined;
-        const maxCost = typeof args.max_cost === "number" ? args.max_cost : undefined;
-        const result = await autoBuild(args.theme as string, resolveFormat(args.format, format), {
-          requiredCards: args.required_cards as string[],
-          civilizations: civs && civs.length > 0 ? civs : undefined,
-          maxCost,
+        // グラフの tools ノードは zod schema を通さず args を直接渡すのでここで検証する。
+        // 不正な文明コード (例: 日本語の "火") を黙って捨てると制約なしで構築が走り、
+        // まさに防ぎたい混色デッキが返るため、引数エラーとしてモデルに再指定させる。
+        const schema = z.object({
+          theme: z.string(),
+          format: z.enum(["original", "advance"]).optional(),
+          required_cards: z.array(z.string()).optional(),
+          civilizations: z.array(z.enum(CIVILIZATIONS)).nonempty().optional(),
+          max_cost: z.number().optional(),
+        });
+        const parsed = schema.safeParse(args);
+        if (!parsed.success) {
+          return {
+            text: `ツール引数が不正です: ${parsed.error.issues
+              .map((i) => `${i.path.join(".")}: ${i.message}`)
+              .join(", ")}`,
+          };
+        }
+        const { theme, required_cards, civilizations, max_cost } = parsed.data;
+        const result = await autoBuild(theme, resolveFormat(parsed.data.format, format), {
+          requiredCards: required_cards,
+          civilizations,
+          maxCost: max_cost,
         });
         return { text: JSON.stringify(result, null, 2) };
       }
