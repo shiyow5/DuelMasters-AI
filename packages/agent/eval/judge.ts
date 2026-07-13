@@ -32,9 +32,37 @@ const MIN_NAME_LEN = 3;
 /** grounding に載せる実在カードの上限 (プロンプト肥大の防止)。 */
 const MAX_CONFIRMED = 60;
 
+/** 公式サイト表記に合わせた文明の日本語ラベル。 */
+const CIV_JA: Record<string, string> = {
+  fire: "火",
+  water: "水",
+  nature: "自然",
+  light: "光",
+  darkness: "闇",
+  zero: "無色",
+};
+
+/** カード1枚を judge に見せる1行にする。文明・コスト・種別・パワーまで出す。 */
+function formatCardSpec(r: {
+  name: string;
+  civilizations: string[] | null;
+  cost: number | null;
+  type: string | null;
+  power: number | null;
+}): string {
+  const civ = (r.civilizations ?? []).map((c) => CIV_JA[c] ?? c).join("/") || "-";
+  const parts = [`${civ}`, `コスト${r.cost ?? "-"}`, r.type ?? "-"];
+  if (r.power != null) parts.push(`パワー${r.power}`);
+  return `${r.name} (${parts.join(" / ")})`;
+}
+
 /**
- * judge に渡す「カード実在性」grounding を作る。
- * LLM-as-judge はカードプール (11563枚) を知らず、実在カードを「架空」と誤判定しがち。
+ * judge に渡すカードの grounding を作る。実在性 **と スペック (文明/コスト/種別/パワー)** を渡す。
+ *
+ * LLM-as-judge はカードプール (11563枚) を知らないため、実在カードを「架空」と誤判定するだけで
+ * なく、**スペックも捏造する**。実測では《死亡遊戯》(火/呪文/コスト1) を「闇文明」、
+ * 《ボルシャック・栄光・ルピア》(火自然/コスト3) を「4コスト」と断じて、正しい回答を減点した
+ * (いずれも公式サイトで DB 側が正しいことを確認済み)。名前だけの grounding では防げない。
  *
  * 実在判定は **DB のカード名を回答本文へ逆引き** して行う。回答からカード名を抽出する方式だと
  * 《…》表記しか拾えず、素のデッキリスト (例: "4x 最期の竜炎") が grounding から漏れて
@@ -48,7 +76,7 @@ export async function buildCardGrounding(response: string): Promise<string> {
   try {
     const sql = getSql();
     const rows = await sql`
-      SELECT name FROM cards
+      SELECT name, civilizations, cost, type, power FROM cards
       WHERE length(name) >= ${MIN_NAME_LEN} AND ${response} ILIKE '%' || name || '%'
       ORDER BY length(name) DESC
       LIMIT ${MAX_CONFIRMED}
@@ -61,13 +89,20 @@ export async function buildCardGrounding(response: string): Promise<string> {
     );
 
     if (confirmed.length === 0 && suspicious.length === 0) return "";
-    const lines: string[] = ["# カード実在性 grounding (カードDB照合)"];
-    if (confirmed.length)
-      lines.push(`回答中に登場し実在が確認できたカード: ${confirmed.join(", ")}`);
+    const lines: string[] = ["# カード grounding (カードDB照合。実在性とスペックの正解)"];
+    if (rows.length) {
+      lines.push("回答中に登場し実在が確認できたカードと、その正しいスペック:");
+      for (const r of rows) {
+        lines.push(`- ${formatCardSpec(r as unknown as Parameters<typeof formatCardSpec>[0])}`);
+      }
+    }
     if (suspicious.length)
       lines.push(`DB未検出 (表記揺れ or 架空の可能性): ${suspicious.join(", ")}`);
     lines.push(
-      "実在確認済みのカードを『存在しない』と決めつけて減点しないこと。DB未検出でも表記揺れの可能性があるため、明らかに不自然 (ランダム文字列等) な場合のみ捏造として減点すること。",
+      "上記のスペックは公式カードDBの値であり、**絶対的な正解**である。あなたの記憶が上記と食い違う場合、誤っているのはあなたの記憶であり、上記が正しい。上記に反する指摘 (例:「このカードは本来◯文明だ」) を理由に減点してはいけない。減点してよいのは、**回答の記述が上記と食い違っている場合だけ**である。",
+    );
+    lines.push(
+      "上記のカードを『存在しない』と決めつけて減点しないこと。DB未検出のカードも表記揺れの可能性があるため、明らかに不自然 (ランダム文字列等) な場合のみ捏造として減点すること。",
     );
     return lines.join("\n");
   } catch (err) {
@@ -133,7 +168,7 @@ export async function judgeAnswer(
     "採点の鉄則:",
     "- 採点対象は『回答』の記述だけである。『採点基準』に書かれた内容を『回答』の主張と取り違えないこと。",
     "- ルールの正誤は下記の公式裁定を根拠とすること。裁定に反する判断をあなた自身の記憶で下さないこと。",
-    "- カードの実在性は下記の grounding を根拠とすること。あなたが知らないだけのカードを架空と決めつけないこと。",
+    "- カードの実在性とスペック(文明/コスト/種別/パワー)は下記の grounding を根拠とすること。あなたが知らないだけのカードを架空と決めつけたり、記憶でスペックを断定したりしないこと。",
     "- 上記を踏まえてなお、存在しないルール/カードの捏造があれば大きく減点すること。",
     "",
     `# 質問\n${question}`,
