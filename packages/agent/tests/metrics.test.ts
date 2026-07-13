@@ -89,6 +89,7 @@ describe("checkThresholds (CI 回帰ゲート)", () => {
     toolPrecision: 1.0,
     citationRecall: null,
     citationPrecision: null,
+    citationGrounding: 0.95,
     factCoverage: 0.84,
     judgeMean: 4.94,
     judgeFailures: 0,
@@ -117,6 +118,21 @@ describe("checkThresholds (CI 回帰ゲート)", () => {
     const r = checkThresholds({ ...OK, toolRecall: 0.5 });
     expect(r.passed).toBe(false);
     expect(r.failures.join()).toContain("ツール recall");
+  });
+
+  it("出典の裏取りが閾値を下回れば落とす (条番号の捏造が増えた) (#99)", () => {
+    // agent 側の sanitizeCitations が本文からは落とすので利用者の目には触れないが、
+    // **捏造が増えたこと自体**を退行として検出する。
+    const r = checkThresholds({ ...OK, citationGrounding: 0.5 });
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("出典の裏取り");
+  });
+
+  it("条番号を1つも引かない run では出典ゲートを評価しない", () => {
+    // deck/meta だけの golden なら条文を引かないのが正常。null を 0 とみなして
+    // 落とすと、ゲートが誤爆して信用されなくなる。
+    const r = checkThresholds({ ...OK, citationGrounding: null });
+    expect(r.passed).toBe(true);
   });
 
   it("--no-judge なら judge 指標を評価しない", () => {

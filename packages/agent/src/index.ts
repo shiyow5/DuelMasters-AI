@@ -1,9 +1,11 @@
 import { AIMessage, HumanMessage, type BaseMessage } from "@langchain/core/messages";
 import { buildAgentGraph } from "./graph.js";
+import { sanitizeCitations } from "./citations.js";
 import type { AgentMode, Citation } from "./state.js";
 
 export { configureAgent } from "./models.js";
 export { runTool, type ToolResult } from "./tools.js";
+export { sanitizeCitations, type SanitizeResult } from "./citations.js";
 export type { AgentMode, Citation } from "./state.js";
 export { MAX_ITERATIONS, RAG_CONTEXT_HEADER, formatRagContext } from "./graph.js";
 
@@ -19,6 +21,13 @@ export interface AgentOutput {
   citations?: Citation[];
   toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
   mode: AgentMode;
+  /**
+   * 本文から**落とした**条番号 (#99)。retrieve した資料に無い = agent がでっち上げたもの。
+   *
+   * 空でないなら、その回で捏造が起きたということ。eval はここを見て捏造率を測る
+   * (本文からは既に消えているので、本文を見ても分からない)。
+   */
+  ungroundedCitations?: string[];
 }
 
 // グラフのコンパイルは一度だけ (ノード/エッジは不変、状態はリクエストごとに invoke で渡す)。
@@ -64,11 +73,20 @@ function toOutput(result: { messages: BaseMessage[]; citations: Citation[] }, mo
     .flatMap((m) => m.tool_calls ?? [])
     .map((tc) => ({ name: tc.name, args: tc.args ?? {} }));
 
+  // **本文の条番号を機械的に裏取りする。** プロンプトで「資料に無い条番号を書くな」と
+  // 明示しても agent は捏造する (eval で【総合ルール 114.6】を確認。114章は 114.4 までしか無い)。
+  // 利用者が存在しない条文を調べに行くのが最悪なので、裏取りできない番号は落とす。
+  const { text: response, stripped } = sanitizeCitations(
+    messageText(result.messages.at(-1)),
+    result.citations,
+  );
+
   return {
-    response: messageText(result.messages.at(-1)),
+    response,
     citations: result.citations.length > 0 ? result.citations : undefined,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     mode,
+    ungroundedCitations: stripped.length > 0 ? stripped : undefined,
   };
 }
 

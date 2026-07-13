@@ -40,4 +40,37 @@ describe("SYSTEM_PROMPTS", () => {
       expect(SYSTEM_PROMPTS[mode]).toContain("捏造");
     }
   });
+
+  describe("出典の明記 (#99)", () => {
+    // 出典の指示は rule モードにしか無かった。web の既定は **integrated** なので、
+    // ルールを聞いても出典が求められていなかった。全モードに入れる。
+    it("全モードが出典の規律を含む", () => {
+      for (const mode of ["rule", "deck", "meta", "integrated"] as const) {
+        expect(SYSTEM_PROMPTS[mode]).toContain("出典");
+      }
+    });
+
+    it("全モードが条番号込みの出典形式を指示する", () => {
+      // 「引用しながら」だけでは条番号が出ない。RAG が渡すのと同じ形を指定する。
+      for (const mode of ["rule", "deck", "meta", "integrated"] as const) {
+        expect(SYSTEM_PROMPTS[mode]).toContain("【総合ルール");
+      }
+    });
+
+    it("全モードが「資料に無い条番号を書くな」と明示する", () => {
+      // **これが要**。LLM は実在しない条番号を平然と書く (#92 で 701.29a / 116.3a を捏造した)。
+      // 「記憶している条番号」ではなく「渡された資料に出てきた条番号」だけを写させる。
+      for (const mode of ["rule", "deck", "meta", "integrated"] as const) {
+        expect(SYSTEM_PROMPTS[mode]).toMatch(/参考資料に(出てこない|無い|ない)条番号/);
+        expect(SYSTEM_PROMPTS[mode]).toContain("でっち上げ");
+      }
+    });
+
+    it("全モードが一次情報 (総合ルール) を優先させる", () => {
+      // 【裁定Q&A】には改定前の古い回答が混じる (#92)。食い違ったら条文を採らせる。
+      for (const mode of ["rule", "deck", "meta", "integrated"] as const) {
+        expect(SYSTEM_PROMPTS[mode]).toContain("裁定Q&A");
+      }
+    });
+  });
 });

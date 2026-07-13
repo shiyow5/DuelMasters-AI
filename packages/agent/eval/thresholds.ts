@@ -12,6 +12,8 @@ export interface Aggregate {
   toolPrecision: number | null;
   citationRecall: number | null;
   citationPrecision: number | null;
+  /** 本文の条番号が資料にあった割合 (#99)。条番号を引かない問は計測対象外 (null)。 */
+  citationGrounding: number | null;
   factCoverage: number | null;
   judgeMean: number | null;
   /** judge を回したのに失敗した件数 (quota/スキーマ/キー不正)。 */
@@ -32,6 +34,18 @@ export const THRESHOLDS = {
   minToolPrecision: 0.85,
   /** 期待した事実に触れているか。v8 は 0.84。 */
   minFactCoverage: 0.7,
+  /**
+   * 回答本文に書いた条番号が、実際に retrieve した資料にあった割合 (#99)。
+   *
+   * **LLM は実在しない条番号を平然と書く。** eval で agent が【総合ルール 114.6】
+   * 【総合ルール 114.6a】をでっち上げたのを確認した (114章は 114.4 までしか無い)。
+   * agent 側の sanitizeCitations が本文からは落とすので利用者の目には触れないが、
+   * **捏造が増えたこと自体を退行として検出する**ためにゲートを置く。
+   *
+   * ベースライン: rule モード23問で **0.95** (捏造は rule-deckout の1問のみ)。
+   * 揺れで落ちないよう 0.8 に置く。nightly (全35問) のベースラインが取れたら締め直す。
+   */
+  minCitationGrounding: 0.8,
 } as const;
 
 export interface GateResult {
@@ -80,6 +94,7 @@ export function checkThresholds(agg: Aggregate, options: GateOptions = {}): Gate
     ["ツール recall", agg.toolRecall, THRESHOLDS.minToolRecall],
     ["ツール precision", agg.toolPrecision, THRESHOLDS.minToolPrecision],
     ["事実カバレッジ", agg.factCoverage, THRESHOLDS.minFactCoverage],
+    ["出典の裏取り", agg.citationGrounding, THRESHOLDS.minCitationGrounding],
   ];
   for (const [label, value, min] of checks) {
     if (value !== null && value < min) {

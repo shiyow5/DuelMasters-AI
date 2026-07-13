@@ -11,7 +11,14 @@
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { runAgent } from "../src/index.js";
-import { toolTrajectory, citationScore, factCoverage, aggregate } from "./metrics.js";
+import {
+  toolTrajectory,
+  citationScore,
+  citationGrounding,
+  citedArticles,
+  factCoverage,
+  aggregate,
+} from "./metrics.js";
 import { checkThresholds, THRESHOLDS } from "./thresholds.js";
 import { judgeAnswer } from "./judge.js";
 import type { GoldenItem, ItemResult } from "./types.js";
@@ -48,6 +55,13 @@ async function evalItem(item: GoldenItem, noJudge: boolean): Promise<ItemResult>
       res.citation = citationScore(item.expectedCitations, out.citations ?? []);
     }
     if (item.expectedFacts) res.factCoverage = factCoverage(item.expectedFacts, out.response);
+    // 本文に書いた条番号が、実際に retrieve した資料にあるか (#99)。
+    // LLM は実在しない条番号を平然と書くので、ここが唯一の機械的な番人になる。
+    res.citationGrounding = citationGrounding(out.response, out.ungroundedCitations ?? []);
+    // 退行を後から追えるように、本文と引いた条番号をレポートへ残す。
+    res.response = out.response;
+    res.citedArticles = citedArticles(out.response);
+    res.ungroundedCitations = out.ungroundedCitations;
     if (item.rubric && !noJudge) {
       // judge 失敗 (構造化出力/quota/一時エラー) を item 全体の失敗にせず、
       // 既算出の tool/fact/citation 指標を保持する (judge 障害を agent 失敗に見せない)。
@@ -82,6 +96,7 @@ function renderReport(agg: ReturnType<typeof aggregate>): string {
     `- 対象: ${agg.n}件 (エラー ${agg.errors})`,
     `- ツール軌跡 recall / precision: **${fmt(agg.toolRecall)}** / **${fmt(agg.toolPrecision)}**`,
     `- 引用 recall / precision: **${fmt(agg.citationRecall)}** / ${fmt(agg.citationPrecision)}`,
+    `- 出典の裏取り (本文の条番号が資料にあるか): **${fmt(agg.citationGrounding)}**`,
     `- 事実カバレッジ: **${fmt(agg.factCoverage)}**`,
     `- judge 平均 (1-5): **${fmt(agg.judgeMean)}**` +
       (agg.judgeFailures > 0 ? ` (**judge 失敗 ${agg.judgeFailures}件**)` : ""),
