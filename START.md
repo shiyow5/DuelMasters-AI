@@ -290,6 +290,48 @@ Supabase Dashboard の SQL Editor でテーブルを作成します。
    - `meta_snapshots`
    - `user_settings`
 
+#### 認証の設定 (招待制。**Site URL を必ず直すこと**)
+
+本サービスは招待制です。第三者にアカウントを作られると Gemini の課金を消費されるため、
+**サインアップを閉じます**。
+
+**1. サインアップを閉じる**
+
+Dashboard → **Authentication** → **Sign In / Providers** →
+**「Allow new users to sign up」を OFF**。
+
+web の「新規登録」ボタンは削除済みですが、**Supabase の API 自体は開いたまま**なので、
+UI を経由しなくてもアカウントが作れてしまいます。必ず OFF にしてください。
+
+**2. Site URL を直す (これを忘れると招待メールが機能しません)**
+
+Dashboard → **Authentication** → **URL Configuration**
+
+| 項目           | 値                                                       |
+| -------------- | -------------------------------------------------------- |
+| Site URL       | `https://dm-ai.shiyow.dev`                               |
+| Redirect URLs  | `https://dm-ai.shiyow.dev/**` と `http://localhost:3000/**` |
+
+Supabase は招待・パスワード再設定リンクのリダイレクト先に **Site URL** を使います。
+既定値の `http://localhost:3000` のままだと、**リンクを踏んでもローカルの開発サーバへ飛ばされ、
+`ERR_CONNECTION_REFUSED` になります**(実際にこれで招待が失敗しました)。
+
+**3. ユーザーを作る**
+
+方法は2つ。**招待メールを使わない方が確実**です。
+
+- **パスワードを直接設定する (推奨)**
+  Dashboard → **Authentication** → **Users** → **Add user** → **Create new user** →
+  メールとパスワードを入力し、**「Auto Confirm User」にチェック**。
+  そのままログインできます。
+
+- **招待メールを送る**
+  Dashboard → **Authentication** → **Users** → **Invite user**。
+  招待リンクを踏むと web の「パスワードを設定」画面が出るので、そこで設定します
+  (`AuthGate` が着地時の `#type=invite` を見て出しています)。
+  リンクは**一度使うと無効**になり、期限切れもあります。切れた場合は、ログイン画面の
+  **「パスワードを忘れた / 招待リンクが切れた」**から再設定メールを送れます。
+
 ### 選択肢 B: ローカル Docker を使う場合
 
 ```bash
