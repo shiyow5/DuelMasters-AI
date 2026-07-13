@@ -139,6 +139,10 @@ export function tierEmbed(format: string, tierData: TierEntry[]): Embed {
     title: `ティア表 (${formatLabel(format)})`,
     color: EMBED_COLORS.accent,
     ...(fields.length > 0 ? { fields } : {}),
+    // CS の入賞数集計は田園補完計画の週次ランキング記事から取り込んでいる。出典を明示する。
+    ...(fields.length > 0
+      ? { footer: { text: "大会結果の出典: 田園補完計画 (supersolenoid.jp)" } }
+      : {}),
   };
 }
 

@@ -135,6 +135,7 @@ psql $DATABASE_URL -f infra/sql/002_cards_official_id_unique.sql
 psql $DATABASE_URL -f infra/sql/003_features.sql
 psql $DATABASE_URL -f infra/sql/004_enable_rls.sql
 psql $DATABASE_URL -f infra/sql/005_pgvector_update.sql
+psql $DATABASE_URL -f infra/sql/006_archetype_weekly_stats.sql
 ```
 
 `docker compose up db -d` で起動する場合は 001〜005 が初回に自動適用されます。
@@ -171,7 +172,13 @@ pnpm --filter @dm-ai/worker ingest:tags
 # FAQ・裁定取り込み
 pnpm --filter @dm-ai/worker ingest:faq faq <url> [url...]
 
-# メタスナップショット生成 (<original|advance> [weeks])
+# 大会結果 (CS) 取り込み — 出典: 田園補完計画 (supersolenoid.jp)
+#   週次入賞数ランキング → archetype_weekly_stats (ティア表の一次ソース)
+#   個別 CS 記事        → tournament_results     (アーキタイプ別の入賞履歴)
+#   --pages=N で遡るカテゴリページ数を指定 (既定 20 ≒ 過去5〜6週)
+pnpm --filter @dm-ai/worker ingest:tournaments
+
+# メタスナップショット生成 (<original|advance> [weeks])。ingest:tournaments の後に打つ
 pnpm --filter @dm-ai/worker snapshot:meta original 4
 
 # 既存カード種別の正規化 (日本語表記 → CardType enum)

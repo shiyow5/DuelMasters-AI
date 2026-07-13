@@ -8,6 +8,8 @@ name: Ingest (cron)
 # - rules (総合ルール PDF): 改訂は年数回。週1で十分。URL とバージョンは自動発見する。
 # - cards: 新弾のたび。週1。全件で時間がかかる。
 # - rulings (裁定 Q&A): 3000件超・重複排除つき。週1。
+# - tournaments (大会結果): 取込元の週次ランキングが翌月曜の夜に出る。火曜朝に週1。
+# - snapshot (メタ集計): tournaments の直後に走らせる (取り込んだ結果を集計するため)。
 #
 # 手動実行 (workflow_dispatch) でジョブを選んで走らせられる。
 on:
@@ -16,15 +18,20 @@ on:
     - cron: "0 18 * * *"
     # 毎週月曜 04:00 JST (19:00 UTC 日曜) — カード・ルール・裁定
     - cron: "0 19 * * 0"
+    # 毎週火曜 06:00 JST (21:00 UTC 月曜) — 大会結果 → メタ集計
+    #
+    # 取込元の週次入賞数ランキングは「月〜日」の集計を **翌月曜の夜 (23:00 JST 前後)** に出す。
+    # 月曜 04:00 JST の枠に相乗りさせると、その週のランキングが出る前に走ってしまい、
+    # メタが常に1週遅れる。公開後に確実に回るよう翌朝へずらす。
+    - cron: "0 21 * * 1"
   workflow_dispatch:
     inputs:
       job:
-        # all は cron で回している取込 (regulations / rules / cards / rulings) をまとめて実行する。
-        # tags は全カードに LLM を当てるので高価、snapshot は大会結果の取込後に打つものなので、
-        # どちらも all には含めない。必要なときに個別に選ぶ。
-        description: "実行するジョブ (all = regulations + rules + cards + rulings)"
+        # all は cron で回している取込をまとめて実行する。
+        # tags は全カードに LLM を当てるので高価。all には含めず必要なときに個別に選ぶ。
+        description: "実行するジョブ (all = regulations + rules + cards + rulings + tournaments + snapshot)"
         type: choice
-        options: [regulations, rules, cards, rulings, tags, snapshot, all]
+        options: [regulations, rules, cards, rulings, tournaments, tags, snapshot, all]
         default: regulations
 
 concurrency:
@@ -46,9 +53,10 @@ jobs:
       fail-fast: false
       max-parallel: 1 # 公式サイトへの負荷と DB 書き込みの競合を避けるため直列
       matrix:
-        # tags / snapshot は cron では回さない (tags は全カードに LLM を当てるので高価、
-        # snapshot は大会結果の取込後に打つもの)。workflow_dispatch から明示的に選ぶ。
-        job: [regulations, rules, cards, rulings, tags, snapshot]
+        # 並び順がそのまま実行順になる (max-parallel: 1)。
+        # snapshot は tournaments が入れたデータを集計するので、必ず後ろに置く。
+        # tags だけは cron で回さない (全カードに LLM を当てるので高価)。手動選択のみ。
+        job: [regulations, rules, cards, rulings, tournaments, tags, snapshot]
     steps:
       - name: 実行対象か判定
         id: scope
@@ -59,18 +67,21 @@ jobs:
         run: |
           run=false
           if [ -n "$INPUT_JOB" ]; then
-            # 手動実行: 指定ジョブ。all は cron 対象の取込のみ (tags/snapshot は個別選択)。
+            # 手動実行: 指定ジョブ。all は cron 対象の取込のみ (tags は高価なので個別選択)。
             if [ "$INPUT_JOB" = "$JOB" ]; then
               run=true
             elif [ "$INPUT_JOB" = "all" ]; then
-              case "$JOB" in regulations | rules | cards | rulings) run=true ;; esac
+              case "$JOB" in regulations | rules | cards | rulings | tournaments | snapshot) run=true ;; esac
             fi
           elif [ "$SCHEDULE" = "0 18 * * *" ]; then
             # 毎日: 殿堂のみ
             if [ "$JOB" = "regulations" ]; then run=true; fi
           elif [ "$SCHEDULE" = "0 19 * * 0" ]; then
-            # 毎週: 重いもの
+            # 毎週月曜 04:00 JST: 重いもの
             case "$JOB" in rules | cards | rulings) run=true ;; esac
+          elif [ "$SCHEDULE" = "0 21 * * 1" ]; then
+            # 毎週火曜 06:00 JST: 大会結果 → メタ集計 (matrix の並び順どおり直列に走る)
+            case "$JOB" in tournaments | snapshot) run=true ;; esac
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
           if [ "$run" != "true" ]; then echo "::notice::$JOB は今回の対象外"; fi

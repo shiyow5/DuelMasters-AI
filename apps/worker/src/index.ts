@@ -41,6 +41,12 @@ async function main() {
       await runIngestFaq(parsed.docType, parsed.urls);
       break;
     }
+    case "tournaments": {
+      const { runIngestTournaments, parseTournamentsArgs } =
+        await import("./jobs/ingest-tournaments.js");
+      await runIngestTournaments(parseTournamentsArgs(process.argv.slice(3)));
+      break;
+    }
     case "snapshot": {
       const { runSnapshotMeta, parseSnapshotArgs } = await import("./jobs/snapshot-meta.js");
       const parsed = parseSnapshotArgs(process.argv.slice(3));
@@ -52,12 +58,16 @@ async function main() {
       break;
     }
     default:
-      console.log("使用法: tsx src/index.ts <rules|cards|regulations|tags|faq|snapshot>");
+      console.log(
+        "使用法: tsx src/index.ts <rules|cards|regulations|rulings|tags|faq|tournaments|snapshot>",
+      );
       console.log("  rules       - ルールPDF取り込み");
       console.log("  cards       - カードデータ取り込み");
       console.log("  regulations - 殿堂レギュレーション取り込み");
+      console.log("  rulings     - 裁定Q&A取り込み");
       console.log("  tags        - カード役割タグ付与 (--all で全カード)");
       console.log("  faq         - FAQ/裁定取り込み <faq|ruling> <url...>");
+      console.log("  tournaments - 大会結果取り込み (--pages=N で遡るページ数)");
       console.log("  snapshot    - メタスナップショット生成 <original|advance> [weeks]");
       process.exit(1);
   }
