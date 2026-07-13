@@ -121,8 +121,13 @@ export async function autoBuild(
   // 誤って警告してしまう。
   let creatureCount = 0;
   if (counts.size > 0) {
+    // cards.name に UNIQUE 制約は無く upsert は official_id 単位なので、再録カード (別 official_id・
+    // 同名) があると同名で複数行返る。DISTINCT ON で1名1行に絞らないと、採用枚数を行数ぶん
+    // 足してしまい (4枚 → 8枚)、クリーチャー補充が発火しなくなる。
     const requiredTypes = await sql`
-      SELECT name, type FROM cards WHERE name IN ${sql(Array.from(counts.keys()))}
+      SELECT DISTINCT ON (name) name, type
+      FROM cards WHERE name IN ${sql(Array.from(counts.keys()))}
+      ORDER BY name
     `;
     for (const row of requiredTypes) {
       if (isCreatureType(row.type as string)) creatureCount += counts.get(row.name as string) ?? 0;

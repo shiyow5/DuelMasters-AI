@@ -167,3 +167,32 @@ describe.skipIf(!hasTestDb)("autoBuild クリーチャー下限の境界 (統合
     expect(r.entries.find((e) => e.name === "境界クリーチャー")?.count).toBe(4);
   });
 });
+
+describe.skipIf(!hasTestDb)("autoBuild 必須カードの重複行 (統合)", () => {
+  const sql = getTestSql()!;
+  beforeAll(() => enableAppDb());
+  afterAll(async () => {
+    await sql.end();
+  });
+
+  it("同名カードが複数行あっても必須クリーチャーを二重に数えない", async () => {
+    // cards.name に UNIQUE 制約は無く、upsert は official_id 単位。再録カード (別 official_id・
+    // 同名) が入ると同名が複数行になる。種別を name で引くと採用枚数を行数ぶん足してしまい、
+    // 4枚しか入っていないのに 8枚 と数えてクリーチャー補充が発火しなくなる。
+    await truncateAll(sql);
+    for (const officialId of ["dm-001", "dm-002"]) {
+      await sql`INSERT INTO cards (name, civilizations, cost, type, text, official_id)
+        VALUES ('重複クリーチャー', '["fire"]', 3, 'creature', '速攻アタッカー', ${officialId})`;
+    }
+    for (let i = 0; i < 10; i++) {
+      await sql`INSERT INTO cards (name, civilizations, cost, type, text, is_shield_trigger)
+        VALUES (${"速攻呪文" + i}, '["fire"]', 2, 'spell', '速攻で攻める', false)`;
+    }
+    const r = await autoBuild("速攻", "original", {
+      requiredCards: ["重複クリーチャー"],
+      minCreatures: 6,
+    });
+    // 実際のクリーチャーは4枚 (重複行を数えれば8枚) なので、下限6枚に足りず警告が出るはず。
+    expect(r.weaknesses.some((w) => w.includes("攻撃役が不足"))).toBe(true);
+  });
+});
