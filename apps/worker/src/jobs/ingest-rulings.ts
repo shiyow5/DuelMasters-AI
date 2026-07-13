@@ -122,9 +122,7 @@ export function dedupeRulingList(items: RulingItem[]): RulingItem[] {
   return items.filter((item) => newestId.get(normalizeQuestion(item.question)) === item.id);
 }
 
-export async function runIngestRulings(
-  opts: { limit?: number; version?: string } = {},
-): Promise<{
+export async function runIngestRulings(opts: { limit?: number; version?: string } = {}): Promise<{
   inserted: number;
   skipped: number;
   pruned: number;

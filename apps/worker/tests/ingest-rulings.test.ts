@@ -9,7 +9,8 @@ describe("pickQuestion", () => {
   // 取込済み220件のうち8件 (3.6%) で発生していた。
   it("ページ側のカード名リンクが空なら API の title を採る", () => {
     const page = "《》で、四隅に封印をつけるのは《》上に置くのですか？";
-    const title = "《FORBIDDEN STAR～世界最後の日～》で、四隅に封印をつけるのは《FORBIDDEN STAR～世界最後の日～》上に置くのですか？";
+    const title =
+      "《FORBIDDEN STAR～世界最後の日～》で、四隅に封印をつけるのは《FORBIDDEN STAR～世界最後の日～》上に置くのですか？";
     expect(pickQuestion(page, title)).toBe(title);
   });
 
