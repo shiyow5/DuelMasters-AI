@@ -56,7 +56,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         <div className="w-full max-w-sm">
           <h1 className="mb-2 text-2xl font-bold">DM AI Master</h1>
           <p className="mb-6 text-sm text-text-sub">
-            ご利用にはログインが必要です。アカウントをお持ちでない場合は新規登録してください。
+            ご利用にはログインが必要です。本サービスは招待制です。
           </p>
           <AuthPanel />
         </div>

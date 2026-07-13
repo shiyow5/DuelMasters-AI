@@ -45,3 +45,20 @@ test("タブレット幅(900px)でもサイドバーはオフキャンバス (#5
   await expect.poll(async () => (await nav.boundingBox())?.x ?? 0).toBeLessThan(0);
   await expect(page.getByRole("button", { name: "メニューを開く" })).toBeVisible();
 });
+
+test("チャット送信で SSE が流れ、Gemini 未設定なら赤字でエラーを伝える", async ({ page }) => {
+  // E2E は GEMINI_API_KEY を渡さない (playwright.config.ts の方針)。
+  // api は SSE を開始したあとエージェントで落ちるので、error イベントが返る。
+  // ストリーミングの配管 (エンドポイント → SSE フレーム → パーサ → UI) を一気に通すテスト。
+  await page.goto("/");
+  await page.locator("textarea").first().fill("S・トリガーは必ず使いますか?");
+  await page.locator('button[type="submit"]').click();
+
+  // 送信直後に応答用のバブルが出る (最初のトークンを待たずに置く)
+  await expect(page.getByText("S・トリガーは必ず使いますか?")).toBeVisible();
+
+  const error = page.getByText("回答の生成に失敗しました");
+  await expect(error).toBeVisible({ timeout: 30000 });
+  // エラーは赤字で出す (握り潰さない)
+  await expect(error).toHaveClass(/text-danger/);
+});

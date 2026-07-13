@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { apiPost } from "@/lib/api";
+import { streamChat } from "@/lib/api";
 import { getTime } from "@/lib/format";
+import { toolLabel } from "@/lib/tools";
 import type { Message } from "@/lib/types";
 import Header from "@/components/Header";
-import ChatBubble, { ChatAvatar } from "@/components/ChatBubble";
+import ChatBubble, { TypingDots } from "@/components/ChatBubble";
+import Citations from "@/components/Citations";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -18,38 +20,72 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  /** ストリーミング中の最後の 1件 (assistant) だけを更新する */
+  function updateLast(patch: (m: Message) => Message) {
+    setMessages((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      next[next.length - 1] = patch(next[next.length - 1]);
+      return next;
+    });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || loading) return;
 
-    const userMsg: Message = {
-      role: "user",
-      content: input.trim(),
-      timestamp: getTime(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
+    const userMsg: Message = { role: "user", content: input.trim(), timestamp: getTime() };
+    // 履歴は「今回のユーザー発話を含まない」状態を送る (api 側で message として別に渡すため)
+    const history = messages.map((m) => ({ role: m.role, content: m.content }));
+
+    setMessages((prev) => [
+      ...prev,
+      userMsg,
+      { role: "assistant", content: "", timestamp: getTime(), streaming: true },
+    ]);
     setInput("");
     setLoading(true);
 
     try {
-      const res = await apiPost<{ response: string }>("/api/chat", {
-        message: userMsg.content,
-        mode,
-        history: messages,
+      await streamChat({ message: userMsg.content, mode, history }, (ev) => {
+        switch (ev.type) {
+          case "token":
+            updateLast((m) => ({ ...m, content: m.content + ev.text }));
+            break;
+          case "tool":
+            // ツールを呼ぶ前にエージェントが前置きを喋ることがある。その分は捨てて
+            // 「今なにをしているか」に差し替える (最終的な回答は done で確定する)。
+            updateLast((m) => ({ ...m, content: "", activeTool: ev.name }));
+            break;
+          case "done":
+            updateLast((m) => ({
+              ...m,
+              content: ev.result.response,
+              citations: ev.result.citations,
+              toolCalls: ev.result.toolCalls,
+              streaming: false,
+              activeTool: undefined,
+            }));
+            break;
+          case "error":
+            updateLast((m) => ({
+              ...m,
+              content: ev.message,
+              streaming: false,
+              activeTool: undefined,
+              error: true,
+            }));
+            break;
+        }
       });
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: res.response, timestamp: getTime() },
-      ]);
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `エラーが発生しました: ${err instanceof Error ? err.message : "不明なエラー"}`,
-          timestamp: getTime(),
-        },
-      ]);
+      updateLast((m) => ({
+        ...m,
+        content: err instanceof Error ? err.message : "エラーが発生しました",
+        streaming: false,
+        activeTool: undefined,
+        error: true,
+      }));
     } finally {
       setLoading(false);
     }
@@ -176,53 +212,63 @@ export default function ChatPage() {
             timestamp={msg.timestamp}
             aiIcon="psychology"
             footer={
-              msg.role === "assistant" ? (
-                <div className="mt-4 flex gap-2">
-                  <button
-                    onClick={() => setHelpful((prev) => new Set(prev).add(i))}
-                    disabled={helpful.has(i)}
-                    className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle disabled:text-primary disabled:opacity-100"
-                  >
-                    <span className="material-symbols-outlined text-sm">thumb_up</span>
-                    {helpful.has(i) ? "ありがとうございます" : "役に立った"}
-                  </button>
-                  <button
-                    className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle"
-                    onClick={async () => {
-                      await navigator.clipboard.writeText(msg.content);
-                      setCopiedIdx(i);
-                    }}
-                  >
-                    <span className="material-symbols-outlined text-sm">content_copy</span>
-                    {copiedIdx === i ? "コピーしました" : "コピー"}
-                  </button>
-                </div>
+              // ストリーミング中はまだ回答が確定していないので、根拠もフィードバックも出さない
+              msg.role === "assistant" && !msg.streaming ? (
+                <>
+                  {msg.citations && msg.citations.length > 0 && (
+                    <Citations citations={msg.citations} />
+                  )}
+                  {!msg.error && (
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        onClick={() => setHelpful((prev) => new Set(prev).add(i))}
+                        disabled={helpful.has(i)}
+                        className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle disabled:text-primary disabled:opacity-100"
+                      >
+                        <span className="material-symbols-outlined text-sm">thumb_up</span>
+                        {helpful.has(i) ? "ありがとうございます" : "役に立った"}
+                      </button>
+                      <button
+                        className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle"
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(msg.content);
+                          setCopiedIdx(i);
+                        }}
+                      >
+                        <span className="material-symbols-outlined text-sm">content_copy</span>
+                        {copiedIdx === i ? "コピーしました" : "コピー"}
+                      </button>
+                    </div>
+                  )}
+                </>
               ) : undefined
             }
           >
-            <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
+            {msg.streaming && msg.activeTool && (
+              <p className="mb-2 flex items-center gap-1.5 text-xs text-text-muted">
+                <span className="material-symbols-outlined animate-spin text-sm">
+                  progress_activity
+                </span>
+                {toolLabel(msg.activeTool)}…
+              </p>
+            )}
+            {msg.content === "" && msg.streaming ? (
+              <TypingDots />
+            ) : (
+              <p
+                className={`leading-relaxed whitespace-pre-wrap text-sm ${
+                  msg.error ? "text-danger" : ""
+                }`}
+              >
+                {msg.content}
+                {msg.streaming && <span className="ml-0.5 animate-pulse">▍</span>}
+              </p>
+            )}
           </ChatBubble>
         ))}
 
-        {loading && (
-          <div className="flex gap-4">
-            <ChatAvatar role="assistant" icon="psychology" />
-            <div className="glass-bubble-ai px-4 py-3 rounded-2xl rounded-tl-sm shadow-lg flex items-center gap-1">
-              <div
-                className="w-2 h-2 rounded-full bg-primary/50 animate-bounce"
-                style={{ animationDelay: "0ms" }}
-              />
-              <div
-                className="w-2 h-2 rounded-full bg-primary/50 animate-bounce"
-                style={{ animationDelay: "150ms" }}
-              />
-              <div
-                className="w-2 h-2 rounded-full bg-primary/50 animate-bounce"
-                style={{ animationDelay: "300ms" }}
-              />
-            </div>
-          </div>
-        )}
+        {/* 応答中のバブルは messages に streaming フラグ付きで積んであるので、
+            ここで別途ローディング表示は出さない (二重になる) */}
         <div ref={bottomRef} />
       </div>
 

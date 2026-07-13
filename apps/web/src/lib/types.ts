@@ -1,17 +1,31 @@
 /** API レスポンスの型 (apps/api の応答形状の写し。API 側を変えたらここも追随する) */
 
+/**
+ * 引用 (エージェントがツールから得た根拠)。
+ * 実体は `{ text, ...chunk_meta }` なので doc_type / article 以外の任意キーも入りうる。
+ */
 export interface Citation {
   text: string;
+  doc_type?: string;
   section?: string;
   article?: string;
+  name?: string;
   url?: string;
+  [key: string]: unknown;
 }
 
 export interface Message {
   role: "user" | "assistant";
   content: string;
   citations?: Citation[];
+  toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
   timestamp?: string;
+  /** ストリーミング中 (content は途中経過。確定したら done の response で置き換わる) */
+  streaming?: boolean;
+  /** 実行中のツール名 (進行表示用) */
+  activeTool?: string;
+  /** エラーで終わった応答 (UI で赤く出す) */
+  error?: boolean;
 }
 
 export interface DeckScore {
