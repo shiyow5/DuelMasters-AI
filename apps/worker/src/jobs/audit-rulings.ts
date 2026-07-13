@@ -356,12 +356,28 @@ export interface AuditReport {
   contradictions: Contradiction[];
 }
 
+/**
+ * 実行前に規模を出す。
+ *
+ * このジョブは候補1件あたり LLM を最大2回 (検出 + 反証) 叩く。**予算を確認せずに
+ * 500件超を回して Gemini の月次上限に到達させた**ことがあるので、何件・何回叩くのかを
+ * 必ず先に表示する。--limit で刻めることも併記する。
+ */
+function announceScale(candidates: number): void {
+  const maxCalls = candidates * 2;
+  console.log(
+    `=== 裁定監査: 一般ルール裁定 ${candidates}件 / LLM 呼び出し 最大 ${maxCalls}回 ` +
+      `(検出 + 反証、1回あたり最大 ${MAX_VERDICT_TOKENS} 出力トークン) ===`,
+  );
+  console.log(`    小さく試すなら --limit=N。プロンプトを変えたなら先に --control を回すこと。`);
+}
+
 export async function runAuditRulings(
   opts: { limit?: number; out?: string } = {},
 ): Promise<AuditReport> {
   const sql = getSql();
   const candidates = await fetchCandidates(sql, opts.limit);
-  console.log(`=== 裁定監査開始: 一般ルール裁定 ${candidates.length}件 ===`);
+  announceScale(candidates.length);
 
   const contradictions: Contradiction[] = [];
   let judged = 0;
