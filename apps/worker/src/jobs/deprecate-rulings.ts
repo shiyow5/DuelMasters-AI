@@ -31,7 +31,10 @@ export async function applyDeprecations(
   sql: Sql,
   list: DeprecatedRuling[] = DEPRECATED_RULINGS,
 ): Promise<DeprecateResult> {
-  const keep = list.map((d) => String(d.qaId));
+  // 同じ qaId が2回載っていると、UPDATE を2回打って flagged を二重に数えてしまう。
+  // 件数はレビュー時の検算に使うので、実際の対象行数と合っていないと意味がない。
+  const unique = [...new Map(list.map((d) => [d.qaId, d])).values()];
+  const keep = unique.map((d) => String(d.qaId));
 
   return sql.begin(async (tx) => {
     const txSql = tx as unknown as Sql;
@@ -53,7 +56,7 @@ export async function applyDeprecations(
           RETURNING id`);
 
     let flagged = 0;
-    for (const d of list) {
+    for (const d of unique) {
       const rows = await txSql`
         UPDATE rule_chunks
         SET chunk_meta = chunk_meta || ${sql.json({

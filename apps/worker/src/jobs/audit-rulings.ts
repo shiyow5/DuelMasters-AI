@@ -1,21 +1,48 @@
 /**
- * 裁定 Q&A を総合ルールと突き合わせ、現行ルールと矛盾するものを検出する監査ジョブ (#92)。
+ * 裁定 Q&A を総合ルールと突き合わせ、現行ルールと矛盾するものを検出しようとする監査ジョブ (#92)。
  *
- * 公式サイトの qa_old には改定前の裁定がそのまま残っている。例えば qa_id 34932 は
- * 「トリガー能力をすべて使ってからアンタップする」と答えるが、総合ルールは
- * 501.1 (アンタップ) → 501.2 (「ターンのはじめに」誘発) → 502.1 (ドロー) の順と定めており、
- * 順序が逆になっている。RAG がこれを引くと agent の回答が汚れる (eval で実害が出た)。
+ * ## ⚠ 結論: このジョブの判定は使い物にならない。実測で確認済み。
  *
- * ## 判定を信用しないための作り
+ * **LLM による矛盾検出は失敗した。** プロンプトを厳しくすると本物の矛盾を取り落とし、
+ * 緩めると偽陽性で溢れる。その中間は見つからなかった。実測 (2026-07-14):
  *
- * LLM の「矛盾している」という判断は**それ単体では採用しない**。過去に judge は
- * カードの実在性も DM のルールも誤った。そこで LLM には必ず
- * 「どの条番号の、どの文言と矛盾するのか」を**逐語引用**で答えさせ、
- * その条番号が実在し、引用が本当にその条文の部分列であることを **機械的に検証**する
- * (verifyGrounding)。捏造した条番号や、paraphrase した「引用」はここで落ちる。
+ * | 反証プロンプト                   | 結果                                          |
+ * | -------------------------------- | --------------------------------------------- |
+ * | 「迷ったら両立と答えろ」         | 検出率 0%。**本物の矛盾 34932 すら取り落とす** |
+ * | 「手順に違いが出るか」(操作的)   | 106件中 78件 (**74%**) を矛盾と判定 = 偽陽性の氾濫 |
  *
- * 出力はレビュー可能な一覧。実際に降格するのは人がレビューして
- * `src/data/deprecated-rulings.ts` に載せたものだけ (削除はしない = 戻せる)。
+ * 偽陽性の実例 (人が条文を読んで確認した):
+ * - qa_id 36089「覚醒したクリーチャーは召喚酔いがなくなります」
+ *   ↔ 条文 805.6「覚醒したサイキック・クリーチャーは召喚酔いに影響されません」
+ *   → **完全に一致しているのに「矛盾」と判定した。**
+ * - qa_id 34973「超次元ゾーンとは？」/ 34986「∞ブレイカーとは？」/ 36873「エグザイル・クリーチャーとは？」
+ *   → 単なる**用語の説明**。条文と扱っている側面が違うだけで矛盾しようがない。
+ *
+ * 原因は「矛盾か否か」が意味の判断であること。LLM は「裁定が条文ほど厳密でない」ことを
+ * 「矛盾」と取り違える。逐語引用の機械照合 (verifyGrounding) は**捏造**は止められるが、
+ * **見当違いの判定**は止められない —— 引用自体は実在するからである。
+ *
+ * ## そもそも、この問題は大部分が既に解決していた
+ *
+ * Issue #92 が名指しした qa_id 34932 は **corpus に存在しない**。公式サイト自身が
+ * 同じ質問で訂正版 (qa_id 37341: アンタップ → 誘発 → ドロー) を出し直しており、
+ * #82 の重複排除 (質問文で名寄せして新しい qa_id を残す) が古い方を落としていた。
+ * つまり「改定前の裁定」は**公式の訂正 + 重複排除で構造的に処理済み**である。
+ *
+ * ## 信頼できる検出には機械的なオラクルが要る
+ *
+ * 「裁定どおりに処理した結果」と「条文どおりに処理した結果」を**実際に実行して**
+ * 突き合わせられれば、LLM の意味判断に頼らずに矛盾を検出できる。それがゲームエンジン
+ * (#101)。それまでこのジョブの出力を降格に使ってはいけない。
+ *
+ * ## いま何に使えるか
+ *
+ * - `--control`: プロンプトを変えたときの退行検知 (正解の分かった2件)。ここは有効。
+ * - 監査本体: **人が全件を条文で裏取りする前提**の候補出しにしかならない。
+ *   偽陽性 74% なので、候補出しとしても割に合わない。
+ *
+ * 降格そのものの仕組み (deprecate-rulings.ts + RAG 除外) は動作し、テストもある。
+ * 信頼できる検出手段ができたときに、そのまま使える。`DEPRECATED_RULINGS` は**空のまま**。
  */
 import { pathToFileURL } from "node:url";
 import { writeFile } from "node:fs/promises";
@@ -118,14 +145,24 @@ function normalizeForQuote(s: string): string {
  * 「チャンクの article と完全一致するか」だけで探すと、**実在する枝番を引いた正しい判定を
  * 『条文が存在しない』として捨ててしまう** (実際に捨てていた)。
  *
- * 本文に条番号のラベルが literal に出てくるチャンクを親として採る。捏造した条番号
- * (999.9 など) はどのチャンクの本文にも現れないので、ハルシネーション検出は保たれる。
+ * @param needle 正規化済みの引用。フォールバック時、**条番号と引用が同じチャンクに
+ *   あること**を要求するために使う。条文は相互参照 (「704.3 を参照」) を多用するので、
+ *   条番号のラベルが出てくるチャンクを無条件に親とすると、**引用元とは無関係なチャンクを
+ *   親として解決してしまい、article と quote の対応が壊れる**。両方を含むチャンクに限る。
  */
-function findArticle(articles: RuleArticle[], cited: string): RuleArticle | undefined {
+function findArticle(
+  articles: RuleArticle[],
+  cited: string,
+  needle: string,
+): RuleArticle | undefined {
   const exact = articles.find((a) => a.article === cited);
   if (exact) return exact;
+
   const label = normalizeForQuote(cited);
-  return articles.find((a) => normalizeForQuote(a.text).includes(label));
+  return articles.find((a) => {
+    const text = normalizeForQuote(a.text);
+    return text.includes(label) && text.includes(needle);
+  });
 }
 
 /**
@@ -153,14 +190,15 @@ export function verifyGrounding(
     return { ok: false, reason: "条番号または引用が空" };
   }
 
-  const found = findArticle(articles, article);
-  if (!found) return { ok: false, reason: `条文が存在しない (${article})` };
-
   const needle = normalizeForQuote(quote);
   const rulingNeedle = normalizeForQuote(rulingQuote);
   if (needle.length < MIN_QUOTE_LENGTH || rulingNeedle.length < MIN_QUOTE_LENGTH) {
     return { ok: false, reason: "引用が短すぎる" };
   }
+
+  // 条番号と引用が**同じチャンク**に載っていることを要求する (相互参照への誤マッチ防止)。
+  const found = findArticle(articles, article, needle);
+  if (!found) return { ok: false, reason: `条文が存在しない (${article})` };
 
   if (!normalizeForQuote(found.text).includes(needle)) {
     return { ok: false, reason: `引用が条文に無い (${article})` };
@@ -386,7 +424,15 @@ export async function runAuditRulings(
   let errors = 0;
 
   await mapPool(candidates, CONCURRENCY, async (ruling) => {
-    const articles = await fetchRelatedArticles(sql, ruling.id);
+    // DB の一時的な失敗で監査全体を落とさない (mapPool は Promise.all なので reject が伝播する)。
+    let articles: RuleArticle[];
+    try {
+      articles = await fetchRelatedArticles(sql, ruling.id);
+    } catch (err) {
+      errors++;
+      console.warn(`  qa_id ${ruling.qaId}: 条文の取得に失敗 ${(err as Error).message}`);
+      return;
+    }
     if (articles.length === 0) return;
 
     // コントロール (--control) と**同じ経路**で判定する。ここを分けると、
@@ -489,7 +535,11 @@ async function judgeRuling(
   const check = verifyGrounding(verdict, articles, text);
   if (!check.ok) return { flagged: false, verdict, detail: `機械照合で却下: ${check.reason}` };
 
-  const article = findArticle(articles, verdict.article.trim());
+  const article = findArticle(
+    articles,
+    verdict.article.trim(),
+    normalizeForQuote(verdict.quote.trim()),
+  );
   if (!article) return { flagged: false, verdict, detail: "条文を解決できず" };
 
   const defense = await generateStructured(

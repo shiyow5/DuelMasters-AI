@@ -97,4 +97,16 @@ describe.skipIf(!hasTestDb)("applyDeprecations (統合)", () => {
     const r = await applyDeprecations(sql, [{ ...ENTRY, qaId: 99999 }]);
     expect(r.flagged).toBe(0);
   });
+
+  it("一覧に同じ qaId が2回載っていても件数を二重に数えない", async () => {
+    // flagged はレビュー時の検算に使う。DB 上の対象行は1行なのに 2 と報告されると、
+    // 「一覧の件数と DB の件数が合っているか」の確認が意味をなさなくなる。
+    const r = await applyDeprecations(sql, [ENTRY, { ...ENTRY, reason: "重複エントリ" }]);
+    expect(r.flagged).toBe(1);
+
+    const [{ count }] = await sql`
+      SELECT count(*)::int FROM rule_chunks
+      WHERE doc_type='ruling' AND chunk_meta->>'deprecated' = 'true'`;
+    expect(count).toBe(1);
+  });
 });
