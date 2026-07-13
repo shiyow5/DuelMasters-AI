@@ -5,7 +5,7 @@ import type { AgentMode, Citation } from "./state.js";
 export { configureAgent } from "./models.js";
 export { runTool, type ToolResult } from "./tools.js";
 export type { AgentMode, Citation } from "./state.js";
-export { MAX_ITERATIONS } from "./graph.js";
+export { MAX_ITERATIONS, RAG_CONTEXT_HEADER, formatRagContext } from "./graph.js";
 
 export interface AgentInput {
   message: string;
