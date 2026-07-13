@@ -260,10 +260,19 @@ Supabase Dashboard の SQL Editor でテーブルを作成します。
 3. **「New query」** をクリック
 4. `infra/sql/001_init.sql` の内容を **全文コピー** してエディタに貼り付け
 5. **「Run」** をクリック
-6. 同様に `infra/sql/002_cards_official_id_unique.sql`、`infra/sql/003_features.sql` も
-   この順で貼り付けて実行
+6. 同様に `infra/sql/002_cards_official_id_unique.sql`、`infra/sql/003_features.sql`、
+   `infra/sql/004_enable_rls.sql` も この順で貼り付けて実行
 
 `Success. No rows returned` と表示されればOKです。
+
+> **004 は必ず適用してください（セキュリティ）。**
+> Supabase は public スキーマのテーブルを PostgREST 経由で自動的に REST API として公開します。
+> RLS を有効化しないと、Table Editor で各テーブルが **"Unrestricted"** と表示され、
+> web のJSバンドルに埋め込まれる公開鍵 (anon key) を持つ第三者が `decks` や `user_settings`
+> を含む全テーブルを直接読み書きできてしまいます。
+> 004 は全テーブルで RLS を有効化し、ポリシーを付けないことで PostgREST 経由のアクセスを
+> 全面拒否します。アプリのデータアクセスは Hyperdrive/`DATABASE_URL` の postgres ロール
+> (RLS を迂回) 経由なので機能には影響しません。適用後、表示が "Unrestricted" から変われば成功です。
 
 > 002 は `cards.official_id` を UNIQUE 化します(カード取り込みの UPSERT に必須)。
 > 003 は `user_settings` テーブルと重複防止インデックスを追加します。

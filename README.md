@@ -124,13 +124,20 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 # PostgreSQL + pgvector を起動
 docker compose up db -d
 
-# テーブル作成 (001 → 002 → 003 の順で適用)
+# テーブル作成 (001 → 002 → 003 → 004 の順で適用)
 psql $DATABASE_URL -f infra/sql/001_init.sql
 psql $DATABASE_URL -f infra/sql/002_cards_official_id_unique.sql
 psql $DATABASE_URL -f infra/sql/003_features.sql
+psql $DATABASE_URL -f infra/sql/004_enable_rls.sql
 ```
 
-`docker compose up db -d` で起動する場合は 001〜003 が初回に自動適用されます。
+`docker compose up db -d` で起動する場合は 001〜004 が初回に自動適用されます。
+
+**Supabase を使う場合は 004 の適用が必須です。** Supabase は public スキーマのテーブルを
+PostgREST 経由で自動公開するため、RLS 未設定 (ダッシュボードの "Unrestricted") のままだと
+公開鍵 (anon key) を持つ第三者が全テーブルを直接読み書きできます。004 は全テーブルで RLS を
+有効化して PostgREST 経由のアクセスを遮断します。アプリのデータアクセスは Hyperdrive/
+`DATABASE_URL` の postgres ロール (RLS を迂回) 経由なので、機能には影響しません。
 Supabaseを使う場合は、Supabase DashboardのSQL Editorで 001 → 002 → 003 を順に実行してください。
 
 ### 4. データ取り込み
