@@ -1,0 +1,74 @@
+name: Eval (精度回帰ゲート)
+
+# agent の解答精度を golden set (35問) で計測し、閾値割れで失敗させる。
+#
+# per-PR では回さない: 実 Gemini API を叩くのでコストがかかり、agent は temperature 0.3 で
+# 走るため judge が run 毎に揺れる。毎 PR のゲートにすると偽陽性で信用されなくなる。
+# nightly + 手動実行にして、退行を翌日には捕まえる運用にする。
+#
+# CI (vitest) では Gemini がツール定義を受理するかを検証できない。実際、zod の .positive() が
+# exclusiveMinimum になり Gemini が 400 を返す事故は CI を通過し、eval を回して全35問 ERR で
+# 初めて発覚した (2026-07-13)。この workflow がその番人になる。
+on:
+  schedule:
+    # 毎日 05:00 JST (20:00 UTC)
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      no_judge:
+        description: "judge を回さない (高速・低コスト)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: eval
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  eval:
+    name: golden set (35問)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm build
+
+      # 本番と同じ Supabase を読む (RAG の条文・裁定・カードが揃っていないと精度が出ない)。
+      # 書き込みはしないので読み取り専用の用途。
+      - name: Run eval with gate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          args="--gate --out=eval-report.json"
+          if [ "${{ github.event.inputs.no_judge }}" = "true" ]; then
+            args="$args --no-judge"
+          fi
+          pnpm --filter @dm-ai/agent eval -- $args
+
+      # 失敗時も結果を残す (どの問が落ちたかを追えるようにする)。
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: packages/agent/eval-report.json
+          if-no-files-found: warn

@@ -6,6 +6,7 @@ import {
   factCoverage,
   aggregate,
 } from "../eval/metrics.js";
+import { checkThresholds } from "../eval/thresholds.js";
 
 describe("prScore", () => {
   it("完全一致で precision=recall=1", () => {
@@ -77,5 +78,76 @@ describe("aggregate", () => {
     expect(agg.citationRecall).toBe(1); // 1 件のみ
     expect(agg.judgeMean).toBe(3); // (4 + 2) / 2
     expect(agg.factCoverage).toBeNull(); // 該当なし
+  });
+});
+
+describe("checkThresholds (CI 回帰ゲート)", () => {
+  const OK = {
+    n: 35,
+    errors: 0,
+    toolRecall: 0.97,
+    toolPrecision: 1.0,
+    citationRecall: null,
+    citationPrecision: null,
+    factCoverage: 0.84,
+    judgeMean: 4.94,
+    judgeFailures: 0,
+  };
+
+  it("v8 のベースライン相当なら通る", () => {
+    expect(checkThresholds(OK).failures).toEqual([]);
+    expect(checkThresholds(OK).passed).toBe(true);
+  });
+
+  it("エラーが1件でもあれば落とす", () => {
+    // Gemini がツール定義を拒否した事故 (exclusiveMinimum) は全問 ERR になった。
+    // CI ではツール定義の受理を検証できないため、eval のエラー件数がその番人になる。
+    const r = checkThresholds({ ...OK, errors: 1 });
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("エラー");
+  });
+
+  it("judge 平均が閾値を下回れば落とす", () => {
+    const r = checkThresholds({ ...OK, judgeMean: 4.0 });
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("judge");
+  });
+
+  it("toolRecall が閾値を下回れば落とす", () => {
+    const r = checkThresholds({ ...OK, toolRecall: 0.5 });
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("ツール recall");
+  });
+
+  it("--no-judge なら judge 指標を評価しない", () => {
+    // 高速実行でもゲートを通せるようにする (judge 以外は評価する)。
+    expect(checkThresholds({ ...OK, judgeMean: null }, { judgeExpected: false }).passed).toBe(true);
+  });
+
+  it("judge を回すつもりだったのにスコアが1つも無ければ落とす", () => {
+    // quota 切れ・スキーマエラー・キー不正で judgeAnswer が全問失敗すると judgeMean が null に
+    // なる。null をスキップすると「合格」と表示され、judge 障害にゲートが盲目になる。
+    const r = checkThresholds({ ...OK, judgeMean: null }, { judgeExpected: true });
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("judge");
+  });
+
+  it("既定は judge を回した前提 (安全側)", () => {
+    expect(checkThresholds({ ...OK, judgeMean: null }).passed).toBe(false);
+  });
+
+  it("judge が一部だけ失敗しても落とす (成功分の平均で通してはいけない)", () => {
+    // aggregate は1問でも judgeScore があれば非 null の平均を返す。quota 切れが途中で起きると
+    // 採点できた少数の問だけで「合格」と表示され、残りの退行が見えなくなる。
+    const r = checkThresholds({ ...OK, judgeMean: 4.9, judgeFailures: 12 });
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("12件で失敗");
+  });
+
+  it("--no-judge なら judge 失敗も評価しない", () => {
+    expect(
+      checkThresholds({ ...OK, judgeMean: null, judgeFailures: 35 }, { judgeExpected: false })
+        .passed,
+    ).toBe(true);
   });
 });

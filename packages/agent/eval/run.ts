@@ -4,12 +4,15 @@
  *
  * 実行 (実 API + DB を使う):
  *   set -a; . ./.env; set +a; \
- *   pnpm --filter @dm-ai/agent exec tsx eval/run.ts [goldenDir] [--no-judge] [--out=report.json]
+ *   pnpm --filter @dm-ai/agent exec tsx eval/run.ts [goldenDir] [--no-judge] [--gate] [--out=report.json]
+ *
+ * --gate: 閾値 (eval/thresholds.ts) を割ったら exit 1。CI の回帰ゲート用。
  */
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { runAgent } from "../src/index.js";
 import { toolTrajectory, citationScore, factCoverage, aggregate } from "./metrics.js";
+import { checkThresholds, THRESHOLDS } from "./thresholds.js";
 import { judgeAnswer } from "./judge.js";
 import type { GoldenItem, ItemResult } from "./types.js";
 
@@ -54,6 +57,7 @@ async function evalItem(item: GoldenItem, noJudge: boolean): Promise<ItemResult>
         res.judgeReason = j.reason;
       } catch (err) {
         res.judgeReason = `judge失敗: ${(err as Error).message}`;
+        res.judgeFailed = true;
       }
     }
     return res;
@@ -79,16 +83,21 @@ function renderReport(agg: ReturnType<typeof aggregate>): string {
     `- ツール軌跡 recall / precision: **${fmt(agg.toolRecall)}** / **${fmt(agg.toolPrecision)}**`,
     `- 引用 recall / precision: **${fmt(agg.citationRecall)}** / ${fmt(agg.citationPrecision)}`,
     `- 事実カバレッジ: **${fmt(agg.factCoverage)}**`,
-    `- judge 平均 (1-5): **${fmt(agg.judgeMean)}**`,
+    `- judge 平均 (1-5): **${fmt(agg.judgeMean)}**` +
+      (agg.judgeFailures > 0 ? ` (**judge 失敗 ${agg.judgeFailures}件**)` : ""),
     "",
-    "閾値目安: ツールrecall≥0.8 / ツールprecision≥0.8 / judge平均≥3.5 / ハルシネーションは judge 減点で捕捉",
+    // 閾値はここに書き写さず thresholds.ts から出す (二重管理で食い違うのを防ぐ)。
+    `回帰ゲートの閾値: エラー ${THRESHOLDS.maxErrors}件 / judge平均 ≥ ${THRESHOLDS.minJudgeMean} / ` +
+      `ツールrecall ≥ ${THRESHOLDS.minToolRecall} / ツールprecision ≥ ${THRESHOLDS.minToolPrecision} / ` +
+      `事実カバレッジ ≥ ${THRESHOLDS.minFactCoverage}`,
   ].join("\n");
 }
 
-async function main() {
+async function main(): Promise<number> {
   const args = process.argv.slice(2);
   const dir = args.find((a) => !a.startsWith("--")) ?? join(import.meta.dirname, "golden");
   const noJudge = args.includes("--no-judge");
+  const gate = args.includes("--gate");
   const outPath = args.find((a) => a.startsWith("--out="))?.slice(6);
 
   const items = loadGolden(dir);
@@ -115,10 +124,23 @@ async function main() {
     );
     console.log(`\nレポート出力: ${outPath}`);
   }
+
+  // --gate: 閾値割れで失敗させる (CI の回帰ゲート)。
+  if (gate) {
+    // --no-judge は意図的な省略。judge を回したのにスコアが無い場合は障害として落とす。
+    const { passed, failures } = checkThresholds(agg, { judgeExpected: !noJudge });
+    if (!passed) {
+      console.error("\n=== 回帰ゲート失敗 ===");
+      for (const f of failures) console.error(`  - ${f}`);
+      return 1;
+    }
+    console.log("\n回帰ゲート: 合格");
+  }
+  return 0;
 }
 
 main()
-  .then(() => process.exit(0))
+  .then((code) => process.exit(code))
   .catch((err) => {
     console.error("Error:", err);
     process.exit(1);

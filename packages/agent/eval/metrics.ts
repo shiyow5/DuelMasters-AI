@@ -49,6 +49,7 @@ export function aggregate(
     citation?: PR;
     factCoverage?: number;
     judgeScore?: number;
+    judgeFailed?: boolean;
     error?: string;
   }>,
 ): {
@@ -60,6 +61,8 @@ export function aggregate(
   citationPrecision: number | null;
   factCoverage: number | null;
   judgeMean: number | null;
+  /** judge を回したのに失敗した件数。部分的な judge 障害を検出する。 */
+  judgeFailures: number;
 } {
   const ok = results.filter((r) => !r.error);
   const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
@@ -73,5 +76,6 @@ export function aggregate(
     citationPrecision: mean(ok.filter((r) => r.citation).map((r) => r.citation!.precision)),
     factCoverage: mean(ok.filter((r) => r.factCoverage !== undefined).map((r) => r.factCoverage!)),
     judgeMean: mean(ok.filter((r) => r.judgeScore !== undefined).map((r) => r.judgeScore!)),
+    judgeFailures: ok.filter((r) => r.judgeFailed).length,
   };
 }
