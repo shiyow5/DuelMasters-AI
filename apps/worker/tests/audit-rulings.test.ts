@@ -4,6 +4,7 @@ import {
   verifyGrounding,
   buildAuditPrompt,
   type RuleArticle,
+  type AuditVerdict,
 } from "../src/jobs/audit-rulings.js";
 
 describe("isCardSpecific", () => {
@@ -50,30 +51,32 @@ describe("verifyGrounding", () => {
     },
     { article: "502.1", text: "502. ドローステップ 502.1. ターン・プレイヤーはカードを1枚引きます。" },
   ];
+  const RULING =
+    "Q: 「自分のターンのはじめに」で始まる能力があります。\nA: トリガー能力をすべて使ってから、バトルゾーンとマナゾーンのカードをアンタップします。";
 
-  it("実在する条文の逐語引用なら通す", () => {
-    const v = verifyGrounding(
-      { contradicts: true, article: "501.1", quote: "自分のカードのうちでどれをアンタップするかを決定し", reason: "順序が逆" },
-      articles,
-    );
-    expect(v.ok).toBe(true);
+  const verdict = (over: Partial<AuditVerdict> = {}): AuditVerdict => ({
+    contradicts: true,
+    article: "501.1",
+    quote: "自分のカードのうちでどれをアンタップするかを決定し",
+    rulingQuote: "トリガー能力をすべて使ってから、バトルゾーンとマナゾーンのカードをアンタップします",
+    reason: "順序が逆",
+    ...over,
+  });
+
+  it("実在する条文の逐語引用 + 裁定側の逐語引用が揃えば通す", () => {
+    expect(verifyGrounding(verdict(), articles, RULING).ok).toBe(true);
   });
 
   it("PDF 由来の改行・空白差を無視して一致させる", () => {
     // 総合ルールは PDF 抽出なので原文に折り返し空白が入る (「それ\nらを同時に」)。
     // LLM は空白を詰めて引用してくるため、素の substring 判定だと正しい引用まで落ちる。
-    const v = verifyGrounding(
-      { contradicts: true, article: "501.1", quote: "それらを同時にアンタップします", reason: "順序が逆" },
-      articles,
-    );
-    expect(v.ok).toBe(true);
+    expect(
+      verifyGrounding(verdict({ quote: "それらを同時にアンタップします" }), articles, RULING).ok,
+    ).toBe(true);
   });
 
   it("存在しない条番号は落とす (ハルシネーション対策)", () => {
-    const v = verifyGrounding(
-      { contradicts: true, article: "999.9", quote: "そんな条文はない", reason: "でっちあげ" },
-      articles,
-    );
+    const v = verifyGrounding(verdict({ article: "999.9", quote: "そんな条文はない" }), articles, RULING);
     expect(v.ok).toBe(false);
     expect(v.reason).toContain("条文が存在しない");
   });
@@ -82,33 +85,47 @@ describe("verifyGrounding", () => {
     // judge はこれまで4回間違えた。条番号だけ合っていて中身を捏造するのが最も危険なので、
     // 引用が条文の逐語部分列であることを機械的に確かめる。
     const v = verifyGrounding(
-      { contradicts: true, article: "502.1", quote: "誘発する能力が先に処理されます", reason: "順序" },
+      verdict({ article: "502.1", quote: "誘発する能力が先に処理されます" }),
       articles,
+      RULING,
     );
     expect(v.ok).toBe(false);
     expect(v.reason).toContain("引用が条文に無い");
   });
 
-  it("contradicts=false は矛盾なしとして落とす", () => {
+  it("裁定側の引用が裁定本文に無ければ落とす", () => {
+    // 条文だけ引用させると「裁定はこの条文に触れていない」程度でも矛盾と言い出す。
+    // **裁定のどの文が間違っているのか**を逐語で指させ、それが本文にあることを確かめる。
     const v = verifyGrounding(
-      { contradicts: false, article: "501.1", quote: "ターン起因処理です", reason: "整合" },
+      verdict({ rulingQuote: "裁定にはこんな文は書かれていない" }),
       articles,
+      RULING,
     );
     expect(v.ok).toBe(false);
+    expect(v.reason).toContain("引用が裁定に無い");
+  });
+
+  it("contradicts=false は矛盾なしとして落とす", () => {
+    expect(verifyGrounding(verdict({ contradicts: false }), articles, RULING).ok).toBe(false);
   });
 
   it("引用が短すぎると偶然一致するので落とす", () => {
     // 「の」1文字でも substring 判定は通ってしまう。根拠として機能する長さを要求する。
-    const v = verifyGrounding(
-      { contradicts: true, article: "501.1", quote: "です", reason: "短い" },
-      articles,
-    );
+    const v = verifyGrounding(verdict({ quote: "です" }), articles, RULING);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toContain("引用が短すぎる");
+  });
+
+  it("裁定側の引用が短すぎても落とす", () => {
+    const v = verifyGrounding(verdict({ rulingQuote: "から" }), articles, RULING);
     expect(v.ok).toBe(false);
     expect(v.reason).toContain("引用が短すぎる");
   });
 
   it("空の条番号・引用は落とす", () => {
-    expect(verifyGrounding({ contradicts: true, article: "", quote: "", reason: "" }, articles).ok).toBe(false);
+    expect(
+      verifyGrounding(verdict({ article: "", quote: "", rulingQuote: "" }), articles, RULING).ok,
+    ).toBe(false);
   });
 });
 

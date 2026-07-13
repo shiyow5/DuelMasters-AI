@@ -32,8 +32,12 @@ export interface RuleArticle {
 /** LLM が返す矛盾判定。 */
 export interface AuditVerdict {
   contradicts: boolean;
+  /** 矛盾する総合ルールの条番号。 */
   article: string;
+  /** その条文からの逐語引用。 */
   quote: string;
+  /** **裁定のどの文が間違っているか**の逐語引用。 */
+  rulingQuote: string;
   reason: string;
 }
 
@@ -50,7 +54,10 @@ export interface Contradiction {
   qaId: number;
   question: string;
   article: string;
+  /** 条文からの逐語引用。 */
   quote: string;
+  /** 裁定のうち誤っている部分の逐語引用。 */
+  rulingQuote: string;
   reason: string;
 }
 
@@ -95,34 +102,49 @@ function normalizeForQuote(s: string): string {
 }
 
 /**
- * LLM の矛盾判定を、総合ルールの原文に照らして機械的に裏取りする。
+ * LLM の矛盾判定を、原文に照らして機械的に裏取りする。
  *
  * これが #92 の安全装置。LLM が「矛盾している」と言っただけでは何も降格しない。
- * 条番号が実在し、引用がその条文の逐語部分列であって初めて採用する。
+ * **両側**の逐語引用を要求する:
+ *   - 条文側 … 条番号が実在し、引用がその条文の部分列であること
+ *   - 裁定側 … 裁定のどの文が誤りなのかを指し、それが裁定本文の部分列であること
+ *
+ * 条文側だけだと「裁定はこの条文に触れていない」程度の言いがかりが通ってしまう。
+ * 裁定側の引用を強制すると、誤りの実体を指せない判定はここで落ちる。
  */
 export function verifyGrounding(
   verdict: AuditVerdict,
   articles: RuleArticle[],
+  rulingText: string,
 ): { ok: boolean; reason?: string } {
   if (!verdict.contradicts) return { ok: false, reason: "矛盾なしと判定" };
 
   const article = verdict.article?.trim() ?? "";
   const quote = verdict.quote?.trim() ?? "";
-  if (article === "" || quote === "") return { ok: false, reason: "条番号または引用が空" };
+  const rulingQuote = verdict.rulingQuote?.trim() ?? "";
+  if (article === "" || quote === "" || rulingQuote === "") {
+    return { ok: false, reason: "条番号または引用が空" };
+  }
 
   const found = articles.find((a) => a.article === article);
   if (!found) return { ok: false, reason: `条文が存在しない (${article})` };
 
   const needle = normalizeForQuote(quote);
-  if (needle.length < MIN_QUOTE_LENGTH) return { ok: false, reason: "引用が短すぎる" };
+  const rulingNeedle = normalizeForQuote(rulingQuote);
+  if (needle.length < MIN_QUOTE_LENGTH || rulingNeedle.length < MIN_QUOTE_LENGTH) {
+    return { ok: false, reason: "引用が短すぎる" };
+  }
 
   if (!normalizeForQuote(found.text).includes(needle)) {
     return { ok: false, reason: `引用が条文に無い (${article})` };
   }
+  if (!normalizeForQuote(rulingText).includes(rulingNeedle)) {
+    return { ok: false, reason: "引用が裁定に無い" };
+  }
   return { ok: true };
 }
 
-/** 裁定の監査プロンプト。条文の逐語引用を強制する。 */
+/** 裁定の監査プロンプト。条文と裁定の**両側**の逐語引用を強制する。 */
 export function buildAuditPrompt(rulingText: string, articles: RuleArticle[]): string {
   const rules = articles.map((a) => `[${a.article}]\n${a.text}`).join("\n\n");
   return `あなたはデュエル・マスターズのルール監査官です。
@@ -137,13 +159,54 @@ ${rulingText}
 ${rules}
 
 # 判定の指示
-- 矛盾とは、裁定の回答どおりに処理すると総合ルールに違反する場合を指します。
-- 裁定が条文より**簡略なだけ**、条文に**書かれていないだけ**は矛盾ではありません (contradicts=false)。
-- 上に挙がっていない条文を根拠にしてはいけません。判断できなければ contradicts=false としてください。
-- contradicts=true とするときは、必ず矛盾の根拠になる条文を1つ選び、
-  - article: その条番号 (例 "501.1") を上のリストからそのまま写す
-  - quote: **その条文の本文から逐語でコピーした一節** (言い換え・要約は禁止。原文の文字列をそのまま)
-  を返してください。quote が原文と一致しない場合、その判定は破棄されます。`;
+矛盾とは、**裁定の回答どおりに処理すると総合ルールに違反する**場合だけを指します。
+判定は厳しく。迷ったら contradicts=false にしてください。誤って矛盾と判定すると、
+正しい裁定が検索から消えてしまいます。
+
+次はいずれも**矛盾ではありません** (contradicts=false):
+- 裁定が条文より簡略・大雑把なだけ
+- 条文に書かれていない事柄を裁定が補足しているだけ
+- 裁定がカード固有の処理を述べていて、条文の一般規定と粒度が違うだけ
+- 上に挙がった条文だけでは正誤を判断できない
+
+contradicts=true とするときは、必ず次の3つを揃えてください。1つでも原文と一致しなければ
+その判定は破棄されます:
+- article: 根拠になる条番号 (例 "501.1") を上のリストからそのまま写す
+- quote: **その条文の本文から逐語でコピーした一節** (言い換え・要約は禁止)
+- rulingQuote: **裁定の回答のうち、間違っている部分を逐語でコピーした一節** (言い換え禁止)`;
+}
+
+/**
+ * 生き残った候補への反証プロンプト (敵対的検証)。
+ *
+ * 同じ枠組みで2度聞いても同じ誤りを繰り返すだけなので、役割を反転させる。
+ * 「両立する読み方を探せ・迷ったら両立と答えろ」と指示し、それでも耐えた判定だけ残す。
+ */
+export function buildRefutePrompt(
+  rulingText: string,
+  article: RuleArticle,
+  claim: string,
+): string {
+  return `あなたはデュエル・マスターズのルールに詳しい弁護人です。
+ある監査官が「以下の裁定は総合ルールの条文と矛盾する」と主張しています。
+あなたの仕事は**その主張を反証すること** —— 裁定と条文が両立する読み方を探すことです。
+
+# 裁定Q&A
+${rulingText}
+
+# 条文 [${article.article}]
+${article.text}
+
+# 監査官の主張
+${claim}
+
+# 指示
+裁定と条文が両立する (矛盾しない) 読み方が少しでもあるなら compatible=true としてください。
+- 粒度や言い回しが違うだけなら両立します。
+- 裁定がカード固有の処理を述べているだけなら両立します。
+- **判断に迷う場合も compatible=true** としてください (疑わしきは罰せず)。
+compatible=false にしてよいのは、裁定の記述どおりに処理すると条文に**明確に違反する**場合だけです。
+reason に理由を短く書いてください。`;
 }
 
 /** Gemini に渡す responseSchema。数値の下限制約は使わない (Gemini が 400 を返す)。 */
@@ -153,17 +216,30 @@ const VERDICT_RESPONSE_SCHEMA = {
     contradicts: { type: Type.BOOLEAN },
     article: { type: Type.STRING },
     quote: { type: Type.STRING },
+    rulingQuote: { type: Type.STRING },
     reason: { type: Type.STRING },
   },
-  required: ["contradicts", "article", "quote", "reason"],
+  required: ["contradicts", "article", "quote", "rulingQuote", "reason"],
 };
 
 const VERDICT_ZOD = z.object({
   contradicts: z.boolean(),
   article: z.string(),
   quote: z.string(),
+  rulingQuote: z.string(),
   reason: z.string(),
 });
+
+const REFUTE_RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    compatible: { type: Type.BOOLEAN },
+    reason: { type: Type.STRING },
+  },
+  required: ["compatible", "reason"],
+};
+
+const REFUTE_ZOD = z.object({ compatible: z.boolean(), reason: z.string() });
 
 /** `Q: ...\nA: ...` 形式のチャンクから質問文を取り出す。 */
 export function rulingQuestion(chunkText: string): string {
@@ -233,7 +309,10 @@ export interface AuditReport {
   candidates: number;
   judged: number;
   flagged: number;
+  /** 逐語引用の裏取りに失敗して落とした数 (条番号や引用の捏造)。 */
   rejected: number;
+  /** 裏取りは通ったが、反証パスで「両立する」とされて落とした数。 */
+  refuted: number;
   errors: number;
   contradictions: Contradiction[];
 }
@@ -248,6 +327,7 @@ export async function runAuditRulings(
   const contradictions: Contradiction[] = [];
   let judged = 0;
   let rejected = 0;
+  let refuted = 0;
   let errors = 0;
 
   await mapPool(candidates, CONCURRENCY, async (ruling) => {
@@ -267,7 +347,7 @@ export async function runAuditRulings(
     }
     judged++;
 
-    const check = verifyGrounding(verdict, articles);
+    const check = verifyGrounding(verdict, articles, ruling.text);
     if (!check.ok) {
       // LLM が矛盾と言ったのに裏取りできなかったものは、握りつぶさず数える。
       // ここが多いほど LLM の判定を信用できない (= 閾値やプロンプトを見直す材料)。
@@ -278,11 +358,32 @@ export async function runAuditRulings(
       return;
     }
 
+    // 裏取りを通っても、まだ採らない。役割を反転させた弁護人に反証させ、耐えたものだけ残す。
+    const article = articles.find((a) => a.article === verdict.article.trim())!;
+    try {
+      const defense = await generateStructured(
+        buildRefutePrompt(ruling.text, article, verdict.reason),
+        REFUTE_ZOD,
+        { responseSchema: REFUTE_RESPONSE_SCHEMA, temperature: 0 },
+      );
+      if (defense.compatible) {
+        refuted++;
+        console.warn(`  qa_id ${ruling.qaId}: 反証で棄却 (${defense.reason.slice(0, 50)})`);
+        return;
+      }
+    } catch (err) {
+      // 反証できなかった=採用、にはしない。検証できないものは落とす (安全側)。
+      errors++;
+      console.warn(`  qa_id ${ruling.qaId}: 反証失敗のため不採用 ${(err as Error).message}`);
+      return;
+    }
+
     contradictions.push({
       qaId: ruling.qaId,
       question: ruling.question,
       article: verdict.article.trim(),
       quote: verdict.quote.trim(),
+      rulingQuote: verdict.rulingQuote.trim(),
       reason: verdict.reason.trim(),
     });
     console.log(`  ★ qa_id ${ruling.qaId} は ${verdict.article} と矛盾: ${ruling.question.slice(0, 40)}`);
@@ -294,6 +395,7 @@ export async function runAuditRulings(
     judged,
     flagged: contradictions.length,
     rejected,
+    refuted,
     errors,
     contradictions,
   };
@@ -303,7 +405,8 @@ export async function runAuditRulings(
     console.log(`レポート: ${opts.out}`);
   }
   console.log(
-    `=== 監査完了: 対象${report.candidates} / 判定${judged} / 矛盾${report.flagged} / 裏取り失敗で却下${rejected} / エラー${errors} ===`,
+    `=== 監査完了: 対象${report.candidates} / 判定${judged} / 矛盾${report.flagged} / ` +
+      `裏取り失敗で却下${rejected} / 反証で棄却${refuted} / エラー${errors} ===`,
   );
   await closeDb();
   return report;

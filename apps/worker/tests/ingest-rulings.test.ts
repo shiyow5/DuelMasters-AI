@@ -1,4 +1,37 @@
 import { describe, it, expect } from "vitest";
+import { pickQuestion } from "../src/jobs/ingest-rulings.js";
+
+describe("pickQuestion", () => {
+  // 公式ページの .question は、カード名リンクが壊れて中身が空のことがある。実際の HTML:
+  //   <a href='/card/detail/?id='>《》</a>で、四隅に封印をつけるのは…
+  // 一方 qa_old API の title にはカード名が入っている。ページ側を無条件に優先すると
+  // **カード名が消えた裁定が RAG に入り**、カード名で検索しても引けなくなる。
+  // 取込済み220件のうち8件 (3.6%) で発生していた。
+  it("ページ側のカード名リンクが空なら API の title を採る", () => {
+    const page = "《》で、四隅に封印をつけるのは《》上に置くのですか？";
+    const title = "《FORBIDDEN STAR～世界最後の日～》で、四隅に封印をつけるのは《FORBIDDEN STAR～世界最後の日～》上に置くのですか？";
+    expect(pickQuestion(page, title)).toBe(title);
+  });
+
+  it("ページ側が健全ならページ側を採る", () => {
+    const page = "《ボルシャック・ドラゴン》の能力はどう処理しますか？";
+    expect(pickQuestion(page, "別のタイトル")).toBe(page);
+  });
+
+  it("ページ側が空なら API の title を採る", () => {
+    expect(pickQuestion("", "タイトル")).toBe("タイトル");
+  });
+
+  it("両方壊れていてもページ側を捨てない (情報を減らさない)", () => {
+    const page = "《》の能力は？";
+    expect(pickQuestion(page, "《》の能力は？")).toBe(page);
+  });
+
+  it("空でない括弧は壊れていないと見なす", () => {
+    const page = "「革命チェンジ」と「Jチェンジ」は同時に使えますか？";
+    expect(pickQuestion(page, "違うタイトル")).toBe(page);
+  });
+});
 import { parseRulingHtml, parseRulingsArgs, dedupeRulingList } from "../src/jobs/ingest-rulings.js";
 
 describe("parseRulingHtml", () => {

@@ -74,6 +74,26 @@ export async function fetchRulingList(limit?: number): Promise<RulingItem[]> {
   return out;
 }
 
+/** 中身が空のカード名括弧 (《》)。公式ページのカード名リンクが壊れている印。 */
+const EMPTY_CARD_BRACKET = /[《≪«『]\s*[》≫»』]/;
+
+/**
+ * 裁定ページの質問文と qa_old API の title から、情報が欠けていない方を選ぶ。
+ *
+ * 公式の裁定ページはカード名リンクを
+ *   `<a href='/card/detail/?id='>《》</a>`
+ * と、**id もカード名も空のまま**出力していることがある (公式側の不具合)。ページ側を
+ * 無条件に優先すると、カード名の落ちた質問文が RAG に入り、そのカード名では二度と引けない。
+ * API の title にはカード名が残っているので、そちらへ倒す。
+ */
+export function pickQuestion(pageQuestion: string, apiTitle: string): string {
+  if (!pageQuestion) return apiTitle;
+  if (EMPTY_CARD_BRACKET.test(pageQuestion) && apiTitle && !EMPTY_CARD_BRACKET.test(apiTitle)) {
+    return apiTitle;
+  }
+  return pageQuestion;
+}
+
 /**
  * 質問文の同一性判定用に正規化する。
  * 「【基本ルール】」等の接頭ラベルは改定時に付くことがあるので落とし、空白差・半角カナ差も潰す。
@@ -148,7 +168,7 @@ export async function runIngestRulings(
     try {
       const html = await fetchWithRetry(item.link);
       const { question, answer } = parseRulingHtml(html);
-      const q = question || item.question;
+      const q = pickQuestion(question, item.question);
       if (!answer) {
         skipped++;
         continue;

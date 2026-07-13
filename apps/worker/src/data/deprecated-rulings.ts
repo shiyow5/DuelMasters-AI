@@ -31,6 +31,8 @@ export interface DeprecatedRuling {
   article: string;
   /** その条文からの逐語引用。総合ルールを grep すれば追試できる。 */
   quote: string;
+  /** 裁定のうち、現行ルールに反している部分の逐語引用。 */
+  rulingQuote: string;
   /** なぜ矛盾なのか。 */
   reason: string;
 }
