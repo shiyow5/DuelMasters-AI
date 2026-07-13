@@ -1,0 +1,91 @@
+name: Deploy
+
+# main の CI が成功したら Cloudflare Workers へデプロイする。
+#
+# CI と同じ push イベントで走らせると、テストが落ちていても本番に出てしまう。
+# workflow_run で CI の成功を待ってから実行する。
+#
+# 手動デプロイだけに頼っていると main と本番が乖離する。実際、提供終了した Gemini モデルを
+# 使う古い Worker が本番に残り続け、/api/chat が 500 を返していた (2026-07-13)。
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "デプロイ対象"
+        type: choice
+        options: [all, api, bot]
+        default: all
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  deploy:
+    name: Deploy ${{ matrix.app }} Worker
+    # workflow_run の場合は CI が成功したときだけ。手動実行は対象の絞り込みに従う。
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [api, bot]
+    steps:
+      - name: Skip (対象外)
+        id: scope
+        env:
+          TARGET: ${{ github.event.inputs.target || 'all' }}
+          APP: ${{ matrix.app }}
+        run: |
+          if [ "$TARGET" = "all" ] || [ "$TARGET" = "$APP" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$APP は対象外のためスキップ"
+          fi
+
+      - name: Checkout
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/checkout@v4
+        # workflow_run は既定でデフォルトブランチの HEAD を取るが、CI が通ったコミットを
+        # 明示して取り違えを防ぐ。
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Setup pnpm
+        if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+
+      # ワークスペース package は dist を指すため、ビルドしないと wrangler が古い実装を束ねる。
+      - name: Build workspace packages
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm build
+
+      - name: Deploy to Cloudflare Workers
+        if: steps.scope.outputs.run == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/${{ matrix.app }}
+          command: deploy

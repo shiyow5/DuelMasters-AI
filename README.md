@@ -39,17 +39,22 @@
 
 ## 技術スタック
 
-| レイヤー  | 技術                                        |
-| --------- | ------------------------------------------- |
-| LLM       | Gemini 2.5 Flash Lite (`@google/genai`)     |
-| Embedding | gemini-embedding-001 (768次元)              |
-| Web       | Next.js 16 (App Router) + Tailwind CSS v4   |
-| API       | Hono (Node.js)                              |
-| Bot       | discord.js v14                              |
-| DB        | Supabase (PostgreSQL + pgvector)            |
-| ORM       | Drizzle ORM                                 |
-| Monorepo  | pnpm workspaces + Turborepo                 |
-| Deploy    | Vercel (Web) / Cloud Run (API, Bot, Worker) |
+| レイヤー  | 技術                                                                |
+| --------- | ------------------------------------------------------------------- |
+| LLM       | Gemma 4 31B → Gemini 3.1 Flash Lite (コスト優先フォールバック)      |
+| Agent     | LangGraph.js (状態機械 + 6ツール)                                   |
+| Embedding | gemini-embedding-001 (768次元)                                      |
+| Web       | Next.js 16 (App Router) + Tailwind CSS v4                           |
+| API       | Hono on Cloudflare Workers (Hyperdrive 経由で Supabase)             |
+| Bot       | Discord HTTP Interactions on Cloudflare Workers                     |
+| DB        | Supabase (PostgreSQL + pgvector 0.8)                                |
+| ORM       | Drizzle ORM                                                         |
+| Monorepo  | pnpm workspaces + Turborepo                                         |
+| Deploy    | Cloudflare Workers (api/bot/web) / GitHub Actions cron (取込バッチ) |
+
+LLM は無料枠を優先し、失敗時に順次フォールバックする。**モデルは提供終了することがある**ため、
+モデル名を変えたら `pnpm --filter @dm-ai/agent eval` を回して実 API で疎通を確認すること
+(CI では検出できない)。
 
 ## プロジェクト構成
 
@@ -124,7 +129,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 # PostgreSQL + pgvector を起動
 docker compose up db -d
 
-# テーブル作成 (001 → 002 → 003 → 004 の順で適用)
+# テーブル作成 (001 → 005 の順で適用)
 psql $DATABASE_URL -f infra/sql/001_init.sql
 psql $DATABASE_URL -f infra/sql/002_cards_official_id_unique.sql
 psql $DATABASE_URL -f infra/sql/003_features.sql
@@ -132,14 +137,18 @@ psql $DATABASE_URL -f infra/sql/004_enable_rls.sql
 psql $DATABASE_URL -f infra/sql/005_pgvector_update.sql
 ```
 
-`docker compose up db -d` で起動する場合は 001〜004 が初回に自動適用されます。
+`docker compose up db -d` で起動する場合は 001〜005 が初回に自動適用されます。
+
+**005 は必須です。** ルール検索は pgvector 0.8 の反復スキャン (`hnsw.iterative_scan`) に依存します。
+HNSW は近傍を先に取ってから `WHERE` を適用する (後置フィルタ) ため、これが無いと `doc_type` で
+絞った検索が「該当条文が存在するのに 0 行」を返します。
 
 **Supabase を使う場合は 004 の適用が必須です。** Supabase は public スキーマのテーブルを
 PostgREST 経由で自動公開するため、RLS 未設定 (ダッシュボードの "Unrestricted") のままだと
 公開鍵 (anon key) を持つ第三者が全テーブルを直接読み書きできます。004 は全テーブルで RLS を
 有効化して PostgREST 経由のアクセスを遮断します。アプリのデータアクセスは Hyperdrive/
 `DATABASE_URL` の postgres ロール (RLS を迂回) 経由なので、機能には影響しません。
-Supabaseを使う場合は、Supabase DashboardのSQL Editorで 001 → 002 → 003 を順に実行してください。
+Supabase を使う場合は、Supabase Dashboard の SQL Editor で 001 → 005 を順に実行してください。
 
 ### 4. データ取り込み
 
@@ -152,6 +161,9 @@ pnpm --filter @dm-ai/worker ingest:cards
 
 # 殿堂レギュレーション取り込み
 pnpm --filter @dm-ai/worker ingest:regulations
+
+# 公式裁定 Q&A 取り込み (3000件超。改定前の重複質問は新しい裁定へ名寄せされる)
+pnpm --filter @dm-ai/worker ingest:rulings
 
 # カード役割タグ付与 (ルール → LLM フォールバック。--all で全カード)
 pnpm --filter @dm-ai/worker ingest:tags
@@ -261,7 +273,29 @@ pnpm turbo build --filter=@dm-ai/api
 pnpm turbo build --filter=@dm-ai/web
 ```
 
-## Docker デプロイ
+## 本番デプロイ (Cloudflare Workers)
+
+main の CI が成功すると `.github/workflows/deploy.yml` が api / bot Worker を自動デプロイする。
+手動デプロイに頼ると main と本番が乖離する (提供終了した Gemini モデルを使う古い Worker が
+残り続け `/api/chat` が 500 を返していた実例あり)。
+
+取込バッチは Node 依存 (pdf-parse 等) のため Cloudflare には載せず、
+`.github/workflows/ingest-cron.yml` の cron で回す。殿堂は毎日、カード/ルール/裁定は週1。
+`workflow_dispatch` でジョブを選んで手動実行もできる。
+
+必要な GitHub Actions Secrets:
+
+| Secret                  | 用途                                             |
+| ----------------------- | ------------------------------------------------ |
+| `CLOUDFLARE_API_TOKEN`  | Worker のデプロイ (Edit Cloudflare Workers 権限) |
+| `CLOUDFLARE_ACCOUNT_ID` | 同上                                             |
+| `DATABASE_URL`          | 取込 cron が Supabase に書き込む                 |
+| `GEMINI_API_KEY`        | 取込 cron の埋め込み生成・タグ抽出               |
+
+Worker 側の機密 (`GEMINI_API_KEY` / `INTERNAL_API_KEY` / `SUPABASE_*`) は
+`wrangler secret put` で設定する (GitHub Secrets とは別管理)。
+
+## Docker デプロイ (ローカル/自前ホスト)
 
 ```bash
 # API

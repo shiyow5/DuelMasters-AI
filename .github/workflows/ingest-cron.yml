@@ -1,0 +1,95 @@
+name: Ingest (cron)
+
+# 取込バッチ (worker) は Node 前提 (pdf-parse 等) のため Cloudflare には載せず、
+# GitHub Actions の cron で回す。
+#
+# ジョブごとに更新頻度も所要時間も違うので、まとめて1本にせず種別ごとに分ける。
+# - regulations (殿堂): 改定は不定期だが軽い。毎日。
+# - rules (総合ルール PDF): 改訂は年数回。週1で十分。URL とバージョンは自動発見する。
+# - cards: 新弾のたび。週1。全件で時間がかかる。
+# - rulings (裁定 Q&A): 3000件超・重複排除つき。週1。
+#
+# 手動実行 (workflow_dispatch) でジョブを選んで走らせられる。
+on:
+  schedule:
+    # 毎日 03:00 JST (18:00 UTC) — 殿堂レギュレーション
+    - cron: "0 18 * * *"
+    # 毎週月曜 04:00 JST (19:00 UTC 日曜) — カード・ルール・裁定
+    - cron: "0 19 * * 0"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "実行するジョブ"
+        type: choice
+        options: [regulations, rules, cards, rulings, tags, snapshot, all]
+        default: regulations
+
+concurrency:
+  # 同じジョブの多重実行を避ける (取込は DB を書き換えるため)。
+  group: ingest-${{ github.event.inputs.job || github.event.schedule }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  ingest:
+    name: ingest ${{ matrix.job }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 1 # 公式サイトへの負荷と DB 書き込みの競合を避けるため直列
+      matrix:
+        job: [regulations, rules, cards, rulings]
+    steps:
+      - name: 実行対象か判定
+        id: scope
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_JOB: ${{ github.event.inputs.job }}
+          JOB: ${{ matrix.job }}
+        run: |
+          run=false
+          if [ -n "$INPUT_JOB" ]; then
+            # 手動実行: 指定ジョブ (all なら全部)
+            if [ "$INPUT_JOB" = "all" ] || [ "$INPUT_JOB" = "$JOB" ]; then run=true; fi
+          elif [ "$SCHEDULE" = "0 18 * * *" ]; then
+            # 毎日: 殿堂のみ
+            if [ "$JOB" = "regulations" ]; then run=true; fi
+          elif [ "$SCHEDULE" = "0 19 * * 0" ]; then
+            # 毎週: 重いもの
+            case "$JOB" in rules | cards | rulings) run=true ;; esac
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          if [ "$run" != "true" ]; then echo "::notice::$JOB は今回の対象外"; fi
+
+      - name: Checkout
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm build
+
+      - name: ingest ${{ matrix.job }}
+        if: steps.scope.outputs.run == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: pnpm --filter @dm-ai/worker ingest:${{ matrix.job }}
