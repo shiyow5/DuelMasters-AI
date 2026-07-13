@@ -118,8 +118,10 @@ export function pendingToolCalls(state: GraphState): Array<{ id: string; name: s
   const last = state.messages.at(-1);
   if (!last || !AIMessage.isInstance(last)) return [];
   return (last.tool_calls ?? []).map((tc, i) => ({
-    // id はモデルが付けるが、無い場合もあるので位置とメッセージ id で補う
-    id: tc.id ?? `${last.id ?? "msg"}:${i}:${tc.name}`,
+    // id はモデルが付けるが、無いこともある。その場合は **メッセージ数** と位置で補う。
+    // メッセージ数はループを回るたびに増えるので、同じツールを2周目に呼んでも別の鍵になる
+    // (固定の接頭辞だと 2周目が 1周目と同じ鍵になり、tool イベントが抑制される)。
+    id: tc.id ?? `${state.messages.length}:${i}:${tc.name}`,
     name: tc.name,
   }));
 }

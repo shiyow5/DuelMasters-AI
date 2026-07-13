@@ -87,6 +87,26 @@ describe("pendingToolCalls", () => {
     expect(new Set(ids).size).toBe(2);
   });
 
+  it("id が無いとき、ループの2周目でも1周目とキーが衝突しない", () => {
+    // 固定の接頭辞で補うと 2周目の search_rules が 1周目と同じ鍵になり、
+    // streamAgent の重複排除に食われて tool イベントが出なくなる。
+    const call = { name: "search_rules", args: {} };
+    const round1 = {
+      messages: [new HumanMessage("質問"), new AIMessageChunk({ content: "", tool_calls: [call] })],
+      citations: [],
+    };
+    const round2 = {
+      messages: [
+        new HumanMessage("質問"),
+        new AIMessageChunk({ content: "", tool_calls: [call] }),
+        new ToolMessage({ content: "結果", tool_call_id: "x", name: "search_rules" }),
+        new AIMessageChunk({ content: "", tool_calls: [call] }),
+      ],
+      citations: [],
+    };
+    expect(pendingToolCalls(round1)[0].id).not.toBe(pendingToolCalls(round2)[0].id);
+  });
+
   it("ツール呼び出しが無ければ空", () => {
     expect(
       pendingToolCalls({ messages: [new AIMessageChunk({ content: "回答" })], citations: [] }),

@@ -21,22 +21,28 @@ export default defineConfig({
   // ALLOW_ANONYMOUS で明示的に opt-out する。既定 (本番) は認証必須。
   // 本番 Worker への混入は deploy.yml が検査して落とす。
   //
-  // `webServer.env` は **process.env にマージされる** (置き換えではない)。開発者のシェルに
-  // GEMINI_API_KEY や DATABASE_URL があると、劣化動作を前提にしたテスト
-  // (デッキ評価の固定スコア 30/100、チャットのエラー表示) が本物の応答を受けて落ちる。
-  // 明示的に空へ潰して、どの環境でも同じ劣化動作でスモークする。
+  // このスイートは「DB も Gemini も無い劣化動作」を前提にしている
+  // (デッキ評価の固定スコア 30/100、チャットのエラー表示)。そのため:
+  //
+  // - `webServer.env` は **process.env にマージされる** (置き換えではない)。開発者のシェルに
+  //   GEMINI_API_KEY や DATABASE_URL があると本物の応答が返ってテストが落ちるので、
+  //   明示的に空へ潰す。
+  // - `reuseExistingServer` は **切る**。既に上がっているサーバーを使い回すと、上の env 上書きが
+  //   一切効かないまま開発者のサーバーに繋がってしまう (原因の分かりにくい失敗になる)。
+  //   ポートが埋まっていれば Playwright は起動に失敗する。それでよい —
+  //   「本物の Gemini 相手に静かに誤ったテストをする」より、はっきり落ちるほうがましなので。
   webServer: [
     {
       command: "pnpm --filter @dm-ai/api dev",
       port: 3001,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 60000,
       env: { ALLOW_ANONYMOUS: "true", GEMINI_API_KEY: "", DATABASE_URL: "" },
     },
     {
       command: "pnpm dev",
       port: 3000,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 60000,
       env: { NEXT_PUBLIC_ALLOW_ANONYMOUS: "true" },
     },
