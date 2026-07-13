@@ -81,6 +81,39 @@ describe("verifyGrounding", () => {
     expect(v.reason).toContain("条文が存在しない");
   });
 
+  it("枝番 (501.2a) は親チャンクの本文にあるので通す", () => {
+    // 総合ルールの枝番は**親条文チャンクの本文に埋まっている**。article メタに枝番を持つ
+    // 行は 413件中 11件しかない。チャンクの article としか照合しないと、実在する枝番を
+    // 引いた正しい判定まで「条文が存在しない」で落としてしまう (実際に落としていた)。
+    const withSub: RuleArticle[] = [
+      {
+        article: "501.2",
+        text: "501.2. すべての「ターンのはじめに」誘発する能力が誘発します。\n501.2a この能力はターン開始ステップ中に誘発します。",
+      },
+    ];
+    const v = verifyGrounding(
+      verdict({
+        article: "501.2a",
+        quote: "この能力はターン開始ステップ中に誘発します",
+      }),
+      withSub,
+      RULING,
+    );
+    expect(v.ok).toBe(true);
+  });
+
+  it("枝番でも、引用がその条文に無ければ落とす", () => {
+    const withSub: RuleArticle[] = [
+      { article: "501.2", text: "501.2. 誘発します。\n501.2a 補足です。" },
+    ];
+    const v = verifyGrounding(
+      verdict({ article: "501.2a", quote: "まったく書かれていない文言です" }),
+      withSub,
+      RULING,
+    );
+    expect(v.ok).toBe(false);
+  });
+
   it("条文は実在しても引用がその条文に無ければ落とす", () => {
     // judge はこれまで4回間違えた。条番号だけ合っていて中身を捏造するのが最も危険なので、
     // 引用が条文の逐語部分列であることを機械的に確かめる。
