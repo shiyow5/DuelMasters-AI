@@ -37,16 +37,6 @@ export default function AuthPanel() {
     setLoading(false);
   }
 
-  async function handleSignup() {
-    setError("");
-    setInfo("");
-    setLoading(true);
-    const { error } = await supabase!.auth.signUp({ email, password });
-    if (error) setError(error.message);
-    else setInfo("確認メールを送信しました(メール確認が有効な場合)");
-    setLoading(false);
-  }
-
   async function handleLogout() {
     await supabase!.auth.signOut();
   }
@@ -88,22 +78,16 @@ export default function AuthPanel() {
       />
       {error && <p className="text-[10px] text-danger">{error}</p>}
       {info && <p className="text-[10px] text-primary">{info}</p>}
-      <div className="flex gap-2">
-        <button
-          onClick={handleLogin}
-          disabled={loading || !email || !password}
-          className="flex-1 py-1.5 rounded-lg bg-primary/20 text-primary text-xs font-medium hover:bg-primary/30 transition-colors disabled:opacity-50"
-        >
-          ログイン
-        </button>
-        <button
-          onClick={handleSignup}
-          disabled={loading || !email || !password}
-          className="flex-1 py-1.5 rounded-lg bg-white/5 text-text-muted text-xs font-medium hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50"
-        >
-          新規登録
-        </button>
-      </div>
+      <button
+        onClick={handleLogin}
+        disabled={loading || !email || !password}
+        className="w-full py-1.5 rounded-lg bg-primary/20 text-primary text-xs font-medium hover:bg-primary/30 transition-colors disabled:opacity-50"
+      >
+        ログイン
+      </button>
+      {/* 招待制なので新規登録の導線は出さない。Supabase 側でもサインアップを閉じている。
+          第三者がアカウントを作れると Gemini の課金を消費されるため。 */}
+      <p className="text-[10px] text-text-dim">招待されたメールアドレスでログインしてください。</p>
     </div>
   );
 }

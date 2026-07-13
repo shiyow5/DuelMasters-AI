@@ -21,6 +21,21 @@ export function ChatAvatar({ role, icon = "smart_toy" }: { role: Role; icon?: st
   );
 }
 
+/** 応答待ちの「…」。最初のトークンが届くまでの数百ミリ秒を埋める。 */
+export function TypingDots() {
+  return (
+    <div className="flex items-center gap-1 py-1">
+      {[0, 150, 300].map((delay) => (
+        <div
+          key={delay}
+          className="h-2 w-2 animate-bounce rounded-full bg-primary/50"
+          style={{ animationDelay: `${delay}ms` }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function ChatBubble({
   role,
   name,
