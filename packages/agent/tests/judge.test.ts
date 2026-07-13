@@ -73,7 +73,9 @@ describe.skipIf(!hasTestDb)("buildCardGrounding (統合)", () => {
     const g = await buildCardGrounding("4x ボルシャック・ドラゴン");
     expect(g).toContain("スペック");
     expect(g).toContain("ボルシャック・ドラゴン (火 / コスト7 / creature / パワー6000)");
-    expect(g).toContain("文明・コスト・種別・パワーは上記が正解");
+    // grounding が記憶より優先されることを judge に明示している
+    expect(g).toContain("絶対的な正解");
+    expect(g).toContain("誤っているのはあなたの記憶");
   });
 
   it("《》の無い素のデッキリスト表記でも実在カードを拾う (逆引き)", async () => {
