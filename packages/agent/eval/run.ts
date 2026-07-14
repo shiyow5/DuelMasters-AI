@@ -112,7 +112,7 @@ function renderReport(agg: ReturnType<typeof aggregate>): string {
     `- 引用 recall / precision: **${fmt(agg.citationRecall)}** / ${fmt(agg.citationPrecision)}`,
     `- 出典の裏取り (本文の条番号が資料にあるか): **${fmt(agg.citationGrounding)}**`,
     `- 根拠あり率 (引用 or ツール結果。1未満 = 記憶だけで答えた問がある): **${fmt(agg.evidenceRate)}**`,
-    `- **ツールが失敗した問: ${agg.toolFailureItems}件** (0 でなければならない)`,
+    `- **システム障害でツールが落ちた問: ${agg.toolFailureItems}件** (0 でなければならない)`,
     `- 事実カバレッジ: **${fmt(agg.factCoverage)}**`,
     `- judge 平均 (1-5): **${fmt(agg.judgeMean)}**` +
       (agg.judgeFailures > 0 ? ` (**judge 失敗 ${agg.judgeFailures}件**)` : ""),
