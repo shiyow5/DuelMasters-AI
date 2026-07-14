@@ -196,8 +196,17 @@ export type SearchResult = z.infer<typeof SearchResultSchema>;
 
 /** POST /api/chat */
 export const ChatRequestSchema = z.object({
-  message: z.string().min(1, "message は必須です"),
+  // 上限が無いと、巨大な本文を投げ続けて Gemini のトークンと DB のストレージを食い潰せる
+  // (#110 で発言を永続化したため、1回の課金で終わらず**恒久的に残る**ようになった)。
+  message: z.string().min(1, "message は必須です").max(32_000, "message が長すぎます"),
   mode: ChatModeSchema.default("integrated"),
+  /**
+   * クライアントが持つ会話履歴。
+   *
+   * **conversationId がある場合は無視される** (#110)。履歴はサーバ (DB) を正とする。
+   * クライアントの履歴を信じると、利用者が文脈を差し替えてモデルを誘導できてしまう。
+   * conversationId が無いとき (bot・未ログイン経路) だけ、この履歴を使う。
+   */
   history: z
     .array(
       z.object({
@@ -207,6 +216,11 @@ export const ChatRequestSchema = z.object({
     )
     .default([]),
   format: z.enum(FORMATS).optional(),
+  /**
+   * 会話 ID (#110)。指定すると履歴を DB から読み、発言を DB に保存する。
+   * 他人の会話 ID を指定しても、所有者でなければ 404 になる。
+   */
+  conversationId: z.string().uuid().optional(),
 });
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 

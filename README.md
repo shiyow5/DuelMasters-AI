@@ -129,16 +129,14 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 # PostgreSQL + pgvector を起動
 docker compose up db -d
 
-# テーブル作成 (001 → 005 の順で適用)
-psql $DATABASE_URL -f infra/sql/001_init.sql
-psql $DATABASE_URL -f infra/sql/002_cards_official_id_unique.sql
-psql $DATABASE_URL -f infra/sql/003_features.sql
-psql $DATABASE_URL -f infra/sql/004_enable_rls.sql
-psql $DATABASE_URL -f infra/sql/005_pgvector_update.sql
-psql $DATABASE_URL -f infra/sql/006_archetype_weekly_stats.sql
+# テーブル作成 (infra/sql/*.sql を番号順に全て適用する)
+for f in $(ls infra/sql/*.sql | sort); do psql $DATABASE_URL -f "$f"; done
 ```
 
-`docker compose up db -d` で起動する場合は 001〜005 が初回に自動適用されます。
+`docker compose up db -d` で起動する場合は `infra/sql/` 配下が初回に自動適用されます。
+
+> マイグレーションを足したら **番号を振って `infra/sql/` に置くだけ**でよい。
+> CI・docker-compose・この手順はすべてディレクトリを番号順に舐めるので、書き足し漏れが起きない。
 
 **005 は必須です。** ルール検索は pgvector 0.8 の反復スキャン (`hnsw.iterative_scan`) に依存します。
 HNSW は近傍を先に取ってから `WHERE` を適用する (後置フィルタ) ため、これが無いと `doc_type` で

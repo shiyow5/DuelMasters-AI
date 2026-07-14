@@ -27,12 +27,10 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./infra/sql/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
-      - ./infra/sql/002_cards_official_id_unique.sql:/docker-entrypoint-initdb.d/002_cards_official_id_unique.sql
-      - ./infra/sql/003_features.sql:/docker-entrypoint-initdb.d/003_features.sql
-      - ./infra/sql/004_enable_rls.sql:/docker-entrypoint-initdb.d/004_enable_rls.sql
-      - ./infra/sql/005_pgvector_update.sql:/docker-entrypoint-initdb.d/005_pgvector_update.sql
-      - ./infra/sql/006_archetype_weekly_stats.sql:/docker-entrypoint-initdb.d/006_archetype_weekly_stats.sql
+      # ディレクトリごとマウントする。**1本ずつ列挙しない** — マイグレーションを足すたびに
+      # ここへ書き足す運用は必ず忘れる (007 で実際に忘れた)。
+      # postgres の初期化スクリプトはファイル名の辞書順に実行されるので、番号順で当たる。
+      - ./infra/sql:/docker-entrypoint-initdb.d:ro
 
 volumes:
   pgdata:

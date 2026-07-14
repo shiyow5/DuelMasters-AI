@@ -5,6 +5,7 @@ import { chatRouter } from "./routes/chat.js";
 import { deckRouter } from "./routes/deck.js";
 import { metaRouter } from "./routes/meta.js";
 import { userRouter } from "./routes/user.js";
+import { conversationRouter } from "./routes/conversations.js";
 import { optionalAuth, requireAuthUnlessAnonymous } from "./middleware/auth.js";
 import { rateLimitByIp, rateLimitByUser } from "./middleware/rate-limit.js";
 import { dbEnv, type Bindings } from "./db.js";
@@ -61,6 +62,7 @@ app.route("/api/chat", chatRouter);
 app.route("/api/deck", deckRouter);
 app.route("/api/meta", metaRouter);
 app.route("/api/user", userRouter);
+app.route("/api/conversations", conversationRouter);
 
 // 予期しない例外の共通ハンドリング (詳細はサーバーログのみに出し、クライアントには汎用文言を返す)
 app.onError((err, c) => {
