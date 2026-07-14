@@ -125,6 +125,15 @@ export type AgentEvent =
   | { type: "token"; text: string }
   /** ツール実行が決まった。`args` は「何を」検索/構築しているかを画面に出すため。 */
   | { type: "tool"; name: string; args: Record<string, unknown> }
+  /**
+   * ツールが**失敗した** (#109)。
+   *
+   * これを流さないと、利用者には「普通の回答」に見える。実際にはツールのデータを使えて
+   * おらず、モデルは記憶で埋めようとする。**失敗を隠さない**のがこのイベントの目的。
+   * (#112 では全ツールが CONNECTION_ENDED で死んでいたのに、利用者にもこちらにも
+   *  「たまに調子が悪い」としか見えなかった。)
+   */
+  | { type: "toolError"; name: string }
   /** グラフのノードを1つ通過した。進行表示のフェーズ切り替えに使う。 */
   | { type: "phase"; node: GraphNode }
   | { type: "done"; result: AgentOutput }
@@ -148,7 +157,12 @@ export function phasesFromUpdate(payload: unknown): GraphNode[] {
   );
 }
 
-type GraphState = { messages: BaseMessage[]; citations: Citation[] };
+type GraphState = {
+  messages: BaseMessage[];
+  citations: Citation[];
+  toolSuccesses?: number;
+  toolFailures?: string[];
+};
 
 /**
  * メッセージチャンクから「画面に出してよいテキスト」を取り出す。
@@ -206,6 +220,8 @@ export function pendingToolCalls(
 export async function* streamAgent(input: AgentInput): AsyncGenerator<AgentEvent> {
   let final: GraphState | null = null;
   const announced = new Set<string>();
+  // 既に流した失敗の件数。state.toolFailures は積み上がるので、差分だけを流す。
+  let announcedFailures = 0;
 
   const stream = await graph().stream(initialState(input), {
     // updates は「どのノードを通ったか」を知る唯一の手段。values は state しか来ないので、
@@ -238,6 +254,12 @@ export async function* streamAgent(input: AgentInput): AsyncGenerator<AgentEvent
         announced.add(call.id);
         yield { type: "tool", name: call.name, args: call.args };
       }
+      // **失敗を隠さない** (#109)。握り潰すと利用者には普通の回答に見え、モデルは記憶で埋める。
+      const failures = state.toolFailures ?? [];
+      for (let i = announcedFailures; i < failures.length; i++) {
+        yield { type: "toolError", name: failures[i] };
+      }
+      announcedFailures = failures.length;
     }
   }
 

@@ -38,6 +38,13 @@ export interface Message {
   error?: boolean;
   /** 「役に立った / 立たなかった」(#110)。未評価は undefined。 */
   helpful?: boolean;
+  /**
+   * 失敗したツール名 (#109)。
+   *
+   * 空でないなら、**この回答は根拠が欠けている**。握り潰すと利用者には普通の回答に見え、
+   * モデルが記憶で埋めた内容を信じてしまう (#112 で実際に起きた)。必ず画面に出す。
+   */
+  toolFailures?: string[];
 }
 
 export interface DeckScore {

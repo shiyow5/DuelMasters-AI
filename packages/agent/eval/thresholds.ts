@@ -17,6 +17,8 @@ export interface Aggregate {
   factCoverage: number | null;
   /** 根拠 (引用 or ツール結果) が付いた割合 (#108)。根拠が要る問だけが分母。 */
   evidenceRate: number | null;
+  /** ツールが失敗した問の件数 (#109)。 */
+  toolFailureItems?: number;
   judgeMean: number | null;
   /** judge を回したのに失敗した件数 (quota/スキーマ/キー不正)。 */
   judgeFailures?: number;
@@ -66,6 +68,16 @@ export const THRESHOLDS = {
    * (本番で観測した 12.5% の退行 = 0.875 はこれで捕まる)。
    */
   minEvidenceRate: 0.95,
+  /**
+   * ツールが失敗した問の件数 (#109)。**1件も許さない。**
+   *
+   * ツールが失敗しても回答は返る (モデルが記憶で埋める) ため、judge も factCoverage も
+   * 高いままになりうる。**#112 では本番で全ツールが CONNECTION_ENDED で死んでいたのに、
+   * eval は judge 4.94 を出し続けていた。** 失敗そのものを数えないと検出できない。
+   *
+   * eval は実 DB・実 Gemini を叩くので、ここが 0 でないなら環境かコードが壊れている。
+   */
+  maxToolFailureItems: 0,
 } as const;
 
 export interface GateResult {
@@ -95,6 +107,14 @@ export function checkThresholds(agg: Aggregate, options: GateOptions = {}): Gate
 
   if (agg.errors > THRESHOLDS.maxErrors) {
     failures.push(`エラー ${agg.errors}件 (上限 ${THRESHOLDS.maxErrors})`);
+  }
+
+  // ツールの失敗は回答に現れない (モデルが記憶で埋める)。ここでしか捕まえられない (#109)。
+  const toolFailureItems = agg.toolFailureItems ?? 0;
+  if (toolFailureItems > THRESHOLDS.maxToolFailureItems) {
+    failures.push(
+      `ツールが失敗した問 ${toolFailureItems}件 (上限 ${THRESHOLDS.maxToolFailureItems})`,
+    );
   }
 
   if (judgeExpected) {

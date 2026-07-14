@@ -69,6 +69,14 @@ export interface ItemResult {
    * false = 記憶だけで答えた = ハルシネーションの温床。
    */
   hasEvidence?: boolean;
+  /**
+   * 失敗したツール名 (#109)。**測らないものは直せない。**
+   *
+   * #112 では本番で全ツールが CONNECTION_ENDED で死んでいたのに、失敗が握り潰されていて
+   * 「たまに調子が悪い」としか見えなかった。eval にも出していなかったので、
+   * judge 4.94 のまま本番だけが壊れ続けた。
+   */
+  toolFailures?: string[];
   latencyMs: number;
   error?: string;
 }

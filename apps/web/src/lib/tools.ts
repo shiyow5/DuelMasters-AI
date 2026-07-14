@@ -75,6 +75,38 @@ export function toolLabel(name: string, args: Record<string, unknown> = {}): str
 }
 
 /**
+ * 失敗表示用の名詞ラベル。
+ *
+ * TOOL_LABELS は進行表示用の**文**なので (「カードを検索しています」)、
+ * 「〜に失敗しました」に繋ぐと日本語が壊れる。名詞を別に持つ。
+ *
+ * **bot 側 (`apps/bot/src/interactions/run.ts`) にも同じ表がある。** web は意図的に
+ * workspace パッケージへ依存しておらず (types.ts は「api の応答形状の写し」)、共有すると
+ * その設計判断を覆すことになるので複製している。知らないツール名は生の名前にフォールバック
+ * するだけなので、片方を更新し忘れても壊れない (表示が英語になるだけ)。
+ */
+const TOOL_NOUNS: Record<string, string> = {
+  search_rules: "ルール検索",
+  search_cards: "カード検索",
+  evaluate_deck: "デッキ評価",
+  build_deck: "デッキ構築",
+  get_tier_list: "環境データの取得",
+  suggest_improvements: "改善案の作成",
+};
+
+/**
+ * ツール失敗の文言 (#109)。
+ *
+ * **「エラーが発生しました」で終わらせない。** 何が取れなかったのかと、その結果この回答が
+ * どういう性質のものになるのかを伝える。握り潰すと利用者には普通の回答に見え、モデルが
+ * 記憶で埋めた内容を信じてしまう (#112 で実際に起きた)。
+ */
+export function toolErrorLabel(names: string[]): string {
+  const unique = [...new Set(names)].map((n) => TOOL_NOUNS[n] ?? n);
+  return `${unique.join(" / ")}に失敗しました。この回答はデータで裏付けられていません。`;
+}
+
+/**
  * グラフのノードを通過した「あと」に phase が流れる。つまり phase は「いま何が終わったか」。
  * 画面に出すのは「次に何をしているか」なので、そのようにマップする。
  *

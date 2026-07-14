@@ -109,6 +109,8 @@ export type ChatStreamEvent =
   | { type: "done"; result: ChatResult }
   /** サーバーが発言を保存した (#110)。この ID が無いと 👍 を送れない。 */
   | { type: "saved"; messageId: string }
+  /** ツールが失敗した (#109)。**隠さない** — 隠すと利用者には普通の回答に見える。 */
+  | { type: "toolError"; name: string }
   | { type: "error"; message: string };
 
 export interface ChatResult {
@@ -116,6 +118,10 @@ export interface ChatResult {
   citations?: Citation[];
   toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
   mode?: string;
+  /** 実際にデータを取れたツールの数 (#109)。toolCalls は「呼ぼうとした」だけ。 */
+  toolSuccesses?: number;
+  /** 失敗したツール名 (#109)。空でないなら、この回答は根拠が欠けている。 */
+  toolFailures?: string[];
 }
 
 /**
