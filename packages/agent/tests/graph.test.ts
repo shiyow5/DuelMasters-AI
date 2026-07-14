@@ -71,6 +71,44 @@ describe("runAgent グラフ制御フロー", () => {
     expect(runToolMock).toHaveBeenCalledWith("search_cards", { query: "ボルシャック" }, undefined);
   });
 
+  /**
+   * **「ツールを呼んだ」と「根拠を得た」は別物。**
+   *
+   * ツールが落ちても AIMessage.tool_calls は残るので、呼び出し数だけを見ると
+   * 全滅しても「根拠あり」に見える。#112 (ストリーミング中に DB 接続が切れて全ツールが
+   * CONNECTION_ENDED で死んだ) では、まさにその状態でモデルが記憶から捏造した。
+   * eval の evidenceRate がこれを素通しすると、番人として無意味になる。
+   */
+  it("ツールが失敗したら toolSuccesses は増えない (呼び出し数では根拠を測れない)", async () => {
+    const { runAgent } = await import("../src/index.js");
+    invokeMock
+      .mockResolvedValueOnce(aiToolCall("search_cards", { query: "ヘブンズゲート" }))
+      .mockResolvedValueOnce(aiText("システム障害で確認できませんでした"));
+    runToolMock.mockResolvedValueOnce({ text: "ツール実行に失敗しました", ok: false });
+
+    const out = await runAgent({ message: "ヘブンズゲートは？", mode: "deck" });
+
+    // モデルは呼ぼうとしたので toolCalls には残る
+    expect(out.toolCalls).toHaveLength(1);
+    // しかし**データは取れていない**
+    expect(out.toolSuccesses).toBe(0);
+    expect(out.toolFailures).toEqual(["search_cards"]);
+  });
+
+  it("ツールが成功したら toolSuccesses が増える (0件でも成功)", async () => {
+    const { runAgent } = await import("../src/index.js");
+    invokeMock
+      .mockResolvedValueOnce(aiToolCall("search_cards", { query: "存在しないカード" }))
+      .mockResolvedValueOnce(aiText("該当するカードはありませんでした"));
+    // 0件は**成功**。検索は動いており「該当なし」という事実が得られている (#111)。
+    runToolMock.mockResolvedValueOnce({ text: "条件に一致するカードは0件でした" });
+
+    const out = await runAgent({ message: "存在しないカードは？", mode: "deck" });
+
+    expect(out.toolSuccesses).toBe(1);
+    expect(out.toolFailures).toBeUndefined();
+  });
+
   it("rule モードは事前 RAG で citations を付与する", async () => {
     const { runAgent } = await import("../src/index.js");
     searchRulesMock.mockResolvedValueOnce({

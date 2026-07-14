@@ -19,9 +19,24 @@ import type { AgentStateType } from "../src/state.js";
  * ことの両方を検証する。閾値は実測に基づく (下の分布コメントを参照)。
  */
 
-/** 実測した hybridSearch の top スコア。閾値がこの2群を正しく分けることを固定する。 */
-const MEASURED_RULE_TOPS = [0.852, 0.807, 0.854, 0.838, 0.764, 0.897];
-const MEASURED_NON_RULE_TOPS = [0.611, 0.616, 0.576, 0.674, 0.625];
+/**
+ * 実測した hybridSearch の top スコア。
+ *
+ * **これは「ルール質問 vs デッキ質問」の分類器ではない。** ルールの語彙を使ったデッキ質問は
+ * 閾値を超える (下の GRAY_ZONE)。分けているのは「DM のルールに触れるか / 触れないか」で、
+ * 境界の余裕は 0.689〜0.733 の 0.04 しかない。この事実を数値として固定しておく。
+ */
+const MEASURED_RULE_TOPS = [0.852, 0.807, 0.854, 0.838, 0.764, 0.897, 0.903];
+
+/** ルールに触れない質問。カード検索 (0.688) と遊戯王 (0.689) は閾値まで 0.012 しかない。 */
+const MEASURED_OFF_TOPIC_TOPS = [0.645, 0.688, 0.579, 0.689];
+
+/**
+ * ルールの語彙を使ったデッキ質問。**閾値を超えて条文が積まれる。**
+ * 拾いすぎだが無害 — 話題として妥当な条文であり、前置きも「関係なければ無視してよい」と伝える。
+ * eval でも integrated-deck-build は judge=5 でツールを呼び、構築を拒否していない。
+ */
+const MEASURED_GRAY_ZONE_TOPS = [0.768, 0.759, 0.739, 0.733];
 
 const state = (over: Partial<AgentStateType>): AgentStateType =>
   ({
@@ -41,15 +56,30 @@ describe("acceptsRagResult (integrated の足切り)", () => {
     }
   });
 
-  it("実測した非ルール質問のスコアは全て捨てられる", () => {
-    // デッキ構築の質問に無関係な条文と出典が付くのを防ぐ。
-    for (const top of MEASURED_NON_RULE_TOPS) {
+  it("ルールに触れない質問 (カード検索・ティア・遊戯王) は捨てられる", () => {
+    for (const top of MEASURED_OFF_TOPIC_TOPS) {
       expect(acceptsRagResult("integrated", [{ score: top }])).toBe(false);
     }
   });
 
-  it("閾値は実測の谷 (0.674 〜 0.764) の内側にある", () => {
-    expect(INTEGRATED_RAG_MIN_SCORE).toBeGreaterThan(Math.max(...MEASURED_NON_RULE_TOPS));
+  it("ルール語彙を使ったデッキ質問は拾ってしまう (既知の拾いすぎ。無害と判断した)", () => {
+    // **この足切りはルール質問とデッキ質問を分けられない。** それを隠さず固定しておく。
+    // 拾った条文は話題として妥当で、前置きが「関係なければ無視してよい」と伝える。
+    for (const top of MEASURED_GRAY_ZONE_TOPS) {
+      expect(acceptsRagResult("integrated", [{ score: top }])).toBe(true);
+    }
+  });
+
+  it("境界の余裕は 0.04 しかない (埋め込みの揺れで反転しうる)", () => {
+    const offTopicMax = Math.max(...MEASURED_OFF_TOPIC_TOPS); // 0.689 (遊戯王)
+    const grayMin = Math.min(...MEASURED_GRAY_ZONE_TOPS); // 0.733 (ブロッカー多めのデッキ)
+    expect(INTEGRATED_RAG_MIN_SCORE).toBeGreaterThan(offTopicMax);
+    expect(INTEGRATED_RAG_MIN_SCORE).toBeLessThan(grayMin);
+    // 谷は狭い。0.70 は「安全な中点」ではなく「取りこぼしより拾いすぎを選んだ値」。
+    expect(grayMin - offTopicMax).toBeLessThan(0.05);
+  });
+
+  it("ルール質問は取りこぼさない (取りこぼしの方が害が大きい)", () => {
     expect(INTEGRATED_RAG_MIN_SCORE).toBeLessThan(Math.min(...MEASURED_RULE_TOPS));
   });
 

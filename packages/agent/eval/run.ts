@@ -55,10 +55,16 @@ async function evalItem(item: GoldenItem, noJudge: boolean): Promise<ItemResult>
       res.citation = citationScore(item.expectedCitations, out.citations ?? []);
     }
     if (item.expectedFacts) res.factCoverage = factCoverage(item.expectedFacts, out.response);
-    // 根拠が付いたか (#108)。**ツールを呼んだかでは測れない** — 事前 RAG が条文を渡すと
-    // モデルは search_rules を呼ばずに答え、それは正しい。引用かツールのどちらかがあればよい。
+    // 根拠が付いたか (#108)。
+    //
+    // **ツールを「呼んだ」かでは測れない。** 2つの理由がある:
+    // 1. 事前 RAG が条文を渡すとモデルは search_rules を呼ばずに答える。それは正しい。
+    // 2. **ツールが失敗しても AIMessage.tool_calls は残る。** 呼び出し数を見ると、
+    //    ツールが全滅しても「根拠あり」になり、#112 の失敗モード (ツール全滅 →
+    //    モデルが記憶から捏造) を素通しする。
+    // だから「引用が付いた」か「ツールが**実際にデータを取れた**」かで測る。
     if (item.expectEvidence) {
-      res.hasEvidence = (out.citations?.length ?? 0) > 0 || (out.toolCalls?.length ?? 0) > 0;
+      res.hasEvidence = (out.citations?.length ?? 0) > 0 || out.toolSuccesses > 0;
     }
     // 本文に書いた条番号が、実際に retrieve した資料にあるか (#99)。
     // LLM は実在しない条番号を平然と書くので、ここが唯一の機械的な番人になる。
