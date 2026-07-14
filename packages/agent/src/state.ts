@@ -24,6 +24,21 @@ export const AgentState = Annotation.Root({
     reducer: (_prev, next) => next,
     default: () => 0,
   }),
+  /**
+   * 実際にデータを取れたツール呼び出しの数。
+   *
+   * **「ツールを呼んだ」と「根拠を得た」は別物。** ツールが落ちても AIMessage.tool_calls は
+   * 残るので、呼び出し数だけを見ると全滅しても「根拠あり」に見える (#112 の失敗モード)。
+   */
+  toolSuccesses: Annotation<number>({
+    reducer: (_prev, next) => next,
+    default: () => 0,
+  }),
+  /** 失敗したツール名 (システム障害・引数エラー)。観測用。 */
+  toolFailures: Annotation<string[]>({
+    reducer: (_prev, next) => next,
+    default: () => [],
+  }),
 });
 
 export type AgentStateType = typeof AgentState.State;

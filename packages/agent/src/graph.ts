@@ -8,7 +8,7 @@ import {
   type BaseMessage,
 } from "@langchain/core/messages";
 import { searchRules } from "@dm-ai/rag";
-import { AgentState, type AgentStateType, type Citation } from "./state.js";
+import { AgentState, type AgentMode, type AgentStateType, type Citation } from "./state.js";
 import { AGENT_TOOLS, runTool } from "./tools.js";
 import { buildChatModel } from "./models.js";
 import { SYSTEM_PROMPTS } from "./prompts.js";
@@ -24,6 +24,64 @@ export const RAG_CONTEXT_HEADER = `以下の資料を根拠に回答してくだ
 【総合ルール】は現行の一次情報です。【裁定Q&A】は個別事例の公式回答ですが、改定前の古い回答が混じっていることがあります。【FAQ】【参考】はそれより弱い資料です。
 食い違う場合は【総合ルール】を優先してください。
 資料に無いことは推測で断定せず、分からないと述べてください。`;
+
+/**
+ * integrated モードでの RAG context の前置き (#108)。
+ *
+ * rule モードと同じ強い前置き (「資料に無いことは分からないと述べてください」) は使えない。
+ * integrated はデッキ構築や環境の質問も受けるため、その前置きを付けると
+ * **「デッキの組み方は資料に無いので分かりません」と拒否しかねない**。
+ * 「ルールの話なら必ずこれを根拠に、そうでなければ無視してよい」と伝える。
+ */
+export const INTEGRATED_RAG_CONTEXT_HEADER = `以下はルール検索の結果です。
+**ルールや裁定に関わる質問なら、必ずこの資料を根拠にして答えてください** (記憶で答えないこと)。
+【総合ルール】が現行の一次情報です。【裁定Q&A】には改定前の古い回答が混じることがあるので、食い違う場合は【総合ルール】を優先してください。
+デッキ構築・カード検索・環境分析など、ルールと関係ない質問であればこの資料は無視して構いません。`;
+
+/**
+ * integrated で RAG 結果を採用する最小スコア (#108)。
+ *
+ * integrated では「ルールの質問かどうか」が事前に分からない。常に条文を積むとカード検索や
+ * ティア表の質問にまで条文と出典が付く。かといって LLM の判断に任せると**呼ばない**
+ * (本番実測 8問中1問がツール未使用・引用ゼロ)。そこで検索スコアで機械的に足切りする。
+ *
+ * ## これは「ルール質問かどうか」の分類器ではない
+ *
+ * 当初「ルール質問 0.764〜0.897 / 非ルール質問 0.576〜0.674 に谷がある」と考えたが、
+ * **これは 11 問の標本による過信だった。** ルールの語彙を使ったデッキ質問を測ると閾値を超える:
+ *
+ *   0.768  マナゾーンに置くカードの枚数を意識してデッキを組みたい
+ *   0.759  召喚酔いのあるクリーチャーを採用しないデッキを組んで
+ *   0.739  S・トリガーで受けを強化する方向でデッキ改善案を
+ *   0.733  シールドを守るためにブロッカーを多めに採用したデッキ
+ *
+ * 一方、明確にルール外の質問はこう:
+ *
+ *   0.689  遊戯王のエクストラデッキのルール
+ *   0.688  「ボルシャック」を含むカードを検索
+ *   0.645  赤単速攻のデッキを組んで
+ *   0.579  今の環境のティア1は
+ *
+ * つまり **境界は 0.689 と 0.733 の間で、余裕は 0.04 しかない。** 埋め込みの揺れで反転しうる。
+ * この足切りが分けているのは「ルール質問 vs デッキ質問」ではなく
+ * **「DM のルールに触れる質問 vs 触れない質問」**である。
+ *
+ * ## それでも 0.70 で構わない理由 (両側の外し方が無害だから)
+ *
+ * - **拾いすぎ** (ルール語彙を含むデッキ質問に条文が付く): その条文は話題として妥当で、
+ *   前置きも「関係なければ無視してよい」と伝えている。eval 実測でも
+ *   integrated-deck-build は judge=5 でツールも呼び、構築を拒否していない。
+ * - **取りこぼし** (ルール質問が閾値を割る): 条文を積まない = 現状の挙動に戻るだけで、
+ *   モデルは必要なら search_rules を呼べる。悪化しない。
+ *
+ * 害が非対称 (取りこぼしの方が痛い) なので、迷ったら**下げる**。上げてはいけない。
+ */
+export const INTEGRATED_RAG_MIN_SCORE = 0.7;
+
+/** 事前 RAG を通すモード。integrated は web の既定なので、ここを外すと根拠ゼロ回答が出る。 */
+function usesRetrieval(mode: AgentMode): boolean {
+  return mode === "rule" || mode === "integrated";
+}
 
 /** メッセージからテキストを取り出す (v1 の .text getter、無ければ content)。 */
 function messageText(msg: BaseMessage | undefined): string {
@@ -71,14 +129,32 @@ function sourceLabel(meta: Record<string, unknown>): string {
 }
 
 /**
- * rule モードの事前 RAG。条文を context として注入し citations を state に載せる。
- * ヒットが無ければ何もしない (通常のチャットにフォールバック)。
+ * RAG 結果を採用するか (バッチ単位)。rule モードは常に採用する (利用者が明示的にルールを聞いている)。
+ * integrated は「ルールに触れる質問か」が分からないので、最上位のスコアで足切りする。
+ *
+ * **チャンク単位では足切りしない。** 採用したバッチには閾値を割るチャンクも混ざる
+ * (実測: 「召喚酔いとは？」の 12件中に 0.491 のものがある)。これは欠陥ではなく設計意図で、
+ * searchRules の expandTopSection が**最上位の条文と同じ節の兄弟条文をスコアに関係なく足す**
+ * ためである。例外規定や 501.2a のような細分条項はそこにしか無く、落とすと条文が読めなくなる。
+ * rule モードは以前から同じ弱いチャンクを積んでおり、それで citationGrounding 0.95 /
+ * judge 4.94 が出ている。UI の出典ノイズは別途 #116 で扱う。
+ */
+export function acceptsRagResult(mode: AgentMode, chunks: Array<{ score: number }>): boolean {
+  if (chunks.length === 0) return false;
+  if (mode !== "integrated") return true;
+  const top = Math.max(...chunks.map((c) => c.score));
+  return top >= INTEGRATED_RAG_MIN_SCORE;
+}
+
+/**
+ * 事前 RAG (rule / integrated)。条文を context として注入し citations を state に載せる。
+ * ヒットが無い、または integrated で関連が薄ければ何もしない (通常のチャットにフォールバック)。
  */
 async function retrieveNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
   const query = latestUserQuery(state.messages);
   if (!query) return {};
   const result = await searchRules(query);
-  if (result.chunks.length === 0) return {};
+  if (!acceptsRagResult(state.mode, result.chunks)) return {};
   const citations: Citation[] = result.chunks.map((ch) => ({
     text: ch.text.slice(0, 100),
     ...ch.meta,
@@ -87,11 +163,15 @@ async function retrieveNode(state: AgentStateType): Promise<Partial<AgentStateTy
   return { ragContext: formatRagContext(result.chunks), citations };
 }
 
-/** system 指示を組み立てる (rule モードは RAG 条文を畳み込む)。 */
-function buildSystemPrompt(state: AgentStateType): SystemMessage {
+/**
+ * system 指示を組み立てる (事前 RAG の条文を畳み込む)。
+ * 前置きはモードで変える — integrated に rule 用の強い前置きを付けるとデッキ構築を拒否しかねない。
+ */
+export function buildSystemPrompt(state: AgentStateType): SystemMessage {
   const base = SYSTEM_PROMPTS[state.mode];
-  const text = state.ragContext ? `${base}\n\n${RAG_CONTEXT_HEADER}\n\n${state.ragContext}` : base;
-  return new SystemMessage(text);
+  if (!state.ragContext) return new SystemMessage(base);
+  const header = state.mode === "integrated" ? INTEGRATED_RAG_CONTEXT_HEADER : RAG_CONTEXT_HEADER;
+  return new SystemMessage(`${base}\n\n${header}\n\n${state.ragContext}`);
 }
 
 /** LLM 呼び出し。ツール bind + コスト優先フォールバック。iterations を進める。 */
@@ -120,9 +200,15 @@ async function toolsNode(state: AgentStateType): Promise<Partial<AgentStateType>
       }),
   );
   const newCitations = results.flatMap(({ result }) => result.citations ?? []);
+  // 成功/失敗を数える。**呼んだ回数では根拠の有無を測れない** — ツールが全滅しても
+  // AIMessage.tool_calls は残るので、呼び出し数だけ見ると「根拠あり」に見えてしまう (#112)。
+  const succeeded = results.filter(({ result }) => result.ok !== false).length;
+  const failed = results.filter(({ result }) => result.ok === false).map(({ call }) => call.name);
   return {
     messages: toolMessages,
     citations: [...state.citations, ...newCitations],
+    toolSuccesses: state.toolSuccesses + succeeded,
+    toolFailures: [...state.toolFailures, ...failed],
   };
 }
 
@@ -162,14 +248,20 @@ function routeAfterAgent(state: AgentStateType): "tools" | "finalize" | typeof E
   return state.iterations < MAX_ITERATIONS ? "tools" : "finalize";
 }
 
-/** エージェントグラフを構築する。rule モードは先に RAG、それ以外は直接 agent へ。 */
+/**
+ * エージェントグラフを構築する。rule / integrated は先に RAG、deck / meta は直接 agent へ。
+ *
+ * integrated を retrieve に通すのが #108 の修正。**web の既定モードは integrated** なので、
+ * ここを外すと「ルールを聞いたのにツールを1つも呼ばず、記憶だけで答える」が起きる
+ * (本番実測 8問中1問)。プロンプトで「search_rules を呼べ」と書いても守られないことは実証済み。
+ */
 export function buildAgentGraph() {
   return new StateGraph(AgentState)
     .addNode("retrieve", retrieveNode)
     .addNode("agent", agentNode)
     .addNode("tools", toolsNode)
     .addNode("finalize", finalizeNode)
-    .addConditionalEdges(START, (state) => (state.mode === "rule" ? "retrieve" : "agent"), [
+    .addConditionalEdges(START, (state) => (usesRetrieval(state.mode) ? "retrieve" : "agent"), [
       "retrieve",
       "agent",
     ])

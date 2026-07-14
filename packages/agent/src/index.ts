@@ -28,6 +28,16 @@ export interface AgentOutput {
    * (本文からは既に消えているので、本文を見ても分からない)。
    */
   ungroundedCitations?: string[];
+  /**
+   * 実際にデータを取れたツール呼び出しの数。
+   *
+   * **`toolCalls` は「モデルが呼ぼうとした」だけで、成功したかは分からない。** ツールが
+   * 全滅しても tool_calls は残るので、`toolCalls.length > 0` を「根拠あり」と読むと
+   * #112 の失敗モード (ツール全滅 → モデルが記憶から捏造) を素通しする。
+   */
+  toolSuccesses: number;
+  /** 失敗したツール名 (システム障害・引数エラー)。空なら全て成功。 */
+  toolFailures?: string[];
 }
 
 // グラフのコンパイルは一度だけ (ノード/エッジは不変、状態はリクエストごとに invoke で渡す)。
@@ -62,12 +72,22 @@ function initialState(input: AgentInput) {
     format: input.format,
     citations: [],
     iterations: 0,
+    toolSuccesses: 0,
+    toolFailures: [],
   };
 }
 
 /** グラフの最終 state を api 互換のレスポンス形に変換する。 */
-function toOutput(result: { messages: BaseMessage[]; citations: Citation[] }, mode: AgentMode) {
-  // 実行されたツール呼び出しを AIMessage から収集 (UI 表示用)。
+function toOutput(
+  result: {
+    messages: BaseMessage[];
+    citations: Citation[];
+    toolSuccesses?: number;
+    toolFailures?: string[];
+  },
+  mode: AgentMode,
+): AgentOutput {
+  // モデルが呼ぼうとしたツール (UI 表示用)。**成功したかは含まない** — 成否は toolSuccesses。
   const toolCalls = result.messages
     .filter((m): m is AIMessage => AIMessage.isInstance(m))
     .flatMap((m) => m.tool_calls ?? [])
@@ -81,12 +101,15 @@ function toOutput(result: { messages: BaseMessage[]; citations: Citation[] }, mo
     result.citations,
   );
 
+  const toolFailures = result.toolFailures ?? [];
   return {
     response,
     citations: result.citations.length > 0 ? result.citations : undefined,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     mode,
     ungroundedCitations: stripped.length > 0 ? stripped : undefined,
+    toolSuccesses: result.toolSuccesses ?? 0,
+    toolFailures: toolFailures.length > 0 ? toolFailures : undefined,
   };
 }
 

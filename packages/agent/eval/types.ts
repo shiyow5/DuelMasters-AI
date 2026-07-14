@@ -19,6 +19,17 @@ export interface GoldenItem {
   rubric?: string;
   /** マルチターン用の会話履歴 */
   history?: Array<{ role: "user" | "assistant"; content: string }>;
+  /**
+   * 根拠 (引用 or ツール結果) が必ず付くべき問か (#108)。
+   *
+   * **ツールを呼んだかでは測れない。** 事前 RAG (retrieve) が条文を渡すと、モデルは
+   * search_rules を呼ばずに答える。それは正しい振る舞いなのに toolRecall は 0 になる。
+   * 逆に「ツールも呼ばず引用も無い」= 記憶だけで答えた状態が #108 の害そのものなので、
+   * **引用かツールのどちらかがあること**を測る。
+   *
+   * 遊戯王の質問のように「根拠なしで断るのが正解」の問には付けない。
+   */
+  expectEvidence?: boolean;
 }
 
 /** precision / recall のペア (該当なし時は 1 とみなす方針は算出側で明示)。 */
@@ -53,6 +64,11 @@ export interface ItemResult {
   citedArticles?: string[];
   /** 資料に無く、本文から落とした条番号 (= agent がでっち上げた番号)。 */
   ungroundedCitations?: string[];
+  /**
+   * 根拠 (引用 or ツール呼び出し) が付いたか (#108)。expectEvidence の問だけ計測する。
+   * false = 記憶だけで答えた = ハルシネーションの温床。
+   */
+  hasEvidence?: boolean;
   latencyMs: number;
   error?: string;
 }

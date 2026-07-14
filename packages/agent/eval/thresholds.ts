@@ -15,6 +15,8 @@ export interface Aggregate {
   /** 本文の条番号が資料にあった割合 (#99)。条番号を引かない問は計測対象外 (null)。 */
   citationGrounding: number | null;
   factCoverage: number | null;
+  /** 根拠 (引用 or ツール結果) が付いた割合 (#108)。根拠が要る問だけが分母。 */
+  evidenceRate: number | null;
   judgeMean: number | null;
   /** judge を回したのに失敗した件数 (quota/スキーマ/キー不正)。 */
   judgeFailures?: number;
@@ -46,6 +48,24 @@ export const THRESHOLDS = {
    * 揺れで落ちないよう 0.8 に置く。nightly (全35問) のベースラインが取れたら締め直す。
    */
   minCitationGrounding: 0.8,
+  /**
+   * 根拠 (引用 or ツール結果) が付いた割合 (#108)。
+   *
+   * 本番実測で integrated のルール質問8問中1問 (12.5%) がツール未使用・引用0件で、
+   * LLM の記憶だけで答えていた。web の既定モードが integrated なので利用者が普通に踏む。
+   * retrieve を integrated にも通してこれを潰した。
+   *
+   * ツール呼び出しでは測れないことに注意 (事前 RAG が効くとモデルは search_rules を
+   * 呼ばずに答える。それは正しい)。**引用かツールのどちらかがあること**を見ている。
+   *
+   * **ベースライン 0.97 (37/38)。** 落ちている1問は `deck-dendou`:
+   * デッキリストが `4 (殿堂入りカード)` というプレースホルダで実カード名が無いため、
+   * モデルは evaluate_deck を呼ばず「殿堂入りは1枚までなので違反」と記憶から断言して拒否する
+   * (judge は 5 を付ける)。**主張自体は根拠ゼロ**なので指標は正しく捉えている。golden 側の
+   * 欠陥なので別途直す。それまでこの1件を許容して 0.95 に置く
+   * (本番で観測した 12.5% の退行 = 0.875 はこれで捕まる)。
+   */
+  minEvidenceRate: 0.95,
 } as const;
 
 export interface GateResult {
@@ -95,6 +115,7 @@ export function checkThresholds(agg: Aggregate, options: GateOptions = {}): Gate
     ["ツール precision", agg.toolPrecision, THRESHOLDS.minToolPrecision],
     ["事実カバレッジ", agg.factCoverage, THRESHOLDS.minFactCoverage],
     ["出典の裏取り", agg.citationGrounding, THRESHOLDS.minCitationGrounding],
+    ["根拠あり率", agg.evidenceRate, THRESHOLDS.minEvidenceRate],
   ];
   for (const [label, value, min] of checks) {
     if (value !== null && value < min) {

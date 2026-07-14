@@ -18,6 +18,18 @@ export interface ToolResult {
   text: string;
   /** UI へ添える引用 (search_rules のみ) */
   citations?: Citation[];
+  /**
+   * ツールが**実際にデータを取れたか**。既定 true。
+   *
+   * 例外 (システム障害) と引数エラーでは false。**0件は true** — 検索は成功しており、
+   * 「該当なし」という事実が得られている (#111。0件をエラー扱いしたせいでモデルが
+   * 「ツールの一時的なエラー」と誤報し、記憶から捏造した)。
+   *
+   * これが無いと「ツールを呼んだ」と「根拠を得た」を区別できない。eval の evidenceRate は
+   * toolCalls (= モデルの**要求**) を見ていたため、**ツールが全部失敗しても「根拠あり」と
+   * 数えていた** — #112 の失敗モードそのものを見逃す指標になっていた。
+   */
+  ok?: boolean;
 }
 
 type Format = "original" | "advance";
@@ -53,7 +65,7 @@ export async function runTool(
       case "search_cards": {
         // 引数の検証・正規化は card-search.ts (query 必須をやめ、日本語の文明/種別も受ける)。
         const built = buildCardSearchArgs(args);
-        if (!built.ok) return { text: `検索条件が不正です: ${built.reason}` };
+        if (!built.ok) return { text: `検索条件が不正です: ${built.reason}`, ok: false };
         const { query, civilization, min_cost, max_cost, type } = built.args;
 
         const sql = getSql();
@@ -144,6 +156,7 @@ export async function runTool(
             text: `ツール引数が不正です: ${parsed.error.issues
               .map((i) => `${i.path.join(".")}: ${i.message}`)
               .join(", ")}`,
+            ok: false,
           };
         }
         const { theme, required_cards, civilizations, max_cost, min_creatures } = parsed.data;
@@ -183,7 +196,7 @@ export async function runTool(
       }
 
       default:
-        return { text: `不明なツール: ${name}` };
+        return { text: `不明なツール: ${name}`, ok: false };
     }
   } catch (err) {
     console.error(`[agent] ツール実行エラー (${name}):`, err);
@@ -198,6 +211,7 @@ export async function runTool(
         `ルールを推測で書くと誤情報になります。\n` +
         `「システム障害で情報を確認できませんでした。時間をおいて再度お試しください」と` +
         `だけ伝え、確認できていない内容は一切書かないでください。`,
+      ok: false,
     };
   }
 }
