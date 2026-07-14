@@ -276,9 +276,18 @@ export const UserSettingsRequestSchema = z.object({
 export type UserSettingsRequest = z.infer<typeof UserSettingsRequestSchema>;
 
 /** ingest:tags の LLM 出力検証 (カード名 → 役割タグ) */
+/**
+ * 役割タグ推定の応答 (#120)。
+ *
+ * **カード名ではなくバッチ内の通し番号で突き合わせる。** 名前で照合すると、Gemini が名前を
+ * 正規化・改変・欠落させたときに黙って取りこぼす。tags_updated_at で「試行済み」を刻む以上、
+ * その取りこぼしは恒久化する (二度と再試行されない)。
+ *
+ * `.positive()` は使わない (exclusiveMinimum になり Gemini の function declaration が 400)。
+ */
 export const TagExtractionSchema = z.array(
   z.object({
-    name: z.string(),
+    no: z.number().int().min(1),
     tags: z.array(z.enum(ROLE_TAGS)),
   }),
 );

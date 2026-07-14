@@ -28,10 +28,11 @@ on:
     inputs:
       job:
         # all は cron で回している取込をまとめて実行する。
-        # tags は全カードに LLM を当てるので高価。all には含めず必要なときに個別に選ぶ。
-        description: "実行するジョブ (all = regulations + rules + cards + rulings + tournaments + snapshot)"
+        # tags は増分 (tags_updated_at IS NULL のカードのみ) なので、all に含めても安全 (#120)。
+        # ただし**初回は全カードに LLM を当てる**ので時間と課金がかかる。
+        description: "実行するジョブ (all = 全取込。tags は未試行カードのみ)"
         type: choice
-        options: [regulations, rules, cards, rulings, tournaments, tags, snapshot, all]
+        options: [regulations, rules, cards, rulings, faq, tournaments, tags, snapshot, all]
         default: regulations
 
 concurrency:
@@ -55,8 +56,8 @@ jobs:
       matrix:
         # 並び順がそのまま実行順になる (max-parallel: 1)。
         # snapshot は tournaments が入れたデータを集計するので、必ず後ろに置く。
-        # tags だけは cron で回さない (全カードに LLM を当てるので高価)。手動選択のみ。
-        job: [regulations, rules, cards, rulings, tournaments, tags, snapshot]
+        # tags は cards の後ろに置く (その週の新規カードを同じ実行内でタグ付けするため)。
+        job: [regulations, rules, cards, rulings, faq, tournaments, tags, snapshot]
     steps:
       - name: 実行対象か判定
         id: scope
@@ -67,18 +68,20 @@ jobs:
         run: |
           run=false
           if [ -n "$INPUT_JOB" ]; then
-            # 手動実行: 指定ジョブ。all は cron 対象の取込のみ (tags は高価なので個別選択)。
+            # 手動実行: 指定ジョブ。all は cron で回している取込をまとめて実行する。
             if [ "$INPUT_JOB" = "$JOB" ]; then
               run=true
             elif [ "$INPUT_JOB" = "all" ]; then
-              case "$JOB" in regulations | rules | cards | rulings | tournaments | snapshot) run=true ;; esac
+              case "$JOB" in regulations | rules | cards | rulings | faq | tournaments | tags | snapshot) run=true ;; esac
             fi
           elif [ "$SCHEDULE" = "0 18 * * *" ]; then
             # 毎日: 殿堂のみ
             if [ "$JOB" = "regulations" ]; then run=true; fi
           elif [ "$SCHEDULE" = "0 19 * * 0" ]; then
-            # 毎週月曜 04:00 JST: 重いもの
-            case "$JOB" in rules | cards | rulings) run=true ;; esac
+            # 毎週月曜 04:00 JST: 重いもの。
+            # tags は cards の後に走り、**その週の新規カードだけ**をタグ付けする (#120)。
+            # tags_updated_at が NULL のものだけを対象にするので、既存カードを再課金しない。
+            case "$JOB" in rules | cards | rulings | faq | tags) run=true ;; esac
           elif [ "$SCHEDULE" = "0 21 * * 1" ]; then
             # 毎週火曜 06:00 JST: 大会結果 → メタ集計 (matrix の並び順どおり直列に走る)
             case "$JOB" in tournaments | snapshot) run=true ;; esac

@@ -16,12 +16,20 @@ import { sleep } from "../lib.js";
 
 const LLM_BATCH_SIZE = 20;
 
+/**
+ * LLM の応答スキーマ。
+ *
+ * **カード名ではなく通し番号で突き合わせる。** 名前で照合していたが、Gemini は名前を
+ * 正規化・改変・欠落させることがあり、その場合 `idsByName.get(item.name)` が外れて
+ * **黙ってタグ無しに落ちる**。tags_updated_at で「試行済み」を刻むようにした以上、
+ * 取りこぼしが**恒久化**する (二度と再試行されない)。番号なら壊れない。
+ */
 const RESPONSE_SCHEMA = {
   type: Type.ARRAY,
   items: {
     type: Type.OBJECT,
     properties: {
-      name: { type: Type.STRING },
+      no: { type: Type.INTEGER },
       tags: {
         type: Type.ARRAY,
         items: { type: Type.STRING, enum: [...ROLE_TAGS] },
@@ -39,25 +47,23 @@ const ROLE_TAG_DESC = `役割タグの定義:
 - メタ: 相手の行動を制約する
 - ブースト: マナを加速する`;
 
-/** needs-llm カードを LLM でタグ推定する (バッチ、name → tags) */
+/**
+ * needs-llm カードを LLM でタグ推定する (バッチ、**バッチ内の通し番号** → tags)。
+ *
+ * 名前で突き合わせない。理由は RESPONSE_SCHEMA のコメントを参照。
+ */
 async function tagByLlm(cards: TaggingCard[]): Promise<Map<number, RoleTag[]>> {
   const result = new Map<number, RoleTag[]>();
-  // 同名リプリント対策: name → 全 id のリストを保持し、LLM 結果を同名の全カードに適用する
-  const idsByName = new Map<string, number[]>();
-  for (const c of cards) {
-    const ids = idsByName.get(c.name);
-    if (ids) ids.push(c.id);
-    else idsByName.set(c.name, [c.id]);
-  }
 
   for (let i = 0; i < cards.length; i += LLM_BATCH_SIZE) {
     const batch = cards.slice(i, i + LLM_BATCH_SIZE);
     const prompt =
-      `${ROLE_TAG_DESC}\n\n以下の各カードに当てはまる役割タグを推定してください。該当が無ければ空配列にしてください。\n\n` +
+      `${ROLE_TAG_DESC}\n\n以下の各カードに当てはまる役割タグを推定してください。該当が無ければ空配列にしてください。\n` +
+      `**必ず入力と同じ通し番号 (no) を返してください。**\n\n` +
       batch
         .map(
-          (c) =>
-            `- 名前: ${c.name} / コスト: ${c.cost} / パワー: ${c.power ?? "-"}\n  テキスト: ${c.text}`,
+          (c, n) =>
+            `- no: ${n + 1} / 名前: ${c.name} / コスト: ${c.cost} / パワー: ${c.power ?? "-"}\n  テキスト: ${c.text}`,
         )
         .join("\n");
 
@@ -66,10 +72,8 @@ async function tagByLlm(cards: TaggingCard[]): Promise<Map<number, RoleTag[]>> {
       temperature: 0,
     });
     for (const item of extracted) {
-      const ids = idsByName.get(item.name);
-      if (ids) {
-        for (const id of ids) result.set(id, item.tags);
-      }
+      const card = batch[item.no - 1];
+      if (card) result.set(card.id, item.tags);
     }
     if (i + LLM_BATCH_SIZE < cards.length) await sleep(500);
   }
@@ -83,8 +87,15 @@ export async function runIngestTags(
   console.log(`=== タグ付与開始 (対象: ${onlyEmpty ? "タグ未設定のみ" : "全カード"}) ===`);
   const sql = getSql();
 
+  /**
+   * **「タグが空」ではなく「まだ試していない」で選ぶ** (#120)。
+   *
+   * `jsonb_array_length(tags) = 0` で選ぶと、LLM がタグを1つも返さなかったカードが毎回
+   * 再選択され、**永久に再課金される** (cron に入れると収束しない)。tags_updated_at が
+   * NULL のもの = 未試行だけを対象にする。
+   */
   const rows = onlyEmpty
-    ? await sql`SELECT id, name, cost, text, power, is_shield_trigger FROM cards WHERE jsonb_array_length(tags) = 0`
+    ? await sql`SELECT id, name, cost, text, power, is_shield_trigger FROM cards WHERE tags_updated_at IS NULL`
     : await sql`SELECT id, name, cost, text, power, is_shield_trigger FROM cards`;
 
   const cards: TaggingCard[] = rows.map((r) => ({
@@ -99,7 +110,7 @@ export async function runIngestTags(
   const { ruleTagged, needsLlm } = partitionByRule(cards);
 
   for (const { id, tags } of ruleTagged) {
-    await sql`UPDATE cards SET tags = ${sql.json(tags)}, updated_at = NOW() WHERE id = ${id}`;
+    await sql`UPDATE cards SET tags = ${sql.json(tags)}, tags_updated_at = NOW(), updated_at = NOW() WHERE id = ${id}`;
   }
 
   const llmTags = needsLlm.length > 0 ? await tagByLlm(needsLlm) : new Map();
@@ -108,9 +119,12 @@ export async function runIngestTags(
   for (const c of needsLlm) {
     const tags = (llmTags.get(c.id) ?? []) as RoleTag[];
     if (tags.length > 0) {
-      await sql`UPDATE cards SET tags = ${sql.json(tags)}, updated_at = NOW() WHERE id = ${c.id}`;
+      await sql`UPDATE cards SET tags = ${sql.json(tags)}, tags_updated_at = NOW(), updated_at = NOW() WHERE id = ${c.id}`;
       llmCount++;
     } else {
+      // **タグが1つも付かなくても「試した」印は打つ。**
+      // これが無いと、このカードを毎回 LLM に投げ直すことになる (永久に再課金)。
+      await sql`UPDATE cards SET tags_updated_at = NOW() WHERE id = ${c.id}`;
       emptyCount++;
     }
   }
