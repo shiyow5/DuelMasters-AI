@@ -7,12 +7,17 @@ test("トップ(チャット)が表示され、空入力では送信ボタンが
   await expect(sendBtn).toBeDisabled();
 });
 
-test("/deck でデッキを評価すると 30/100 が表示される (DB無し固定スコア)", async ({ page }) => {
+test("/deck でデッキを評価すると 55/100 が表示される (DB無し固定スコア)", async ({ page }) => {
+  // #120: 以前は 30/100。カード情報が1枚も引けていないのに「受け札が0枚だから減点」
+  // していたのをやめた (-25)。代わりに「カード情報を取得できなかったため参考値です」と出す。
   await page.goto("/deck");
   const list = Array.from({ length: 10 }, (_, i) => `4 テスト${i}`).join("\n");
   await page.locator("textarea").first().fill(list);
   await page.getByRole("button", { name: "評価する" }).click();
-  await expect(page.getByText("30/100")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("55/100")).toBeVisible({ timeout: 15000 });
+  await expect(
+    page.getByText("カード情報を取得できなかったため、この評価は参考値です"),
+  ).toBeVisible();
 });
 
 /**

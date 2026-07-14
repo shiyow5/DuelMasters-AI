@@ -51,6 +51,14 @@ export const cards = pgTable(
     is_rainbow: boolean("is_rainbow").notNull().default(false),
     is_shield_trigger: boolean("is_shield_trigger").notNull().default(false),
     tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    /**
+     * 役割タグの付与を**試した**日時 (#120)。
+     *
+     * `tags = []` は「タグが無い」であって「まだ試していない」ではない。LLM が1つも
+     * 返さなかったカードも `[]` になるので、これが無いと毎回そのカードを再課金してしまう。
+     * NULL = 未試行。
+     */
+    tags_updated_at: timestamp("tags_updated_at", { withTimezone: true }),
     card_image_url: text("card_image_url"),
     official_id: varchar("official_id", { length: 50 }),
     set_code: varchar("set_code", { length: 50 }),

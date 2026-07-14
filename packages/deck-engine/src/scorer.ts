@@ -2,6 +2,7 @@ import { DECK_SIZE, DECK_GUIDELINES, type DeckScore } from "@dm-ai/core";
 import type { Card, DeckEntry } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import type { ParsedDeck } from "./parser.js";
+import { isDefensiveCard } from "./tagger.js";
 
 /** scoreDeck 内部のスコアリング閾値 (DECK_GUIDELINES に無い減点基準) */
 const HAND_SIZE = 5; // 初手枚数
@@ -61,14 +62,43 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   const earlyCards = expandedCards.filter((c) => c.cost >= 2 && c.cost <= 3).length;
   const openingHandRate = calculateOpeningRate(earlyCards, deck.totalCards, HAND_SIZE);
 
-  // 役割バランス
+  /**
+   * 役割バランス (#120)。
+   *
+   * **「タグが未整備」と「その役割のカードが0枚」は違う。**
+   *
+   * 本番では `cards.tags` が 11563件すべて空だった (ingest-tags が一度も走っていなかった)。
+   * `roleBalance["受け"] ?? 0` は未整備でも 0 を返すので、**S・トリガーを20枚積んだデッキに
+   * 「受け札が少なく、攻撃に弱い構成です」と警告し、無条件に 25点減点していた**
+   * (受け=0 で -15、フィニッシャー=0 で -10)。
+   *
+   * データが無いなら評価しない。そして**評価していないことを隠さない** (#109 と同じ思想。
+   * 黙って警告を消すだけだと「評価済みで問題なし」に見えてしまう)。
+   */
   const roleBalance = computeRoleBalance(expandedCards);
-  if ((roleBalance["受け"] ?? 0) < MIN_DEFENSE_CARDS) {
+  const hasRoleData = expandedCards.some((c) => c.tags.length > 0);
+  // カード情報が1枚も引けなかった (DB 未接続 / 全カード未登録)。役割どころか全指標が空。
+  const noCardInfo = expandedCards.length === 0 && deck.totalCards > 0;
+
+  /**
+   * **受け札はタグに頼らない。** `is_shield_trigger` はカードの列で、ブロッカー等の
+   * キーワードもテキストにある。カード自身の情報だけで判定できるものを、
+   * わざわざ別テーブルの派生データ (tags) 経由で見に行くから壊れる。
+   */
+  const defenseCount = expandedCards.filter(isDefensiveCard).length;
+  if (!noCardInfo && defenseCount < MIN_DEFENSE_CARDS) {
     warnings.push("受け札が少なく、攻撃に弱い構成です");
     suggestions.push("S・トリガーやブロッカーなどの受け札を追加しましょう");
   }
 
-  if ((roleBalance["ドロー"] ?? 0) < MIN_DRAW_CARDS) {
+  if (noCardInfo) {
+    // **黙って低いスコアを返さない。** 指標が全部 0 なのは「悪いデッキ」だからではない。
+    warnings.push("カード情報を取得できなかったため、この評価は参考値です");
+  } else if (!hasRoleData) {
+    // ドロー/フィニッシャーはテキストからの推定が要るのでタグに頼らざるを得ない。
+    // データが無いなら評価しない。そして**評価していないことを隠さない** (#109 と同じ思想)。
+    warnings.push("カードの役割データが未整備のため、ドロー等の役割バランスは評価できていません");
+  } else if ((roleBalance["ドロー"] ?? 0) < MIN_DRAW_CARDS) {
     suggestions.push("ドローソースを増やしてリソース確保を安定させましょう");
   }
 
@@ -80,6 +110,9 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
     openingHandRate,
     civCount,
     roleBalance,
+    hasRoleData,
+    defenseCount,
+    noCardInfo,
     totalCards: deck.totalCards,
   });
 
@@ -217,6 +250,12 @@ function calculateOverallScore(params: {
   openingHandRate: number;
   civCount: number;
   roleBalance: Record<string, number>;
+  /** 役割タグが1枚でも付いているか (#120)。false ならタグ由来の減点をしない。 */
+  hasRoleData: boolean;
+  /** 受け札の枚数。**タグではなく is_shield_trigger 等から直接数える** (#120)。 */
+  defenseCount: number;
+  /** カード情報が1枚も引けなかったか。true なら「0枚だから減点」は成り立たない (#120)。 */
+  noCardInfo: boolean;
   totalCards: number;
 }): number {
   let score = 100;
@@ -242,9 +281,12 @@ function calculateOverallScore(params: {
   // 初動率ペナルティ
   if (params.openingHandRate < OPENING_RATE_TARGET) score -= 10;
 
-  // 役割バランスペナルティ
-  if ((params.roleBalance["受け"] ?? 0) === 0) score -= 15;
-  if ((params.roleBalance["フィニッシャー"] ?? 0) === 0) score -= 10;
+  // 受け札ゼロの減点。**タグではなくカード自身の情報から数える** (#120)。
+  // カード情報がそもそも引けていないなら「0枚」ではない。減点しない。
+  if (!params.noCardInfo && params.defenseCount === 0) score -= 15;
+  // フィニッシャーはテキスト推定が要るのでタグ依存。**未整備なら減点しない** (#120)。
+  // 未整備を「0枚」と読むと、どんなデッキも無条件に減点される (本番で実際に起きた)。
+  if (params.hasRoleData && (params.roleBalance["フィニッシャー"] ?? 0) === 0) score -= 10;
 
   return Math.max(0, Math.min(100, score));
 }
