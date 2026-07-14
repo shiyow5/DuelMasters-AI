@@ -66,6 +66,9 @@ async function evalItem(item: GoldenItem, noJudge: boolean): Promise<ItemResult>
     if (item.expectEvidence) {
       res.hasEvidence = (out.citations?.length ?? 0) > 0 || out.toolSuccesses > 0;
     }
+    // ツールの失敗は**全問で**記録する (#109)。失敗しても回答は返ってしまうので、
+    // ここで見ないと「本番でツールが全滅しているのに eval は満点」が起きる (#112)。
+    res.toolFailures = out.toolFailures;
     // 本文に書いた条番号が、実際に retrieve した資料にあるか (#99)。
     // LLM は実在しない条番号を平然と書くので、ここが唯一の機械的な番人になる。
     res.citationGrounding = citationGrounding(out.response, out.ungroundedCitations ?? []);
@@ -109,6 +112,7 @@ function renderReport(agg: ReturnType<typeof aggregate>): string {
     `- 引用 recall / precision: **${fmt(agg.citationRecall)}** / ${fmt(agg.citationPrecision)}`,
     `- 出典の裏取り (本文の条番号が資料にあるか): **${fmt(agg.citationGrounding)}**`,
     `- 根拠あり率 (引用 or ツール結果。1未満 = 記憶だけで答えた問がある): **${fmt(agg.evidenceRate)}**`,
+    `- **ツールが失敗した問: ${agg.toolFailureItems}件** (0 でなければならない)`,
     `- 事実カバレッジ: **${fmt(agg.factCoverage)}**`,
     `- judge 平均 (1-5): **${fmt(agg.judgeMean)}**` +
       (agg.judgeFailures > 0 ? ` (**judge 失敗 ${agg.judgeFailures}件**)` : ""),

@@ -91,6 +91,38 @@ async function resolveFormat(env: BotEnv, discordId: string): Promise<string> {
  * 例外はここで握って「エラー: ...」の本文にする (throw すると follow-up が送られず
  * 「考え中…」のまま固まるため)。
  */
+
+/** /api/chat の応答。toolFailures はツールが失敗したときだけ付く (#109)。 */
+interface ChatResponse {
+  response: string;
+  toolFailures?: string[];
+}
+
+/** 失敗表示用の名詞ラベル (web の tools.ts と同じ方針)。 */
+const TOOL_NOUNS: Record<string, string> = {
+  search_rules: "ルール検索",
+  search_cards: "カード検索",
+  evaluate_deck: "デッキ評価",
+  build_deck: "デッキ構築",
+  get_tier_list: "環境データの取得",
+  suggest_improvements: "改善案の作成",
+};
+
+/**
+ * ツールが失敗したら、その事実を回答に添える (#109)。
+ *
+ * **握り潰さない。** 隠すと、データで裏付けられていない回答が「普通の回答」に見える。
+ * モデルは失敗したツールの穴を記憶で埋めようとするので、利用者はそれを信じてしまう
+ * (#112 で実際に起きた: 全ツールが CONNECTION_ENDED で死んでいるのに、誤ったカード
+ *  テキストが自信たっぷりに返っていた)。
+ */
+export function withToolFailureNotice(res: ChatResponse): string {
+  const failures = res.toolFailures ?? [];
+  if (failures.length === 0) return res.response;
+  const nouns = [...new Set(failures)].map((n) => TOOL_NOUNS[n] ?? n).join(" / ");
+  return `⚠️ **${nouns}に失敗しました。この回答はデータで裏付けられていません。**\n\n${res.response}`;
+}
+
 export async function runCommand(
   parsed: ParsedCommand,
   discordId: string,
@@ -117,25 +149,25 @@ async function dispatch(
   }
 
   if (sub === "rule") {
-    const res = await apiSend<{ response: string }>(
+    const res = await apiSend<ChatResponse>(
       env,
       "POST",
       "/api/chat",
       { message: options.question, mode: "rule" },
       discordId,
     );
-    return { embeds: [ruleEmbed(res.response)] };
+    return { embeds: [ruleEmbed(withToolFailureNotice(res))] };
   }
 
   if (sub === "chat") {
-    const res = await apiSend<{ response: string }>(
+    const res = await apiSend<ChatResponse>(
       env,
       "POST",
       "/api/chat",
       { message: options.message, mode: "integrated" },
       discordId,
     );
-    return { content: truncate(res.response, 2000) };
+    return { content: truncate(withToolFailureNotice(res), 2000) };
   }
 
   if (group === "deck") return deckCommand(sub, options, discordId, env);

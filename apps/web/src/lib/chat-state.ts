@@ -33,12 +33,19 @@ export function applyChatEvent(msg: Message, ev: ChatStreamEvent): Message {
       // 「今なにをしているか」に差し替える (最終的な回答は done で確定するので消して問題ない)。
       return { ...msg, content: "", status: toolLabel(ev.name, ev.args ?? {}) };
 
+    case "toolError":
+      // **失敗を隠さない** (#109)。done でサーバー側の確定リストに置き換わるが、
+      // ストリームが途中で切れても「失敗した」ことだけは残るように、ここでも積む。
+      return { ...msg, toolFailures: [...(msg.toolFailures ?? []), ev.name] };
+
     case "done":
       return {
         ...msg,
         content: ev.result.response,
         citations: ev.result.citations,
         toolCalls: ev.result.toolCalls,
+        // done が確定値。サーバーが失敗を報告しなければ、ストリーム中に積んだものも消す。
+        toolFailures: ev.result.toolFailures,
         streaming: false,
         status: undefined,
       };

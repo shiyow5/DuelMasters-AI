@@ -78,6 +78,7 @@ export function aggregate(
     citationGrounding?: number | null;
     factCoverage?: number;
     hasEvidence?: boolean;
+    toolFailures?: string[];
     judgeScore?: number;
     judgeFailed?: boolean;
     error?: string;
@@ -100,6 +101,11 @@ export function aggregate(
    * これが 1 未満 = 記憶だけで答えた問がある。
    */
   evidenceRate: number | null;
+  /**
+   * ツールが失敗した問の件数 (#109)。**0 でなければならない。**
+   * 失敗しても回答は返ってしまう (モデルが記憶で埋める) ので、ここでしか検出できない。
+   */
+  toolFailureItems: number;
   judgeMean: number | null;
   /** judge を回したのに失敗した件数。部分的な judge 障害を検出する。 */
   judgeFailures: number;
@@ -123,6 +129,7 @@ export function aggregate(
     evidenceRate: mean(
       ok.filter((r) => r.hasEvidence !== undefined).map((r) => (r.hasEvidence ? 1 : 0)),
     ),
+    toolFailureItems: ok.filter((r) => (r.toolFailures?.length ?? 0) > 0).length,
     judgeMean: mean(ok.filter((r) => r.judgeScore !== undefined).map((r) => r.judgeScore!)),
     judgeFailures: ok.filter((r) => r.judgeFailed).length,
   };

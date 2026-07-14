@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { streamChat } from "@/lib/api";
 import { getTime } from "@/lib/format";
-import { initialStatus } from "@/lib/tools";
+import { initialStatus, toolErrorLabel } from "@/lib/tools";
 import { applyChatEvent } from "@/lib/chat-state";
 import { toMessages, canSendFeedback } from "@/lib/conversation-state";
 import {
@@ -290,6 +290,17 @@ function Chat() {
               // ストリーミング中はまだ回答が確定していないので、根拠もフィードバックも出さない
               msg.role === "assistant" && !msg.streaming ? (
                 <>
+                  {/* ツールが失敗したことを隠さない (#109)。握り潰すと、データで裏付け
+                      られていない回答が「普通の回答」に見えてしまう。 */}
+                  {msg.toolFailures && msg.toolFailures.length > 0 && (
+                    <div
+                      role="status"
+                      className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+                    >
+                      <span className="material-symbols-outlined text-sm">warning</span>
+                      <span>{toolErrorLabel(msg.toolFailures)}</span>
+                    </div>
+                  )}
                   {msg.citations && msg.citations.length > 0 && (
                     <Citations citations={msg.citations} />
                   )}
