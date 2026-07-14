@@ -68,8 +68,19 @@ export interface ValidationResult {
 export interface TierEntry {
   tier: string;
   archetype: string;
+  /** 使用率 (%)。入賞数 / 母数。**勝率ではない。** */
   usage_rate: number;
-  win_rate: number | null;
+  /** このアーキタイプの入賞数。 */
+  entries: number;
+  /** その期間・そのフォーマットの入賞デッキ総数 (母数)。 */
+  total_entries: number;
+  /**
+   * デッキを象徴するカード (#122)。アーキタイプ名から引けたときだけ付く。
+   *
+   * 「ドッコイループ」(コンボ名) のように**そもそも単一カード名でない**アーキタイプは
+   * 引けない。**無関係なカードを出すくらいなら出さない。**
+   */
+  main_card?: { name: string; image_url: string };
 }
 
 export interface TierData {

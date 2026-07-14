@@ -158,8 +158,10 @@ export const metaSnapshots = pgTable(
           tier: string;
           archetype: string;
           usage_rate: number;
-          win_rate: number | null;
-          sample_decklist: Array<{ name: string; count: number }> | null;
+          /** 入賞数。**勝率ではない** (取込元に勝敗が無い。#122)。 */
+          entries: number;
+          /** その期間・フォーマットの入賞デッキ総数 (母数)。 */
+          total_entries: number;
         }>
       >()
       .notNull(),

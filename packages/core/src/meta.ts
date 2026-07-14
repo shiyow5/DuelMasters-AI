@@ -9,10 +9,28 @@ import { TIER_THRESHOLDS } from "./constants.js";
 export type AggregatedTierEntry = {
   tier: string;
   archetype: string;
+  /** 使用率 (%)。入賞数 / 母数。**勝率ではない。** */
   usage_rate: number;
-  win_rate: null;
-  sample_decklist: null;
+  /** このアーキタイプの入賞数。 */
+  entries: number;
+  /** その期間・そのフォーマットの入賞デッキ総数 (母数)。 */
+  total_entries: number;
 };
+
+/**
+ * **勝率は出せない。**
+ *
+ * 取込元 (田園補完計画 / デネブログ / ガチまとめ) の記事はどれも「優勝: デッキ名@プレイヤー名」
+ * の形式で、**順位しか載っていない**。勝敗も勝率も無い。
+ *
+ * そもそも CS の入賞データからは原理的に計算できない — **入賞デッキしか分からないので、
+ * 負けたデッキの母集団が存在しない**。`usage_rate` (入賞数 / 母数) は**使用率**であって
+ * 勝率ではない。
+ *
+ * 以前は `win_rate: null` / `sample_decklist: null` をハードコードして返しており、
+ * UI は常に「--」を表示していた。**出せないものを出せるかのように見せるのはやめる。**
+ * 代わりに実データで裏付けられる `entries` / `total_entries` を返す。
+ */
 
 /**
  * 大会結果の集計行 (deck_archetype, count) をティアリストに変換する。
@@ -32,8 +50,8 @@ export function aggregateTierData(results: Array<Record<string, unknown>>): Aggr
       tier,
       archetype: r.deck_archetype as string,
       usage_rate: Math.round(usageRate * 1000) / 10,
-      win_rate: null,
-      sample_decklist: null,
+      entries: Number(r.count),
+      total_entries: totalEntries,
     };
   });
 }
