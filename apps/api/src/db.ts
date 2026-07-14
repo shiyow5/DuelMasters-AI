@@ -50,11 +50,52 @@ export const dbEnv: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) 
     await next();
     return;
   }
-  // Workers: Hyperdrive のリクエストスコープ接続を ALS に載せ、応答後に閉じる
+  // Workers: Hyperdrive のリクエストスコープ接続を ALS に載せ、**本文を書き終えてから**閉じる
   const sql = createSql(connectionString);
   try {
     await runWithSql(sql, () => next());
-  } finally {
+  } catch (err) {
+    // Hono の errorHandler をすり抜けた throw (非 Error の throw 等)。接続を閉じてから投げ直す。
     c.executionCtx.waitUntil(sql.end());
+    throw err;
   }
+  const { res, closed } = closeAfterBody(c.req.method, c.res, () => sql.end());
+  c.res = res;
+  c.executionCtx.waitUntil(closed);
 };
+
+/**
+ * 応答**本文の書き出しが完了してから** close() する。
+ *
+ * `next()` の解決は「本文を書き終えた」ことを意味しない。`streamSSE` は本文を書く前に
+ * Response を返すため、next() 直後に接続を閉じると **ストリーム中に走るツールの DB クエリが
+ * `write CONNECTION_ENDED` で全滅する** (#112。本番で search_cards / search_rules が全て死んでいた)。
+ *
+ * ルート側の opt-in (「ストリームするルートは寿命を延ばしてね」) にはしない。忘れれば無言で
+ * 同じ壊れ方に戻り、しかも eval では検出できないため。**本文を包み直して構造的に保証する。**
+ *
+ * **HEAD は包んではいけない。** Hono は HEAD を GET として処理し、その結果を
+ * `new Response(null, res)` で包んで本文を捨てる。包み直すと誰も読まないので `pipeTo` が
+ * 永久に解決せず、close() が呼ばれない = 接続リーク。/health は未認証・レート制限外なので、
+ * HEAD を連打されるだけで Hyperdrive のプールを枯らせてしまう。
+ * (Hono 公式の compress ミドルウェアも同じ理由で HEAD を除外している。)
+ *
+ * 非ストリーミング応答も包むため、接続はクライアントが本文を受け取り終えるまで生きる。
+ * 小さな JSON では実質ゼロだが、ここは「取りこぼさないこと」を速度より優先している。
+ */
+function closeAfterBody(
+  method: string,
+  original: Response,
+  close: () => Promise<void>,
+): { res: Response; closed: Promise<void> } {
+  if (method === "HEAD" || !original.body) return { res: original, closed: close() };
+
+  const { readable, writable } = new TransformStream();
+  const closed = original.body
+    .pipeTo(writable)
+    // クライアント切断 (ブラウザを閉じた等) で reject する。接続は必ず閉じる。
+    .catch(() => {})
+    .then(close);
+
+  return { res: new Response(readable, original), closed };
+}
