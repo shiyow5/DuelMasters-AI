@@ -1,12 +1,27 @@
 /**
  * 公式「よくある質問(裁定)」を RAG (rule_chunks) に取り込むジョブ。
- * 公式サイトの WP REST API のカスタム投稿タイプ `qa_old` (3000件超) が裁定 Q&A の一次情報源。
- * API は質問(title)とリンクのみ返すため、回答は各 HTML ページの .answer から取得する。
+ *
+ * ## 一次情報源は**2つある** (#123)
+ *
+ * | 集合 | 取得方法 | 件数 |
+ * | --- | --- | --- |
+ * | **現行** `/rule/qa/` | HTML ページング (REST に出ていない) | 約 3,955 |
+ * | **過去** `qa_old` | WP REST API (投稿タイプ名は「**過去の**よくある質問」) | 約 3,246 |
+ *
+ * **長らく `qa_old` しか取り込んでおらず、現行の裁定を1件も持っていなかった。**
+ * 公式裁定の半分以上が RAG から欠けていた。2つは排他 (同じ ID は片方にしか無く、
+ * もう片方は 301 でリダイレクトする)。
+ *
+ * **必ず1つのジョブで両方を扱うこと。** 末尾の prune が
+ * `doc_type='ruling' AND qa_id NOT IN (keep)` で掃除するため、片方だけを取り込むジョブを
+ * 別に作ると、もう片方を**全部消す**。
+ *
+ * 回答はどちらも各 HTML ページの `.question` / `.answer` から取る (構造は同じ)。
  * doc_type='ruling' で qa_id 単位に冪等 upsert。
  *
  * 公式サイトには改定前の裁定がそのまま残っており、同じ質問で結論が逆のペアがある。
  * 古い方を取り込むと RAG が現行ルールに反する答えを引くため、質問文で名寄せして
- * qa_id の新しい方だけを採る (dedupeRulingList)。
+ * **現行 > 過去**、同じ集合内なら qa_id の新しい方だけを採る (dedupeRulingList)。
  */
 import { pathToFileURL } from "node:url";
 import * as cheerio from "cheerio";
@@ -16,15 +31,27 @@ import { sleep, fetchWithRetry } from "../lib.js";
 import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
 import { applyDeprecations } from "./deprecate-rulings.js";
 
+/** 過去の裁定 (アーカイブ)。WP REST API に出ている唯一の投稿タイプ。 */
 const QA_API = `${OFFICIAL_SITE_BASE_URL}/wp-json/wp/v2/qa_old`;
+/** 現行の裁定。**REST に出ていない** (`wp/v2/qa` は 404) ので HTML をページングする。 */
+const QA_LIST_URL = `${OFFICIAL_SITE_BASE_URL}/rule/qa/`;
 const LIST_PER_PAGE = 100;
 const EMBED_FLUSH = 20;
 const FETCH_DELAY_MS = 150;
+
+/** 裁定がどちらの集合から来たか。名寄せで**現行を優先**するために要る。 */
+export type RulingSource = "current" | "archived";
 
 export interface RulingItem {
   id: number;
   question: string;
   link: string;
+  source: RulingSource;
+  /**
+   * 公開日 (YYYY-MM-DD)。**現行の一覧ページにしか無い。**
+   * qa_old の日付は全件 1990-01-01 のプレースホルダで使い物にならなかった (#92)。
+   */
+  date?: string;
 }
 
 function today(): string {
@@ -50,7 +77,74 @@ export function parseRulingHtml(html: string): { question: string; answer: strin
   return { question, answer };
 }
 
-/** qa_old API をページングして裁定の一覧 (id/質問/リンク) を集める。 */
+/**
+ * 「2026.7.9」→「2026-07-09」。現行の一覧ページの `p.day01` の書式。
+ * 読めない書式なら undefined (日付を捏造しない)。
+ */
+export function parseJpDate(text: string): string | undefined {
+  const m = /(\d{4})[./-](\d{1,2})[./-](\d{1,2})/.exec(text.trim());
+  if (!m) return undefined;
+  return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+}
+
+/**
+ * 現行の裁定一覧ページ (`/rule/qa/page/N/`) から 1ページぶんを取り出す (純粋関数・テスト対象)。
+ *
+ * 構造:
+ *   <ul class="newsList03">
+ *     <li>
+ *       <p class="tit01"><a href=".../rule/qa/49017/">質問文</a></p>
+ *       <p class="day01">2026.7.9</p>
+ */
+export function parseRulingListPage(html: string): RulingItem[] {
+  const $ = cheerio.load(html);
+  const items: RulingItem[] = [];
+  $("ul.newsList03 > li").each((_, el) => {
+    const a = $(el).find("p.tit01 a").first();
+    const link = a.attr("href") ?? "";
+    const m = /\/rule\/qa\/(\d+)\//.exec(link);
+    if (!m) return;
+    items.push({
+      id: Number(m[1]),
+      question: a.text().replace(/\s+/g, " ").trim(),
+      link,
+      source: "current",
+      date: parseJpDate($(el).find("p.day01").first().text()),
+    });
+  });
+  return items;
+}
+
+/**
+ * 現行の裁定一覧を集める (HTML ページング)。
+ *
+ * REST に出ていないので HTML を舐めるしかない。最終ページを超えると 404 = 正常終端。
+ * それ以外のエラーは**サイレントな部分取込を避けるため** job を失敗させる
+ * (部分取込のまま prune が走ると、取れなかったぶんが本番から消える)。
+ */
+export async function fetchCurrentRulingList(limit?: number): Promise<RulingItem[]> {
+  const out: RulingItem[] = [];
+  for (let page = 1; ; page++) {
+    const url = page === 1 ? QA_LIST_URL : `${QA_LIST_URL}page/${page}/`;
+    let html: string;
+    try {
+      html = await fetchWithRetry(url);
+    } catch (err) {
+      if (err instanceof Error && /HTTP 404\b/.test(err.message)) break;
+      throw err;
+    }
+    const items = parseRulingListPage(html);
+    if (items.length === 0) break;
+    for (const item of items) {
+      out.push(item);
+      if (limit && out.length >= limit) return out.slice(0, limit);
+    }
+    await sleep(FETCH_DELAY_MS);
+  }
+  return out;
+}
+
+/** qa_old API をページングして**過去の**裁定一覧 (id/質問/リンク) を集める。 */
 export async function fetchRulingList(limit?: number): Promise<RulingItem[]> {
   const out: RulingItem[] = [];
   for (let page = 1; ; page++) {
@@ -66,7 +160,12 @@ export async function fetchRulingList(limit?: number): Promise<RulingItem[]> {
     }
     if (!Array.isArray(arr) || arr.length === 0) break;
     for (const p of arr) {
-      out.push({ id: p.id, question: htmlToText(p.title?.rendered ?? ""), link: p.link });
+      out.push({
+        id: p.id,
+        question: htmlToText(p.title?.rendered ?? ""),
+        link: p.link,
+        source: "archived",
+      });
       if (limit && out.length >= limit) return out.slice(0, limit);
     }
     if (arr.length < LIST_PER_PAGE) break;
@@ -109,17 +208,34 @@ function normalizeQuestion(q: string): string {
 }
 
 /**
- * 同じ質問の裁定が複数あれば、qa_id が最大 (＝新しい) ものだけ残す。並び順は元のまま。
+ * 同じ質問の裁定が2つあるとき、どちらを採るか。
+ *
+ * **1. 現行 (`/rule/qa/`) を過去 (`qa_old`) より優先する。**
+ * qa_old は投稿タイプ名からして「**過去の**よくある質問」。ID の大小では決められない
+ * (現行側にも 31971 のような小さい ID があり、過去側の 35220 より小さい)。
+ * **どちらの集合にいるかが、新旧の唯一の手がかり。**
+ *
+ * 2. 同じ集合の中なら qa_id が大きい (＝後から作られた) 方。
+ */
+function isNewerRuling(a: RulingItem, b: RulingItem): boolean {
+  if (a.source !== b.source) return a.source === "current";
+  return a.id > b.id;
+}
+
+/**
+ * 同じ質問の裁定が複数あれば、新しい方だけ残す。並び順は元のまま。
  * 公式サイトに残る改定前の裁定が現行ルールと矛盾するため、新しい方へ寄せる。
  */
 export function dedupeRulingList(items: RulingItem[]): RulingItem[] {
-  const newestId = new Map<string, number>();
+  const best = new Map<string, RulingItem>();
   for (const item of items) {
     const key = normalizeQuestion(item.question);
-    const current = newestId.get(key);
-    if (current === undefined || item.id > current) newestId.set(key, item.id);
+    const current = best.get(key);
+    if (current === undefined || isNewerRuling(item, current)) best.set(key, item);
   }
-  return items.filter((item) => newestId.get(normalizeQuestion(item.question)) === item.id);
+  // WP の投稿 ID は投稿タイプを跨いで一意なので、id で同定してよい。
+  const keep = new Set([...best.values()].map((i) => i.id));
+  return items.filter((item) => keep.has(item.id));
 }
 
 export async function runIngestRulings(opts: { limit?: number; version?: string } = {}): Promise<{
@@ -131,16 +247,27 @@ export async function runIngestRulings(opts: { limit?: number; version?: string 
 }> {
   const sql = getSql();
   const version = opts.version ?? today();
-  const fetched = await fetchRulingList(opts.limit);
+
+  // **現行と過去の両方を取る** (#123)。片方だけだと、末尾の prune がもう片方を全部消す。
+  const current = await fetchCurrentRulingList(opts.limit);
+  const archived = await fetchRulingList(opts.limit);
+  const fetched = [...current, ...archived];
   const list = dedupeRulingList(fetched);
   const duplicates = fetched.length - list.length;
   console.log(
-    `=== 裁定取り込み開始: 対象 ${list.length}件 (重複質問 ${duplicates}件を新しい裁定へ寄せた) ===`,
+    `=== 裁定取り込み開始: 現行 ${current.length}件 + 過去 ${archived.length}件 → 対象 ${list.length}件 ` +
+      `(重複質問 ${duplicates}件を新しい裁定へ寄せた) ===`,
   );
 
   let inserted = 0;
   let skipped = 0;
-  let buffer: Array<{ qaId: number; url: string; text: string }> = [];
+  let buffer: Array<{
+    qaId: number;
+    url: string;
+    text: string;
+    source: RulingSource;
+    date?: string;
+  }> = [];
 
   const flush = async () => {
     if (buffer.length === 0) return;
@@ -153,7 +280,9 @@ export async function runIngestRulings(opts: { limit?: number; version?: string 
         await txSql`DELETE FROM rule_chunks WHERE doc_type = 'ruling' AND chunk_meta->>'qa_id' = ${String(b.qaId)}`;
         await txSql`
           INSERT INTO rule_chunks (doc_type, version, chunk_text, chunk_meta, embedding)
-          VALUES ('ruling', ${version}, ${b.text}, ${sql.json({ url: b.url, qa_id: b.qaId })}, ${vec}::vector)
+          VALUES ('ruling', ${version}, ${b.text},
+                  ${sql.json({ url: b.url, qa_id: b.qaId, source: b.source, ...(b.date ? { date: b.date } : {}) })},
+                  ${vec}::vector)
         `;
       }
     });
@@ -171,7 +300,13 @@ export async function runIngestRulings(opts: { limit?: number; version?: string 
         skipped++;
         continue;
       }
-      buffer.push({ qaId: item.id, url: item.link, text: `Q: ${q}\nA: ${answer}` });
+      buffer.push({
+        qaId: item.id,
+        url: item.link,
+        text: `Q: ${q}\nA: ${answer}`,
+        source: item.source,
+        date: item.date,
+      });
       if (buffer.length >= EMBED_FLUSH) await flush();
       await sleep(FETCH_DELAY_MS);
     } catch (err) {
