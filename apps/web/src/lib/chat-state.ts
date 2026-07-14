@@ -43,6 +43,12 @@ export function applyChatEvent(msg: Message, ev: ChatStreamEvent): Message {
         status: undefined,
       };
 
+    case "saved":
+      // サーバーが発言を保存した (#110)。**done の後に届く。**
+      // この ID が無いと「役に立った」を送れない (どの発言への評価か指定できない)。
+      // 反応した瞬間にしか取れないシグナルなので、受け取った直後に押せる状態にする。
+      return { ...msg, id: ev.messageId };
+
     case "error":
       return { ...msg, content: ev.message, streaming: false, status: undefined, error: true };
   }

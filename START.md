@@ -260,8 +260,8 @@ Supabase Dashboard の SQL Editor でテーブルを作成します。
 3. **「New query」** をクリック
 4. `infra/sql/001_init.sql` の内容を **全文コピー** してエディタに貼り付け
 5. **「Run」** をクリック
-6. 同様に `infra/sql/002_cards_official_id_unique.sql`、`infra/sql/003_features.sql`、
-   `infra/sql/004_enable_rls.sql` `infra/sql/005_pgvector_update.sql` `infra/sql/006_archetype_weekly_stats.sql` も この順で貼り付けて実行
+6. 同様に **`infra/sql/` 配下の残り全て**を、**ファイル名の番号順**に貼り付けて実行
+   (002 → 003 → 004 → 005 → 006 → 007 → …)。**新しい番号のファイルが増えていたら必ず適用すること。**
 
 `Success. No rows returned` と表示されればOKです。
 

@@ -15,6 +15,11 @@ export interface Citation {
 }
 
 export interface Message {
+  /**
+   * DB 上の発言 ID (#110)。保存された発言にだけ付く。
+   * これが無いと「役に立った」を送れない (どの発言への評価か指定できない)。
+   */
+  id?: string;
   role: "user" | "assistant";
   content: string;
   citations?: Citation[];
@@ -31,6 +36,8 @@ export interface Message {
   status?: string;
   /** エラーで終わった応答 (UI で赤く出す) */
   error?: boolean;
+  /** 「役に立った / 立たなかった」(#110)。未評価は undefined。 */
+  helpful?: boolean;
 }
 
 export interface DeckScore {

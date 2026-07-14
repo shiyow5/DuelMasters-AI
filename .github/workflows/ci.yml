@@ -105,11 +105,14 @@ jobs:
 
       # 004 (RLS 有効化) も適用し、本番 (Supabase) と同条件でテストする。
       # テストは postgres ロール (RLS を迂回) で接続するため、RLS 有効でも従来どおり通る。
-      - name: Apply DB schema (001 → 002 → 003 → 004, in order)
+      #
+      # **列挙しない。** 番号順に全部当てる。マイグレーションを足すたびにここへ書き足す運用は
+      # 必ず忘れる (007 で実際に忘れ、CI の DB 統合テストが全滅しかけた)。
+      - name: Apply DB schema (infra/sql/*.sql を番号順に全て)
         env:
           PGPASSWORD: postgres
         run: |
-          for f in infra/sql/001_init.sql infra/sql/002_cards_official_id_unique.sql infra/sql/003_features.sql infra/sql/004_enable_rls.sql infra/sql/005_pgvector_update.sql infra/sql/006_archetype_weekly_stats.sql; do
+          for f in $(ls infra/sql/*.sql | sort); do
             echo "Applying $f"
             psql -h localhost -U postgres -d dm_ai -v ON_ERROR_STOP=1 -f "$f"
           done

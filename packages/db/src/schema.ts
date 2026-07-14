@@ -8,6 +8,7 @@ import {
   jsonb,
   date,
   varchar,
+  uuid,
   index,
   uniqueIndex,
   real,
@@ -167,4 +168,45 @@ export const userSettings = pgTable("user_settings", {
   user_id: varchar("user_id", { length: 100 }).primaryKey(),
   format: varchar("format", { length: 20 }).notNull().default("original"),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/** 会話 (#110)。user_id で必ず絞ること — 他人の会話 ID を指定して読めてはいけない。 */
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    user_id: varchar("user_id", { length: 100 }).notNull(),
+    title: text("title").notNull(),
+    mode: varchar("mode", { length: 20 }).notNull().default("integrated"),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("conversations_user_idx").on(table.user_id, table.updated_at)],
+);
+
+/** 会話中の1発言。引用とツール呼び出しも残す (後から根拠を辿れないと保存する意味が薄い)。 */
+export const conversationMessages = pgTable(
+  "conversation_messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversation_id: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    role: varchar("role", { length: 20 }).notNull(),
+    content: text("content").notNull(),
+    citations: jsonb("citations"),
+    tool_calls: jsonb("tool_calls"),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("conversation_messages_conv_idx").on(table.conversation_id, table.created_at)],
+);
+
+/** 「役に立った / 立たなかった」。eval の golden set 候補を実利用から拾うためのシグナル。 */
+export const messageFeedback = pgTable("message_feedback", {
+  message_id: uuid("message_id")
+    .primaryKey()
+    .references(() => conversationMessages.id, { onDelete: "cascade" }),
+  user_id: varchar("user_id", { length: 100 }).notNull(),
+  helpful: boolean("helpful").notNull(),
+  created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

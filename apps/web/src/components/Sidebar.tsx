@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import AuthPanel from "./AuthPanel";
+import ChatHistory from "./ChatHistory";
 import { useSidebar } from "./SidebarContext";
 
 const NAV_ITEMS = [
@@ -49,7 +50,7 @@ export default function Sidebar() {
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex flex-col gap-6 p-6">
+        <div className="flex flex-col gap-6 p-6 min-h-0 flex-1 overflow-y-auto">
           {/* Logo + モバイル用クローズボタン */}
           <div className="flex items-start justify-between">
             <Link href="/" className="flex flex-col" onClick={closeSidebar}>
@@ -92,6 +93,18 @@ export default function Sidebar() {
               );
             })}
           </div>
+
+          {/* 会話履歴 (#110)。チャットページでのみ意味があるので、そこにいる時だけ出す。 */}
+          {pathname === "/" && (
+            <div className="flex flex-col gap-2">
+              <h2 className="px-3 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                会話履歴
+              </h2>
+              <Suspense fallback={<p className="px-3 text-xs text-text-muted">読み込み中…</p>}>
+                <ChatHistory onNavigate={closeSidebar} />
+              </Suspense>
+            </div>
+          )}
         </div>
 
         {/* Bottom: 認証パネル (NEXT_PUBLIC_SUPABASE_* 未設定なら非表示) */}

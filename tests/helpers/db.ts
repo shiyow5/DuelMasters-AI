@@ -21,6 +21,9 @@ export function enableAppDb() {
 
 /** 全テーブルを空にする (各テストファイルの beforeEach で呼ぶ) */
 export async function truncateAll(sql: ReturnType<typeof postgres>) {
+  // conversations は CASCADE で conversation_messages / message_feedback も消える。
   await sql`TRUNCATE cards, regulations, rule_chunks, decks,
-            tournament_results, archetype_weekly_stats, meta_snapshots, user_settings RESTART IDENTITY`;
+            tournament_results, archetype_weekly_stats, meta_snapshots, user_settings,
+            conversations, conversation_messages, message_feedback
+            RESTART IDENTITY CASCADE`;
 }

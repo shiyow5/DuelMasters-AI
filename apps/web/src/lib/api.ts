@@ -85,6 +85,20 @@ export async function apiDelete<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** PUT / PATCH (会話のリネーム・フィードバック)。 */
+async function apiWrite<T>(method: "PUT" | "PATCH", path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await toApiError(res);
+  return res.json() as Promise<T>;
+}
+
+export const apiPut = <T>(path: string, body: unknown) => apiWrite<T>("PUT", path, body);
+export const apiPatch = <T>(path: string, body: unknown) => apiWrite<T>("PATCH", path, body);
+
 /** SSE で受け取るイベント (apps/api の /api/chat/stream と対応) */
 export type ChatStreamEvent =
   | { type: "token"; text: string }
@@ -93,6 +107,8 @@ export type ChatStreamEvent =
   /** グラフのノードを1つ通過した (retrieve / agent / tools / finalize)。 */
   | { type: "phase"; node: string }
   | { type: "done"; result: ChatResult }
+  /** サーバーが発言を保存した (#110)。この ID が無いと 👍 を送れない。 */
+  | { type: "saved"; messageId: string }
   | { type: "error"; message: string };
 
 export interface ChatResult {

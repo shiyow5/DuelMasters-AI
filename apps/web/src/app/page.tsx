@@ -1,17 +1,40 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { streamChat } from "@/lib/api";
 import { getTime } from "@/lib/format";
 import { initialStatus } from "@/lib/tools";
 import { applyChatEvent } from "@/lib/chat-state";
+import { toMessages, canSendFeedback } from "@/lib/conversation-state";
+import {
+  createConversation,
+  getConversation,
+  sendFeedback,
+  titleFromMessage,
+} from "@/lib/conversations";
+import { notifyConversationsChanged } from "@/components/ChatHistory";
 import type { Message } from "@/lib/types";
 import Header from "@/components/Header";
 import ChatBubble, { TypingDots } from "@/components/ChatBubble";
 import Citations from "@/components/Citations";
 import Markdown from "@/components/Markdown";
 
+/** useSearchParams は Suspense 境界の内側でしか使えない (Next の CSR bailout)。 */
 export default function ChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <Chat />
+    </Suspense>
+  );
+}
+
+function Chat() {
+  const router = useRouter();
+  const params = useSearchParams();
+  /** URL が唯一の情報源 (#110)。`/?c=<id>` で会話を開く。 */
+  const conversationId = params.get("c");
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,6 +44,36 @@ export default function ChatPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  /**
+   * URL の会話 ID が変わったら、その会話を読み直す (#110)。
+   *
+   * **送信直後に自分で push した ID でも読み直す**と、いま出したばかりの回答が一瞬消える。
+   * 送信中 (loading) は読み直さないことで防ぐ。
+   */
+  const loadConversation = useCallback(
+    async (id: string | null) => {
+      if (!id) {
+        setMessages([]);
+        return;
+      }
+      try {
+        const conv = await getConversation(id);
+        setMessages(toMessages(conv.messages));
+      } catch {
+        // 消された会話 / 他人の会話 → 404。新規状態に戻す (URL に死んだ ID を残さない)。
+        setMessages([]);
+        router.replace("/");
+      }
+    },
+    [router],
+  );
+
+  const streamingRef = useRef(false);
+  useEffect(() => {
+    if (streamingRef.current) return;
+    void loadConversation(conversationId);
+  }, [conversationId, loadConversation]);
 
   /** ストリーミング中の最後の 1件 (assistant) だけを更新する */
   function updateLast(patch: (m: Message) => Message) {
@@ -36,8 +89,10 @@ export default function ChatPage() {
     e.preventDefault();
     if (!input.trim() || loading) return;
 
-    const userMsg: Message = { role: "user", content: input.trim(), timestamp: getTime() };
-    // 履歴は「今回のユーザー発話を含まない」状態を送る (api 側で message として別に渡すため)
+    const text = input.trim();
+    const userMsg: Message = { role: "user", content: text, timestamp: getTime() };
+    // 履歴は「今回のユーザー発話を含まない」状態を送る (api 側で message として別に渡すため)。
+    // **会話 ID がある場合、この history はサーバーに無視される** — 履歴は DB が正 (#110)。
     const history = messages.map((m) => ({ role: m.role, content: m.content }));
 
     setMessages((prev) => [
@@ -55,13 +110,31 @@ export default function ChatPage() {
     ]);
     setInput("");
     setLoading(true);
+    streamingRef.current = true;
 
     try {
+      // 会話がまだ無ければ作る。**タイトルは最初の質問から作る** (LLM は呼ばない)。
+      // 未ログインなら 401 で失敗するので、その場合は会話を持たずに続行する
+      // (保存はされないが、チャット自体は今までどおり動く)。
+      let cid = conversationId;
+      if (!cid) {
+        cid = await createConversation(titleFromMessage(text), mode)
+          .then((c) => c.id)
+          .catch(() => null);
+        if (cid) {
+          // URL を差し替える。**replace を使う** — 送信のたびに履歴が積もると
+          // 戻るボタンで会話が消えたように見える。
+          router.replace(`/?c=${cid}`);
+          notifyConversationsChanged();
+        }
+      }
+
       // 進行表示の分岐は applyChatEvent (純関数) に切り出してある。
       // イベントの順序で表示が破綻しないことは chat-state.test.ts で固定している。
-      await streamChat({ message: userMsg.content, mode, history }, (ev) => {
+      await streamChat({ message: text, mode, history, conversationId: cid ?? undefined }, (ev) => {
         updateLast((m) => applyChatEvent(m, ev));
       });
+      notifyConversationsChanged();
     } catch (err) {
       updateLast((m) => ({
         ...m,
@@ -72,12 +145,25 @@ export default function ChatPage() {
       }));
     } finally {
       setLoading(false);
+      streamingRef.current = false;
+    }
+  }
+
+  /** 「役に立った / 立たなかった」を保存する (#110)。捨てていたシグナルを拾う。 */
+  async function handleFeedback(index: number, helpful: boolean) {
+    const msg = messages[index];
+    if (!canSendFeedback(msg, conversationId)) return;
+    // 楽観更新。失敗しても押し直せるよう、エラーでは元に戻す。
+    setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, helpful } : m)));
+    try {
+      await sendFeedback(conversationId!, msg.id!, helpful);
+    } catch {
+      setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, helpful: undefined } : m)));
     }
   }
 
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [loadText, setLoadText] = useState("");
-  const [helpful, setHelpful] = useState<Set<number>>(new Set());
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -104,8 +190,13 @@ export default function ChatPage() {
     URL.revokeObjectURL(url);
   }
 
-  function handleDeleteChat() {
-    if (confirm("チャット履歴を削除しますか?")) setMessages([]);
+  /**
+   * 会話を閉じて新規状態に戻す。
+   * **DB からは消さない** — 消すのはサイドバーの削除ボタン (誤操作で会話を失わせない)。
+   */
+  function handleNewChat() {
+    setMessages([]);
+    router.replace("/");
   }
 
   function applyLoadedDeck() {
@@ -147,11 +238,11 @@ export default function ChatPage() {
               <span className="material-symbols-outlined">ios_share</span>
             </button>
             <button
-              onClick={handleDeleteChat}
+              onClick={handleNewChat}
               className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-              title="Delete Chat"
+              title="新しい会話"
             >
-              <span className="material-symbols-outlined">delete</span>
+              <span className="material-symbols-outlined">add_comment</span>
             </button>
           </>
         }
@@ -204,14 +295,33 @@ export default function ChatPage() {
                   )}
                   {!msg.error && (
                     <div className="mt-4 flex gap-2">
-                      <button
-                        onClick={() => setHelpful((prev) => new Set(prev).add(i))}
-                        disabled={helpful.has(i)}
-                        className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle disabled:text-primary disabled:opacity-100"
-                      >
-                        <span className="material-symbols-outlined text-sm">thumb_up</span>
-                        {helpful.has(i) ? "ありがとうございます" : "役に立った"}
-                      </button>
+                      {/* 評価は DB に保存する (#110)。低評価は eval の golden set 候補になる。
+                          保存されていない発言 (未ログイン等) には出さない。 */}
+                      {canSendFeedback(msg, conversationId) && (
+                        <>
+                          <button
+                            onClick={() => handleFeedback(i, true)}
+                            className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 transition-colors border border-border-subtle ${
+                              msg.helpful === true ? "text-primary" : "text-text-muted"
+                            }`}
+                            aria-pressed={msg.helpful === true}
+                          >
+                            <span className="material-symbols-outlined text-sm">thumb_up</span>
+                            {msg.helpful === true ? "ありがとうございます" : "役に立った"}
+                          </button>
+                          <button
+                            onClick={() => handleFeedback(i, false)}
+                            className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 transition-colors border border-border-subtle ${
+                              msg.helpful === false ? "text-red-400" : "text-text-muted"
+                            }`}
+                            aria-pressed={msg.helpful === false}
+                            title="この回答は正しくない / 役に立たなかった"
+                          >
+                            <span className="material-symbols-outlined text-sm">thumb_down</span>
+                            {msg.helpful === false ? "報告しました" : "役に立たなかった"}
+                          </button>
+                        </>
+                      )}
                       <button
                         className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-text-muted transition-colors border border-border-subtle"
                         onClick={async () => {
