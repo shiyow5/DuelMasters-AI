@@ -203,7 +203,13 @@ async function toolsNode(state: AgentStateType): Promise<Partial<AgentStateType>
   // 成功/失敗を数える。**呼んだ回数では根拠の有無を測れない** — ツールが全滅しても
   // AIMessage.tool_calls は残るので、呼び出し数だけ見ると「根拠あり」に見えてしまう (#112)。
   const succeeded = results.filter(({ result }) => result.ok !== false).length;
-  const failed = results.filter(({ result }) => result.ok === false).map(({ call }) => call.name);
+  // **システム障害だけを「失敗」として記録する。** 引数エラー (モデルが存在しない文明を
+  // 指定した等) はシステムが壊れているわけではなく、モデルは呼び直して回復する。
+  // これを混ぜると、正しい回答に「データで裏付けられていません」と警告が出て (本番実測)、
+  // eval のゲートもモデルの推測ミスで落ちる。根拠の有無は succeeded で測る。
+  const failed = results
+    .filter(({ result }) => result.systemFailure === true)
+    .map(({ call }) => call.name);
   return {
     messages: toolMessages,
     citations: [...state.citations, ...newCitations],

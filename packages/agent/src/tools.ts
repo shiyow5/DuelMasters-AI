@@ -21,7 +21,7 @@ export interface ToolResult {
   /**
    * ツールが**実際にデータを取れたか**。既定 true。
    *
-   * 例外 (システム障害) と引数エラーでは false。**0件は true** — 検索は成功しており、
+   * システム障害でも引数エラーでも false。**0件は true** — 検索は成功しており、
    * 「該当なし」という事実が得られている (#111。0件をエラー扱いしたせいでモデルが
    * 「ツールの一時的なエラー」と誤報し、記憶から捏造した)。
    *
@@ -30,6 +30,21 @@ export interface ToolResult {
    * 数えていた** — #112 の失敗モードそのものを見逃す指標になっていた。
    */
   ok?: boolean;
+  /**
+   * **システムが壊れている**か (例外)。既定 false。
+   *
+   * `ok: false` には性質の違う2つが混ざる。**混ぜたままでは使えない**:
+   *
+   * - **システム障害** (DB が落ちている等) … 本当に壊れている。利用者に警告し、
+   *   eval のゲートを落とすべき。#112 がこれ。
+   * - **引数エラー** (モデルが `civilization=虹` と推測した等) … 壊れていない。
+   *   モデルは正しい引数で呼び直せるし、実際に回復する。利用者への警告は**誤報**になり
+   *   (本番実測: 引用9件付きの正しい回答に「データで裏付けられていません」と出た)、
+   *   ゲートを落とすのも筋違い (モデルの推測ミスは退行ではない)。
+   *
+   * 警告とゲートはこちらだけを見る。根拠の有無 (evidenceRate) は `ok` を見る。
+   */
+  systemFailure?: boolean;
 }
 
 type Format = "original" | "advance";
@@ -65,6 +80,7 @@ export async function runTool(
       case "search_cards": {
         // 引数の検証・正規化は card-search.ts (query 必須をやめ、日本語の文明/種別も受ける)。
         const built = buildCardSearchArgs(args);
+        // 引数エラー。**システム障害ではない** — モデルは正しい引数で呼び直せる。
         if (!built.ok) return { text: `検索条件が不正です: ${built.reason}`, ok: false };
         const { query, civilization, min_cost, max_cost, type } = built.args;
 
@@ -152,6 +168,7 @@ export async function runTool(
         });
         const parsed = schema.safeParse(args);
         if (!parsed.success) {
+          // 引数エラー。**システム障害ではない** — モデルは正しい引数で呼び直せる。
           return {
             text: `ツール引数が不正です: ${parsed.error.issues
               .map((i) => `${i.path.join(".")}: ${i.message}`)
@@ -212,6 +229,7 @@ export async function runTool(
         `「システム障害で情報を確認できませんでした。時間をおいて再度お試しください」と` +
         `だけ伝え、確認できていない内容は一切書かないでください。`,
       ok: false,
+      systemFailure: true,
     };
   }
 }

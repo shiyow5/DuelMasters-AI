@@ -102,8 +102,9 @@ export function aggregate(
    */
   evidenceRate: number | null;
   /**
-   * ツールが失敗した問の件数 (#109)。**0 でなければならない。**
+   * **システム障害**でツールが落ちた問の件数 (#109)。**0 でなければならない。**
    * 失敗しても回答は返ってしまう (モデルが記憶で埋める) ので、ここでしか検出できない。
+   * 引数エラーは含まない (モデルの推測ミスであってシステムの退行ではない)。
    */
   toolFailureItems: number;
   judgeMean: number | null;

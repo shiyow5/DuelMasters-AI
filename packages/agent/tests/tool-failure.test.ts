@@ -54,7 +54,11 @@ describe("streamAgent の toolError イベント", () => {
     invokeMock
       .mockResolvedValueOnce(aiToolCall("search_cards", { query: "ヘブンズゲート" }))
       .mockResolvedValueOnce(new AIMessage("システム障害で確認できませんでした"));
-    runToolMock.mockResolvedValueOnce({ text: "ツール実行に失敗しました", ok: false });
+    runToolMock.mockResolvedValueOnce({
+      text: "ツール実行に失敗しました",
+      ok: false,
+      systemFailure: true,
+    });
 
     const events = [];
     for await (const ev of streamAgent({ message: "ヘブンズゲートは？", mode: "deck" })) {
@@ -88,8 +92,8 @@ describe("streamAgent の toolError イベント", () => {
       .mockResolvedValueOnce(aiToolCall("search_rules", { query: "2回目" }))
       .mockResolvedValueOnce(new AIMessage("確認できませんでした"));
     runToolMock
-      .mockResolvedValueOnce({ text: "失敗1", ok: false })
-      .mockResolvedValueOnce({ text: "失敗2", ok: false });
+      .mockResolvedValueOnce({ text: "失敗1", ok: false, systemFailure: true })
+      .mockResolvedValueOnce({ text: "失敗2", ok: false, systemFailure: true });
 
     const events = [];
     for await (const ev of streamAgent({ message: "質問", mode: "deck" })) events.push(ev);
@@ -117,7 +121,7 @@ describe("streamAgent の toolError イベント", () => {
       invokeMock.mockResolvedValueOnce(aiToolCall("search_cards", { query: `${i}` }));
     }
     invokeMock.mockResolvedValueOnce(new AIMessage("確認できませんでした"));
-    runToolMock.mockResolvedValue({ text: "失敗", ok: false });
+    runToolMock.mockResolvedValue({ text: "失敗", ok: false, systemFailure: true });
 
     const events = [];
     for await (const ev of streamAgent({ message: "質問", mode: "deck" })) events.push(ev);
@@ -129,6 +133,35 @@ describe("streamAgent の toolError イベント", () => {
 
     const done = events.find((e) => e.type === "done");
     expect(done?.type === "done" && done.result.toolFailures).toHaveLength(MAX_ITERATIONS - 1);
+    expect(done?.type === "done" && done.result.toolSuccesses).toBe(0);
+  });
+
+  /**
+   * **引数エラーはシステム障害ではない。**
+   *
+   * 本番で実測した誤報: モデルが `civilization=虹` (存在しない文明) で検索し、ツールは
+   * 引数エラーを返した。モデルはそれを受けて「虹文明は存在しません」と**総合ルール
+   * 106.1/106.2 を引用して正しく答えた** (引用9件)。にもかかわらず web には
+   * 「この回答はデータで裏付けられていません」と警告が出た。
+   *
+   * 引数エラーはモデルの推測ミスであって、システムは壊れていない。モデルは呼び直して
+   * 回復できる。警告もゲート落としも筋違い。根拠の有無は toolSuccesses で測る。
+   */
+  it("引数エラーでは toolError を流さない (システムは壊れていない)", async () => {
+    const { streamAgent } = await import("../src/index.js");
+    invokeMock
+      .mockResolvedValueOnce(aiToolCall("search_cards", { civilization: "虹" }))
+      .mockResolvedValueOnce(new AIMessage("虹文明は存在しません"));
+    // 引数エラー: データは取れていない (ok:false) が、システムは壊れていない
+    runToolMock.mockResolvedValueOnce({ text: "文明「虹」は存在しません", ok: false });
+
+    const events = [];
+    for await (const ev of streamAgent({ message: "虹文明は？", mode: "deck" })) events.push(ev);
+
+    expect(events.filter((e) => e.type === "toolError")).toHaveLength(0);
+    const done = events.find((e) => e.type === "done");
+    expect(done?.type === "done" && done.result.toolFailures).toBeUndefined();
+    // ただし**データは取れていない**ので、根拠としては数えない
     expect(done?.type === "done" && done.result.toolSuccesses).toBe(0);
   });
 

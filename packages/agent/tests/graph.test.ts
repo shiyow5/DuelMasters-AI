@@ -84,7 +84,11 @@ describe("runAgent グラフ制御フロー", () => {
     invokeMock
       .mockResolvedValueOnce(aiToolCall("search_cards", { query: "ヘブンズゲート" }))
       .mockResolvedValueOnce(aiText("システム障害で確認できませんでした"));
-    runToolMock.mockResolvedValueOnce({ text: "ツール実行に失敗しました", ok: false });
+    runToolMock.mockResolvedValueOnce({
+      text: "ツール実行に失敗しました",
+      ok: false,
+      systemFailure: true,
+    });
 
     const out = await runAgent({ message: "ヘブンズゲートは？", mode: "deck" });
 
@@ -93,6 +97,21 @@ describe("runAgent グラフ制御フロー", () => {
     // しかし**データは取れていない**
     expect(out.toolSuccesses).toBe(0);
     expect(out.toolFailures).toEqual(["search_cards"]);
+  });
+
+  it("引数エラーは「失敗」に数えない (システムは壊れていない)", async () => {
+    // モデルが存在しない文明を指定した等。呼び直せば回復するので、利用者への警告も
+    // eval のゲート落としも筋違い。ただし**データは取れていない**ので根拠にはならない。
+    const { runAgent } = await import("../src/index.js");
+    invokeMock
+      .mockResolvedValueOnce(aiToolCall("search_cards", { civilization: "虹" }))
+      .mockResolvedValueOnce(aiText("虹文明は存在しません"));
+    runToolMock.mockResolvedValueOnce({ text: "文明「虹」は存在しません", ok: false });
+
+    const out = await runAgent({ message: "虹文明は？", mode: "deck" });
+
+    expect(out.toolFailures).toBeUndefined();
+    expect(out.toolSuccesses).toBe(0);
   });
 
   it("ツールが成功したら toolSuccesses が増える (0件でも成功)", async () => {
