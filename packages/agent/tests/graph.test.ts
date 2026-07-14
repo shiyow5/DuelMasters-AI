@@ -36,6 +36,9 @@ describe("runAgent グラフ制御フロー", () => {
     invokeMock.mockReset();
     runToolMock.mockReset();
     searchRulesMock.mockReset();
+    // 既定はヒット0件。#108 で integrated も retrieve を通るようになったため、
+    // 明示的にヒットを積まない問でも searchRules が呼ばれる。
+    searchRulesMock.mockResolvedValue({ chunks: [] });
   });
 
   it("ツール無しの応答をそのまま返す (deck モード)", async () => {
@@ -95,6 +98,48 @@ describe("runAgent グラフ制御フロー", () => {
 
     expect(out.response).toBe("一般的な回答");
     expect(out.citations).toBeUndefined();
+  });
+
+  /**
+   * #108: web の既定モードは integrated。ここが retrieve を通らないと、ルールを聞かれても
+   * ツールを呼ぶかは LLM 任せになり、呼ばなければ**記憶だけで答える** (本番実測 8問中1問)。
+   */
+  it("integrated モードも事前 RAG を通り、関連が強ければ citations を付ける", async () => {
+    const { runAgent } = await import("../src/index.js");
+    // 実測したルール質問の top スコア帯 (0.764〜0.897)。
+    searchRulesMock.mockResolvedValueOnce({
+      chunks: [{ text: "マナゾーンには1ターンに1枚", meta: { article: "501.2" }, score: 0.85 }],
+    });
+    invokeMock.mockResolvedValueOnce(aiText("1ターンに1枚です"));
+
+    const out = await runAgent({ message: "マナゾーンに置ける枚数は？", mode: "integrated" });
+
+    expect(searchRulesMock).toHaveBeenCalled();
+    expect(out.citations).toHaveLength(1);
+  });
+
+  it("integrated でルールと無関係な質問なら条文を積まない", async () => {
+    const { runAgent } = await import("../src/index.js");
+    // 実測した非ルール質問の top スコア帯 (0.576〜0.674)。デッキ構築の質問に
+    // 無関係な条文と出典が付くのを防ぐ。
+    searchRulesMock.mockResolvedValueOnce({
+      chunks: [{ text: "無関係な条文", meta: { article: "101.1" }, score: 0.62 }],
+    });
+    invokeMock.mockResolvedValueOnce(aiText("デッキを組みます"));
+
+    const out = await runAgent({ message: "赤単速攻を組んで", mode: "integrated" });
+
+    expect(searchRulesMock).toHaveBeenCalled();
+    expect(out.citations).toBeUndefined();
+  });
+
+  it("deck / meta モードは事前 RAG を通らない", async () => {
+    const { runAgent } = await import("../src/index.js");
+    invokeMock.mockResolvedValueOnce(aiText("ティア表です"));
+
+    await runAgent({ message: "ティアは？", mode: "meta" });
+
+    expect(searchRulesMock).not.toHaveBeenCalled();
   });
 
   it("ツールを呼び続けても MAX_ITERATIONS で打ち切り finalize で最終回答する", async () => {

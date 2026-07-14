@@ -55,6 +55,11 @@ async function evalItem(item: GoldenItem, noJudge: boolean): Promise<ItemResult>
       res.citation = citationScore(item.expectedCitations, out.citations ?? []);
     }
     if (item.expectedFacts) res.factCoverage = factCoverage(item.expectedFacts, out.response);
+    // 根拠が付いたか (#108)。**ツールを呼んだかでは測れない** — 事前 RAG が条文を渡すと
+    // モデルは search_rules を呼ばずに答え、それは正しい。引用かツールのどちらかがあればよい。
+    if (item.expectEvidence) {
+      res.hasEvidence = (out.citations?.length ?? 0) > 0 || (out.toolCalls?.length ?? 0) > 0;
+    }
     // 本文に書いた条番号が、実際に retrieve した資料にあるか (#99)。
     // LLM は実在しない条番号を平然と書くので、ここが唯一の機械的な番人になる。
     res.citationGrounding = citationGrounding(out.response, out.ungroundedCitations ?? []);
@@ -97,6 +102,7 @@ function renderReport(agg: ReturnType<typeof aggregate>): string {
     `- ツール軌跡 recall / precision: **${fmt(agg.toolRecall)}** / **${fmt(agg.toolPrecision)}**`,
     `- 引用 recall / precision: **${fmt(agg.citationRecall)}** / ${fmt(agg.citationPrecision)}`,
     `- 出典の裏取り (本文の条番号が資料にあるか): **${fmt(agg.citationGrounding)}**`,
+    `- 根拠あり率 (引用 or ツール結果。1未満 = 記憶だけで答えた問がある): **${fmt(agg.evidenceRate)}**`,
     `- 事実カバレッジ: **${fmt(agg.factCoverage)}**`,
     `- judge 平均 (1-5): **${fmt(agg.judgeMean)}**` +
       (agg.judgeFailures > 0 ? ` (**judge 失敗 ${agg.judgeFailures}件**)` : ""),

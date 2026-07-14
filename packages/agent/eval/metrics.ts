@@ -77,6 +77,7 @@ export function aggregate(
     citation?: PR;
     citationGrounding?: number | null;
     factCoverage?: number;
+    hasEvidence?: boolean;
     judgeScore?: number;
     judgeFailed?: boolean;
     error?: string;
@@ -94,6 +95,11 @@ export function aggregate(
    */
   citationGrounding: number | null;
   factCoverage: number | null;
+  /**
+   * 根拠 (引用 or ツール結果) が付いた割合 (#108)。expectEvidence の問だけが対象。
+   * これが 1 未満 = 記憶だけで答えた問がある。
+   */
+  evidenceRate: number | null;
   judgeMean: number | null;
   /** judge を回したのに失敗した件数。部分的な judge 障害を検出する。 */
   judgeFailures: number;
@@ -113,6 +119,10 @@ export function aggregate(
       ok.map((r) => r.citationGrounding).filter((v): v is number => v !== undefined && v !== null),
     ),
     factCoverage: mean(ok.filter((r) => r.factCoverage !== undefined).map((r) => r.factCoverage!)),
+    // 根拠が要る問だけを分母にする。「根拠なしで断るのが正解」の問 (遊戯王など) は混ぜない。
+    evidenceRate: mean(
+      ok.filter((r) => r.hasEvidence !== undefined).map((r) => (r.hasEvidence ? 1 : 0)),
+    ),
     judgeMean: mean(ok.filter((r) => r.judgeScore !== undefined).map((r) => r.judgeScore!)),
     judgeFailures: ok.filter((r) => r.judgeFailed).length,
   };

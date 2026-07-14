@@ -25,6 +25,43 @@ export const RAG_CONTEXT_HEADER = `以下の資料を根拠に回答してくだ
 食い違う場合は【総合ルール】を優先してください。
 資料に無いことは推測で断定せず、分からないと述べてください。`;
 
+/**
+ * integrated モードでの RAG context の前置き (#108)。
+ *
+ * rule モードと同じ強い前置き (「資料に無いことは分からないと述べてください」) は使えない。
+ * integrated はデッキ構築や環境の質問も受けるため、その前置きを付けると
+ * **「デッキの組み方は資料に無いので分かりません」と拒否しかねない**。
+ * 「ルールの話なら必ずこれを根拠に、そうでなければ無視してよい」と伝える。
+ */
+export const INTEGRATED_RAG_CONTEXT_HEADER = `以下はルール検索の結果です。
+**ルールや裁定に関わる質問なら、必ずこの資料を根拠にして答えてください** (記憶で答えないこと)。
+【総合ルール】が現行の一次情報です。【裁定Q&A】には改定前の古い回答が混じることがあるので、食い違う場合は【総合ルール】を優先してください。
+デッキ構築・カード検索・環境分析など、ルールと関係ない質問であればこの資料は無視して構いません。`;
+
+/**
+ * integrated で RAG 結果を採用する最小スコア (#108)。
+ *
+ * integrated では「ルールの質問かどうか」が事前に分からない。常に条文を積むと、デッキ構築の
+ * 質問にも無関係な条文と出典が付いてしまう。かといって LLM の判断に任せると**呼ばない**
+ * (本番実測 8問中1問がツール未使用・引用ゼロ)。そこで検索スコアで機械的に足切りする。
+ *
+ * 実測 (本番相当データ / rule_chunks 3594件、hybridSearch の top スコア):
+ *   ルール質問        0.764 〜 0.897  (S・トリガー / マナゾーン / ブロッカー / 召喚酔い /
+ *                                     山札切れ / 進化クリーチャーの召喚酔い)
+ *   非ルール質問      0.576 〜 0.674  (赤単速攻を組んで / ボルシャックを検索 /
+ *                                     ティア1は / 遊戯王のルール / デッキ改善案)
+ * 0.674 と 0.764 の間に谷があるので、その下側に寄せて 0.70 を採る。
+ *
+ * 割った場合は「条文を積まない」= 現状の挙動 (モデルが必要と思えば search_rules を呼ぶ) に
+ * 戻るだけで、悪化はしない。取りこぼしより誤爆を嫌って高くしすぎない方が良い。
+ */
+export const INTEGRATED_RAG_MIN_SCORE = 0.7;
+
+/** 事前 RAG を通すモード。integrated は web の既定なので、ここを外すと根拠ゼロ回答が出る。 */
+function usesRetrieval(mode: string): boolean {
+  return mode === "rule" || mode === "integrated";
+}
+
 /** メッセージからテキストを取り出す (v1 の .text getter、無ければ content)。 */
 function messageText(msg: BaseMessage | undefined): string {
   if (!msg) return "";
@@ -71,14 +108,25 @@ function sourceLabel(meta: Record<string, unknown>): string {
 }
 
 /**
- * rule モードの事前 RAG。条文を context として注入し citations を state に載せる。
- * ヒットが無ければ何もしない (通常のチャットにフォールバック)。
+ * RAG 結果を採用するか。rule モードは常に採用する (利用者が明示的にルールを聞いている)。
+ * integrated は「ルールの質問かどうか」が分からないので、検索スコアで足切りする。
+ */
+export function acceptsRagResult(mode: string, chunks: Array<{ score: number }>): boolean {
+  if (chunks.length === 0) return false;
+  if (mode !== "integrated") return true;
+  const top = Math.max(...chunks.map((c) => c.score));
+  return top >= INTEGRATED_RAG_MIN_SCORE;
+}
+
+/**
+ * 事前 RAG (rule / integrated)。条文を context として注入し citations を state に載せる。
+ * ヒットが無い、または integrated で関連が薄ければ何もしない (通常のチャットにフォールバック)。
  */
 async function retrieveNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
   const query = latestUserQuery(state.messages);
   if (!query) return {};
   const result = await searchRules(query);
-  if (result.chunks.length === 0) return {};
+  if (!acceptsRagResult(state.mode, result.chunks)) return {};
   const citations: Citation[] = result.chunks.map((ch) => ({
     text: ch.text.slice(0, 100),
     ...ch.meta,
@@ -87,11 +135,15 @@ async function retrieveNode(state: AgentStateType): Promise<Partial<AgentStateTy
   return { ragContext: formatRagContext(result.chunks), citations };
 }
 
-/** system 指示を組み立てる (rule モードは RAG 条文を畳み込む)。 */
-function buildSystemPrompt(state: AgentStateType): SystemMessage {
+/**
+ * system 指示を組み立てる (事前 RAG の条文を畳み込む)。
+ * 前置きはモードで変える — integrated に rule 用の強い前置きを付けるとデッキ構築を拒否しかねない。
+ */
+export function buildSystemPrompt(state: AgentStateType): SystemMessage {
   const base = SYSTEM_PROMPTS[state.mode];
-  const text = state.ragContext ? `${base}\n\n${RAG_CONTEXT_HEADER}\n\n${state.ragContext}` : base;
-  return new SystemMessage(text);
+  if (!state.ragContext) return new SystemMessage(base);
+  const header = state.mode === "integrated" ? INTEGRATED_RAG_CONTEXT_HEADER : RAG_CONTEXT_HEADER;
+  return new SystemMessage(`${base}\n\n${header}\n\n${state.ragContext}`);
 }
 
 /** LLM 呼び出し。ツール bind + コスト優先フォールバック。iterations を進める。 */
@@ -162,14 +214,20 @@ function routeAfterAgent(state: AgentStateType): "tools" | "finalize" | typeof E
   return state.iterations < MAX_ITERATIONS ? "tools" : "finalize";
 }
 
-/** エージェントグラフを構築する。rule モードは先に RAG、それ以外は直接 agent へ。 */
+/**
+ * エージェントグラフを構築する。rule / integrated は先に RAG、deck / meta は直接 agent へ。
+ *
+ * integrated を retrieve に通すのが #108 の修正。**web の既定モードは integrated** なので、
+ * ここを外すと「ルールを聞いたのにツールを1つも呼ばず、記憶だけで答える」が起きる
+ * (本番実測 8問中1問)。プロンプトで「search_rules を呼べ」と書いても守られないことは実証済み。
+ */
 export function buildAgentGraph() {
   return new StateGraph(AgentState)
     .addNode("retrieve", retrieveNode)
     .addNode("agent", agentNode)
     .addNode("tools", toolsNode)
     .addNode("finalize", finalizeNode)
-    .addConditionalEdges(START, (state) => (state.mode === "rule" ? "retrieve" : "agent"), [
+    .addConditionalEdges(START, (state) => (usesRetrieval(state.mode) ? "retrieve" : "agent"), [
       "retrieve",
       "agent",
     ])
