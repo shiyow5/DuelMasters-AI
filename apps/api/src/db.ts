@@ -55,10 +55,11 @@ export const dbEnv: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) 
   try {
     await runWithSql(sql, () => next());
   } catch (err) {
+    // Hono の errorHandler をすり抜けた throw (非 Error の throw 等)。接続を閉じてから投げ直す。
     c.executionCtx.waitUntil(sql.end());
     throw err;
   }
-  const { res, closed } = closeAfterBody(c.res, () => sql.end());
+  const { res, closed } = closeAfterBody(c.req.method, c.res, () => sql.end());
   c.res = res;
   c.executionCtx.waitUntil(closed);
 };
@@ -72,17 +73,27 @@ export const dbEnv: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) 
  *
  * ルート側の opt-in (「ストリームするルートは寿命を延ばしてね」) にはしない。忘れれば無言で
  * 同じ壊れ方に戻り、しかも eval では検出できないため。**本文を包み直して構造的に保証する。**
+ *
+ * **HEAD は包んではいけない。** Hono は HEAD を GET として処理し、その結果を
+ * `new Response(null, res)` で包んで本文を捨てる。包み直すと誰も読まないので `pipeTo` が
+ * 永久に解決せず、close() が呼ばれない = 接続リーク。/health は未認証・レート制限外なので、
+ * HEAD を連打されるだけで Hyperdrive のプールを枯らせてしまう。
+ * (Hono 公式の compress ミドルウェアも同じ理由で HEAD を除外している。)
+ *
+ * 非ストリーミング応答も包むため、接続はクライアントが本文を受け取り終えるまで生きる。
+ * 小さな JSON では実質ゼロだが、ここは「取りこぼさないこと」を速度より優先している。
  */
 function closeAfterBody(
+  method: string,
   original: Response,
   close: () => Promise<void>,
 ): { res: Response; closed: Promise<void> } {
-  if (!original.body) return { res: original, closed: close() };
+  if (method === "HEAD" || !original.body) return { res: original, closed: close() };
 
   const { readable, writable } = new TransformStream();
   const closed = original.body
     .pipeTo(writable)
-    // クライアント切断 (ブラウザを閉じた等) で reject する。接続は下で必ず閉じる。
+    // クライアント切断 (ブラウザを閉じた等) で reject する。接続は必ず閉じる。
     .catch(() => {})
     .then(close);
 

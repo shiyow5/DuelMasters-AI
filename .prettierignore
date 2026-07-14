@@ -4,4 +4,6 @@ dist
 .next
 coverage
 .vercel
+# wrangler dev のバンドル生成物。format:check が落ちる (ローカルで wrangler dev を回した後だけ)
+.wrangler
 pnpm-lock.yaml

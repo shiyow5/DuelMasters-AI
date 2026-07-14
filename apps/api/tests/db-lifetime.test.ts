@@ -120,6 +120,8 @@ describe("dbEnv の DB 接続寿命", () => {
   });
 
   it("ハンドラが投げても接続を閉じる (接続リーク防止)", async () => {
+    // Hono は例外を errorHandler で 500 応答に変換するので、dbEnv の catch には届かない。
+    // 500 の本文を包む通常経路を通って閉じる — 「どの経路でも必ず閉じる」ことを確かめる。
     const app = new Hono();
     app.use("*", dbEnv);
     app.get("/boom", () => {
@@ -130,6 +132,22 @@ describe("dbEnv の DB 接続寿命", () => {
     const res = await app.request("/boom", {}, ENV, ctx);
     await res.text();
     await settle();
+
+    expect(fake.ended).toBe(true);
+  });
+
+  it("HEAD でも接続を閉じる (未認証の /health を連打されるとプールが枯れる)", async () => {
+    // Hono は HEAD を GET として処理し、その結果を `new Response(null, res)` で包んで
+    // **本文を捨てる**。よって本文を包み直すと誰も読まず pipeTo が永久に解決せず、
+    // sql.end() が呼ばれない = 接続リーク。/health は未認証・レート制限外なので、
+    // HEAD を連打されるだけで Hyperdrive のプールを枯らせてしまう。
+    const app = new Hono();
+    app.use("*", dbEnv);
+    app.get("/health", (c) => c.json({ status: "ok" }));
+
+    const { ctx, settle } = makeCtx();
+    await app.request("/health", { method: "HEAD" }, ENV, ctx);
+    await Promise.race([settle(), new Promise((r) => setTimeout(r, 500))]);
 
     expect(fake.ended).toBe(true);
   });
