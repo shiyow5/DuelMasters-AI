@@ -119,8 +119,17 @@ export function parseRulingListPage(html: string): RulingItem[] {
  * 現行の裁定一覧を集める (HTML ページング)。
  *
  * REST に出ていないので HTML を舐めるしかない。最終ページを超えると 404 = 正常終端。
- * それ以外のエラーは**サイレントな部分取込を避けるため** job を失敗させる
- * (部分取込のまま prune が走ると、取れなかったぶんが本番から消える)。
+ *
+ * ## **サイレントな部分取込を絶対に許さない**
+ *
+ * 末尾の prune は `qa_id NOT IN (keep)` で掃除する。**取り込めなかった裁定は本番から消える。**
+ *
+ * HTTP エラーで throw するだけでは足りない。**公式サイトが HTML 構造を変えたら、
+ * 200 OK なのに `parseRulingListPage` が 0件を返す。** これを「ページ終端」と読むと、
+ * 現行の裁定を1件も取らずに prune へ進み、**取り込み済みの約3,955件を全部消す**
+ * (このジョブが直そうとした欠落を、自分で作り直すことになる)。
+ *
+ * 1ページ目が 0件なら**必ず落とす**。数千件ある一覧の1ページ目が空になることはあり得ない。
  */
 export async function fetchCurrentRulingList(limit?: number): Promise<RulingItem[]> {
   const out: RulingItem[] = [];
@@ -134,7 +143,17 @@ export async function fetchCurrentRulingList(limit?: number): Promise<RulingItem
       throw err;
     }
     const items = parseRulingListPage(html);
-    if (items.length === 0) break;
+    if (items.length === 0) {
+      if (page === 1) {
+        // **ページ構造が変わった。** 「終端」と区別できないまま先へ進ませない。
+        throw new Error(
+          `現行の裁定一覧 (${url}) から1件も取れなかった。公式サイトの HTML 構造が` +
+            `変わった可能性がある。このまま進むと prune が取り込み済みの現行裁定を全部消すので、` +
+            `ここで止める。parseRulingListPage のセレクタ (ul.newsList03 > li) を確認すること。`,
+        );
+      }
+      break;
+    }
     for (const item of items) {
       out.push(item);
       if (limit && out.length >= limit) return out.slice(0, limit);
@@ -249,9 +268,14 @@ export async function runIngestRulings(opts: { limit?: number; version?: string 
   const version = opts.version ?? today();
 
   // **現行と過去の両方を取る** (#123)。片方だけだと、末尾の prune がもう片方を全部消す。
+  //
+  // limit は**合算に対して**効かせる。集合ごとに limit を渡すと最大 2×limit 件になり、
+  // 「--limit 10 で 10件入るはず」という素直な期待を裏切る (開発・スモーク用の引数)。
   const current = await fetchCurrentRulingList(opts.limit);
   const archived = await fetchRulingList(opts.limit);
-  const fetched = [...current, ...archived];
+  const fetched = opts.limit
+    ? [...current, ...archived].slice(0, opts.limit)
+    : [...current, ...archived];
   const list = dedupeRulingList(fetched);
   const duplicates = fetched.length - list.length;
   console.log(
@@ -316,11 +340,28 @@ export async function runIngestRulings(opts: { limit?: number; version?: string 
   }
   await flush();
 
-  // 全件取込のときだけ、対象から外れた裁定を掃除する。upsert は qa_id 単位で行うため、
-  // これをやらないと重複質問の古い方 (改定前の裁定) や公式から消えた裁定が残り続ける。
-  //
-  // qa_id を持たない ruling 行は、URL 単位で入れる旧 runIngestFaq('ruling', ...) 経路の残骸。
-  // SQL の NOT IN は NULL に対して UNKNOWN を返し行が残ってしまうため、明示的に消す。
+  /**
+   * 全件取込のときだけ、対象から外れた裁定を掃除する。upsert は qa_id 単位で行うため、
+   * これをやらないと重複質問の古い方 (改定前の裁定) や公式から消えた裁定が残り続ける。
+   *
+   * qa_id を持たない ruling 行は、URL 単位で入れる旧 runIngestFaq('ruling', ...) 経路の残骸。
+   * SQL の NOT IN は NULL に対して UNKNOWN を返し行が残ってしまうため、明示的に消す。
+   *
+   * ## **安全弁: 片方の集合が空なら prune しない**
+   *
+   * prune は `qa_id NOT IN (keep)` で消す。**片方の取得に失敗して 0件になったまま prune が
+   * 走ると、もう片方を全部消す。** fetchCurrentRulingList は1ページ目が空なら throw するが、
+   * 取得経路が増えたときに同じ穴を作らないよう、**消す直前にもう一度確かめる**。
+   *
+   * 両集合とも数千件ある。どちらかが 0件になるのは異常であって、正常な状態ではない。
+   */
+  if (opts.limit === undefined && (current.length === 0 || archived.length === 0)) {
+    throw new Error(
+      `裁定の取得が片側だけ 0件だった (現行 ${current.length}件 / 過去 ${archived.length}件)。` +
+        `このまま prune するともう片方を全部消すので、何も消さずに落とす。`,
+    );
+  }
+
   let pruned = 0;
   if (opts.limit === undefined && list.length > 0) {
     const keep = list.map((i) => String(i.id));

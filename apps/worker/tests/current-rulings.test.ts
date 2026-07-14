@@ -117,3 +117,49 @@ describe("dedupeRulingList (現行 > 過去)", () => {
     expect(list[0].source).toBe("current");
   });
 });
+
+/**
+ * **サイレントな部分取込を許さない** (#123 のレビュー指摘)。
+ *
+ * 末尾の prune は `qa_id NOT IN (keep)` で掃除する。取り込めなかった裁定は本番から消える。
+ *
+ * HTTP エラーで throw するだけでは足りない。**公式サイトが HTML 構造を変えたら、200 OK なのに
+ * `parseRulingListPage` が 0件を返す。** これを「ページ終端」と読むと、現行の裁定を1件も
+ * 取らずに prune へ進み、**取り込み済みの約3,955件を全部消す** —
+ * このジョブが直そうとした欠落を、自分で作り直すことになる。
+ */
+describe("HTML 構造が変わったときに落ちる", () => {
+  it("**1ページ目が0件なら throw する** (「終端」と区別できないまま進ませない)", async () => {
+    const { fetchCurrentRulingList } = await import("../src/jobs/ingest-rulings.js");
+    const original = globalThis.fetch;
+    // 200 OK だが構造が変わって裁定リンクが1件も無いページ
+    globalThis.fetch = (async () =>
+      new Response("<html><body><ul class='changedClass'></ul></body></html>", {
+        status: 200,
+      })) as typeof fetch;
+
+    try {
+      await expect(fetchCurrentRulingList()).rejects.toThrow(/1件も取れなかった/);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("2ページ目以降が0件なら正常終端 (件数が10の倍数のときに起こりうる)", async () => {
+    const { fetchCurrentRulingList } = await import("../src/jobs/ingest-rulings.js");
+    const original = globalThis.fetch;
+    let call = 0;
+    globalThis.fetch = (async () => {
+      call++;
+      // 1ページ目は実データ、2ページ目は空
+      return new Response(call === 1 ? listHtml : "<html><body></body></html>", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const items = await fetchCurrentRulingList();
+      expect(items).toHaveLength(2); // フィクスチャの2件
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});
