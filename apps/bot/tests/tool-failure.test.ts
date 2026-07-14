@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { withToolFailureNotice } from "../src/interactions/run.js";
+import { truncate } from "../src/interactions/embeds.js";
 
 /**
  * Discord でもツール失敗を隠さない (#109)。
@@ -29,5 +30,18 @@ describe("withToolFailureNotice", () => {
       toolFailures: ["search_cards", "search_cards"],
     });
     expect(out.match(/カード検索/g)).toHaveLength(1);
+  });
+
+  it("Discord の 2000 文字制限で切られても、警告は消えない", () => {
+    // truncate は**末尾**を切る。警告を先頭に付けているので、長い回答が切り詰められても
+    // 警告は必ず残る。**回答の完全さより警告を優先する**という判断をここで固定しておく。
+    const long = "あ".repeat(3000);
+    const out = truncate(
+      withToolFailureNotice({ response: long, toolFailures: ["search_cards"] }),
+      2000,
+    );
+    expect(out.length).toBeLessThanOrEqual(2000);
+    expect(out).toContain("カード検索に失敗しました");
+    expect(out).toContain("裏付けられていません");
   });
 });

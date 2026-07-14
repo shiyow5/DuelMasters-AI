@@ -98,7 +98,13 @@ interface ChatResponse {
   toolFailures?: string[];
 }
 
-/** 失敗表示用の名詞ラベル (web の tools.ts と同じ方針)。 */
+/**
+ * 失敗表示用の名詞ラベル。
+ *
+ * **web 側 (`apps/web/src/lib/tools.ts`) にも同じ表がある。** web は意図的に workspace
+ * パッケージへ依存していないため共有していない。知らないツール名は生の名前にフォールバック
+ * するだけなので、片方を更新し忘れても壊れない (表示が英語になるだけ)。
+ */
 const TOOL_NOUNS: Record<string, string> = {
   search_rules: "ルール検索",
   search_cards: "カード検索",

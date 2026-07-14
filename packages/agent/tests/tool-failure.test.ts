@@ -70,6 +70,68 @@ describe("streamAgent の toolError イベント", () => {
     expect(done?.type === "done" && done.result.toolSuccesses).toBe(0);
   });
 
+  /**
+   * **この PR が依存している不変条件。**
+   *
+   * `toolFailures` は上書きリデューサだが、toolsNode 側が `[...state.toolFailures, ...failed]`
+   * と積み上げて返すので、実行を通して単調増加する。streamAgent はその**差分**だけを流す
+   * (`announcedFailures`)。values ストリームは同じ state を何度も流すので、差分を取らないと
+   * 同じ失敗を何度も流してしまう。
+   *
+   * ここが壊れると「2周目の失敗が流れない」「同じ失敗が二重に出る」といった形で、
+   * **失敗の可視化そのものが信用できなくなる**。
+   */
+  it("ツールループを2周して両方失敗しても、取りこぼしも重複もしない", async () => {
+    const { streamAgent } = await import("../src/index.js");
+    invokeMock
+      .mockResolvedValueOnce(aiToolCall("search_cards", { query: "1回目" }))
+      .mockResolvedValueOnce(aiToolCall("search_rules", { query: "2回目" }))
+      .mockResolvedValueOnce(new AIMessage("確認できませんでした"));
+    runToolMock
+      .mockResolvedValueOnce({ text: "失敗1", ok: false })
+      .mockResolvedValueOnce({ text: "失敗2", ok: false });
+
+    const events = [];
+    for await (const ev of streamAgent({ message: "質問", mode: "deck" })) events.push(ev);
+
+    expect(events.filter((e) => e.type === "toolError")).toEqual([
+      { type: "toolError", name: "search_cards" },
+      { type: "toolError", name: "search_rules" },
+    ]);
+    const done = events.find((e) => e.type === "done");
+    expect(done?.type === "done" && done.result.toolFailures).toEqual([
+      "search_cards",
+      "search_rules",
+    ]);
+  });
+
+  /**
+   * finalizeNode は反復上限に達したとき、**未実行のツール呼び出しを含む AIMessage を
+   * RemoveMessage で state から消す**。この巻き戻しが toolFailures を壊さないことを固定する。
+   * (壊れると、上限に達した回だけ失敗が消えて「静かに間違った回答」に戻る。)
+   */
+  it("MAX_ITERATIONS で finalize に落ちても、それまでの失敗は消えない", async () => {
+    const { streamAgent, MAX_ITERATIONS } = await import("../src/index.js");
+    // 毎回ツールを呼び続けるモデル。上限到達後、finalize ではテキストを返す。
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      invokeMock.mockResolvedValueOnce(aiToolCall("search_cards", { query: `${i}` }));
+    }
+    invokeMock.mockResolvedValueOnce(new AIMessage("確認できませんでした"));
+    runToolMock.mockResolvedValue({ text: "失敗", ok: false });
+
+    const events = [];
+    for await (const ev of streamAgent({ message: "質問", mode: "deck" })) events.push(ev);
+
+    // 上限に達した回のツール呼び出しは**実行されない** (finalize が捨てる) ので、
+    // 失敗は MAX_ITERATIONS - 1 回。
+    const errors = events.filter((e) => e.type === "toolError");
+    expect(errors).toHaveLength(MAX_ITERATIONS - 1);
+
+    const done = events.find((e) => e.type === "done");
+    expect(done?.type === "done" && done.result.toolFailures).toHaveLength(MAX_ITERATIONS - 1);
+    expect(done?.type === "done" && done.result.toolSuccesses).toBe(0);
+  });
+
   it("成功したら toolError は流れない", async () => {
     const { streamAgent } = await import("../src/index.js");
     invokeMock

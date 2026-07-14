@@ -79,6 +79,11 @@ export function toolLabel(name: string, args: Record<string, unknown> = {}): str
  *
  * TOOL_LABELS は進行表示用の**文**なので (「カードを検索しています」)、
  * 「〜に失敗しました」に繋ぐと日本語が壊れる。名詞を別に持つ。
+ *
+ * **bot 側 (`apps/bot/src/interactions/run.ts`) にも同じ表がある。** web は意図的に
+ * workspace パッケージへ依存しておらず (types.ts は「api の応答形状の写し」)、共有すると
+ * その設計判断を覆すことになるので複製している。知らないツール名は生の名前にフォールバック
+ * するだけなので、片方を更新し忘れても壊れない (表示が英語になるだけ)。
  */
 const TOOL_NOUNS: Record<string, string> = {
   search_rules: "ルール検索",
