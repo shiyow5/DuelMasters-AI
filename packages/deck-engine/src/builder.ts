@@ -1,7 +1,15 @@
-import { DECK_SIZE, MAX_COPIES, ROLE_TAGS, type Format, type DeckEntry } from "@dm-ai/core";
+import {
+  DECK_SIZE,
+  MAX_COPIES,
+  ROLE_TAGS,
+  DECK_GUIDELINES,
+  type Format,
+  type DeckEntry,
+} from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import { classifyRegulations, applyRegulationToRequired } from "./regulation-rules.js";
 import { pickReplacements } from "./suggest.js";
+import { deriveStrategy } from "./strategy.js";
 
 export interface BuildConstraints {
   /** 必須カード */
@@ -56,11 +64,19 @@ export async function autoBuild(
     })),
   );
 
+  // 戦略語 (速攻/コントロール等) を制約へ翻訳し、コア語 (種族・カード名) を検索に使う (#128)。
+  const strat = deriveStrategy(theme);
+  const searchTheme = strat.core;
+
   // 制約フィルタ断片 (該当なしは空フラグメント)。
   // civ 判定は jsonb 配列の要素一致 (= ANY)。postgres.js は JS 配列を text[] にバインドする。
   const excludeCards = constraints.excludeCards ?? [];
   const civs = constraints.civilizations ?? [];
-  const maxCost = constraints.maxCost;
+  // 最大コスト: ユーザー指定 > 戦略プロファイル (速攻なら 5) > 無制限。
+  const maxCost = constraints.maxCost ?? strat.profile?.maxCost;
+  // S・トリガーの下限。DECK_GUIDELINES.triggerCount を必ず満たす (コントロールはより厚く)。
+  // これで autoBuild の出力が兄弟の scoreDeck を通り、「トリガー/受け札が少ない」の内部矛盾が消える。
+  const triggerFloor = Math.max(DECK_GUIDELINES.triggerCount, strat.profile?.triggerFloor ?? 0);
   const excludeFrag = excludeCards.length > 0 ? sql`AND name NOT IN ${sql(excludeCards)}` : sql``;
   const civFrag =
     civs.length > 0
@@ -88,10 +104,10 @@ export async function autoBuild(
     SELECT name, cost, type, tags, civilizations, is_shield_trigger, is_rainbow
     FROM cards
     WHERE (
-      text ILIKE ${"%" + theme + "%"}
-      OR name ILIKE ${"%" + theme + "%"}
+      text ILIKE ${"%" + searchTheme + "%"}
+      OR name ILIKE ${"%" + searchTheme + "%"}
       OR EXISTS (
-        SELECT 1 FROM jsonb_array_elements_text(races) r WHERE r ILIKE ${"%" + theme + "%"}
+        SELECT 1 FROM jsonb_array_elements_text(races) r WHERE r ILIKE ${"%" + searchTheme + "%"}
       )
     )
     ${excludeFrag} ${civFrag} ${costFrag} ${playableFrag}
@@ -109,7 +125,10 @@ export async function autoBuild(
     ブースト: 4,
   };
 
-  const minCreatures = constraints.minCreatures ?? Math.round(DECK_SIZE * MIN_CREATURE_RATIO);
+  // 最低クリーチャー枚数: ユーザー指定 > 戦略プロファイルの比率 (速攻 0.65 / コントロール 0.4) > 既定 0.55。
+  const minCreatures =
+    constraints.minCreatures ??
+    Math.round(DECK_SIZE * (strat.profile?.minCreatureRatio ?? MIN_CREATURE_RATIO));
 
   // 採用済み枚数を名前ごとに持つ。cap 付きで部分的にしか入らなかったカードを
   // 後のパスで上限まで積み増せるようにするため、Set (使用済みフラグ) では足りない。
@@ -176,6 +195,116 @@ export async function autoBuild(
     counts.set(name, already + add);
     totalCards += add;
     return add;
+  }
+
+  /**
+   * S・トリガーを下限 (triggerFloor) 枚まで保証する (#128 Stage 1)。
+   *
+   * **なぜ swap が要るか**: step1-6 でテーマのクリーチャー等が 40枚を埋め切ると、step6 の
+   * トリガー補充が発火せず、トリガーの少ないデッキがそのまま返る。すると兄弟の `scoreDeck` に
+   * 「S・トリガーが少ない/受け札が少ない」と減点される (構築と評価の内部矛盾)。
+   *
+   * S・トリガーは受け札 (`isDefensiveCard`) の部分集合なので、**トリガーを下限まで満たせば
+   * 受け札の下限も自動的に満たす**。判定は `tags` ではなく `is_shield_trigger` 列で行う (#120 の思想)。
+   *
+   * 40枚のときは「外して良いカード」を1枚抜いてトリガーを差し込む。外して良い =
+   * トリガーでない / 必須でない / クリーチャー下限を割らない。トリガー候補が無いプールでは
+   * 何もしない (40枚は崩さない)。
+   */
+  async function ensureTriggerFloor(floor: number): Promise<void> {
+    const names = Array.from(counts.keys());
+    if (names.length === 0) return;
+
+    // 現在の各カードの属性を1回で引く (再録の同名複数行は DISTINCT ON で1行に)。
+    const infoRows = await sql`
+      SELECT DISTINCT ON (name) name, cost, type, is_shield_trigger
+      FROM cards WHERE name IN ${sql(names)} ORDER BY name
+    `;
+    const info = new Map(
+      infoRows.map((r) => [
+        r.name as string,
+        {
+          cost: (r.cost as number) ?? 0,
+          type: (r.type as string) ?? "",
+          trigger: (r.is_shield_trigger as boolean) ?? false,
+        },
+      ]),
+    );
+    const isTrigger = (name: string) => info.get(name)?.trigger ?? false;
+    const countTriggers = () => entries.reduce((s, e) => s + (isTrigger(e.name) ? e.count : 0), 0);
+
+    let triggers = countTriggers();
+    if (triggers >= floor) return;
+
+    // 追加候補の S・トリガー (制約順守・コスト昇順)。除外/文明/コスト上限を守る。
+    const candRows = await sql`
+      SELECT name, cost, type, is_shield_trigger
+      FROM cards
+      WHERE is_shield_trigger = true
+        ${excludeFrag} ${civFrag} ${costFrag} ${playableFrag}
+      ORDER BY cost ASC
+      LIMIT 60
+    `;
+    const requiredSet = new Set(constraints.requiredCards ?? []);
+
+    /** 40枚のとき、外して良いカードを1枚減らす。減らせたら true。 */
+    function removeOneForSwap(addingName: string): boolean {
+      let best: { name: string; cost: number; creature: boolean } | null = null;
+      for (const e of entries) {
+        if (e.name === addingName) continue;
+        if (requiredSet.has(e.name)) continue;
+        if (isTrigger(e.name)) continue;
+        const meta = info.get(e.name);
+        const creature = isCreatureType(meta?.type);
+        // 攻撃役の下限を割るクリーチャーは外さない。
+        if (creature && creatureCount <= minCreatures) continue;
+        const cost = meta?.cost ?? 0;
+        // 非クリーチャー優先 → 高コスト優先 (最も余剰なフィラーから抜く)。
+        const better = best === null || (creature === best.creature ? cost > best.cost : !creature);
+        if (better) best = { name: e.name, cost, creature };
+      }
+      if (best === null) return false;
+      const idx = entries.findIndex((e) => e.name === best!.name);
+      const e = entries[idx];
+      entries[idx] = { ...e, count: e.count - 1 };
+      // counts は entries と同期している。entries 側の真の値から引く (?? フォールバックに頼らない)。
+      counts.set(e.name, e.count - 1);
+      if (best.creature) creatureCount -= 1;
+      totalCards -= 1;
+      if (entries[idx].count <= 0) entries.splice(idx, 1);
+      return true;
+    }
+
+    /** トリガーを1枚差し込む (roleQuota は下限優先で無視する)。 */
+    function addOneTrigger(card: Record<string, unknown>): void {
+      const name = card.name as string;
+      const idx = entries.findIndex((e) => e.name === name);
+      if (idx === -1) entries.push({ name, count: 1 });
+      else entries[idx] = { ...entries[idx], count: entries[idx].count + 1 };
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+      if (!info.has(name)) {
+        info.set(name, {
+          cost: (card.cost as number) ?? 0,
+          type: (card.type as string) ?? "",
+          trigger: true,
+        });
+      }
+      if (isCreatureType(card.type as string)) creatureCount += 1;
+      totalCards += 1;
+      triggers += 1;
+    }
+
+    for (const cand of candRows) {
+      if (triggers >= floor) break;
+      const name = cand.name as string;
+      if (reg.banned.has(name)) continue;
+      const room = copyLimit(cand) - (counts.get(name) ?? 0);
+      for (let k = 0; k < room && triggers < floor; k++) {
+        // 40枚なら1枚空けてから差す。空けられなければこれ以上は無理。
+        if (totalCards >= DECK_SIZE && !removeOneForSwap(name)) return;
+        addOneTrigger(cand);
+      }
+    }
   }
 
   // クリーチャーを先に確保する。
@@ -245,16 +374,23 @@ export async function autoBuild(
     }
   }
 
+  // 7. S・トリガーを下限まで保証する (構築↔評価の内部整合。#128)。
+  await ensureTriggerFloor(triggerFloor);
+
   if (creatureCount < minCreatures) {
     weaknesses.push(
       `クリーチャーが${creatureCount}枚しかありません (推奨 ${minCreatures}枚以上)。攻撃役が不足しています`,
     );
   }
 
+  const strategy = strat.profile
+    ? `「${theme}」= ${strat.profile.label} の構築です。`
+    : `「${theme}」をテーマとした構築です。`;
+
   return {
     entries,
     totalCards,
-    strategy: `「${theme}」をテーマとした構築です。`,
+    strategy,
     weaknesses: [...weaknesses, ...analyzeWeaknesses(entries)],
     alternatives: [],
   };
