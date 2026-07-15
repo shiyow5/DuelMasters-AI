@@ -18,6 +18,7 @@ const PROTECTED = [
   ["POST", "/api/deck/evaluate", { decklist: "4 x" }],
   ["POST", "/api/deck/parse", { decklist: "4 x" }],
   ["POST", "/api/deck/suggest", { decklist: "4 x", goals: ["除去"] }],
+  ["POST", "/api/card/resolve", { names: ["x"] }],
   ["GET", "/api/meta/tier", null],
   ["GET", "/api/meta/archetype/x", null],
 ] as const;

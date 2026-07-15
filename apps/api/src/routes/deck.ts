@@ -15,32 +15,10 @@ import {
 } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import { requireAuth } from "../middleware/auth.js";
-import type { Context } from "hono";
+import { parseBody } from "../parse-body.js";
 import { z } from "zod";
 
 const deckRouter = new Hono();
-
-/** ボディを検証し、失敗時は 400 レスポンスを返す */
-async function parseBody<S extends z.ZodTypeAny>(
-  c: Context,
-  schema: S,
-): Promise<{ ok: true; data: z.infer<S> } | { ok: false; res: Response }> {
-  const raw = await c.req.json().catch(() => null);
-  const parsed = schema.safeParse(raw);
-  if (!parsed.success) {
-    return {
-      ok: false,
-      res: c.json(
-        {
-          error: "リクエストが不正です",
-          details: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
-        },
-        400,
-      ),
-    };
-  }
-  return { ok: true, data: parsed.data };
-}
 
 /** デッキリスト解析 */
 deckRouter.post("/parse", async (c) => {
