@@ -49,7 +49,10 @@ jobs:
   ingest:
     name: ingest ${{ matrix.job }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # **rulings だけ**長い。現行 (約3,955件) + 過去 (約3,246件) の 7,200件超を1本で取り込むため
+    # (一覧396ページ + 詳細7,200ページ + 埋め込み)。他のジョブまで 240分にすると、
+    # そちらがハングしたときに気づくのが4時間後になる。
+    timeout-minutes: ${{ matrix.job == 'rulings' && 240 || 90 }}
     strategy:
       fail-fast: false
       max-parallel: 1 # 公式サイトへの負荷と DB 書き込みの競合を避けるため直列
