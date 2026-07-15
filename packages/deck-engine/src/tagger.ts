@@ -48,6 +48,13 @@ function hasSelfDraw(normalizedText: string): boolean {
   return DRAW.test(normalizedText.replace(OPPONENT_DRAW, ""));
 }
 
+/**
+ * 除去 (相手のクリーチャー等への破壊/バウンス/マナ送り/シールド送り/封印)。
+ * concept.ts のコントロール判定でも使うので、語彙をここ1か所に置く (二重定義でドリフトさせない)。
+ */
+export const REMOVAL_RE =
+  /相手の.{0,30}(破壊する|手札に戻す|マナゾーンに置く|シールド.{0,10}加える|封印)/;
+
 /** ルールベースの役割タグ推定。確信が持てるタグのみ返す (0個もあり得る) */
 export function inferTagsByRule(card: Card): RoleTag[] {
   const tags = new Set<RoleTag>();
@@ -59,7 +66,7 @@ export function inferTagsByRule(card: Card): RoleTag[] {
   // ブースト: 山札の上からマナゾーンに置く
   if (/山札の上から.{0,10}マナゾーンに置/.test(text)) tags.add("ブースト");
   // 除去: 相手のクリーチャーへの破壊/バウンス/マナ送り/シールド送り/封印
-  if (/相手の.{0,30}(破壊する|手札に戻す|マナゾーンに置く|シールド.{0,10}加える|封印)/.test(text)) {
+  if (REMOVAL_RE.test(text)) {
     tags.add("除去");
   }
   // メタ: 行動制約系の文言
