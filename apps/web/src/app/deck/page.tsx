@@ -86,10 +86,14 @@ export default function DeckPage() {
       const deck = await apiGet<{
         cards: Array<{ name: string; count: number }>;
         format: "original" | "advance";
+        // 保存時に計算・保存済みのスコア (#133)。GET /:id が返すので、
+        // 読み込んだら再評価せずに即表示する (以前は捨てて「評価する」を押し直させていた)。
+        scores: DeckScore | null;
       }>(`/api/deck/${id}`);
       setDecklist(deck.cards.map((c) => `${c.count} ${c.name}`).join("\n"));
       setFormat(deck.format);
-      setScore(null);
+      setScore(deck.scores ?? null);
+      // 殿堂チェック (validation) は保存していないので復元しない。スコアだけ即表示する。
       setValidation(null);
       setBuildResult("");
     } catch (err) {
