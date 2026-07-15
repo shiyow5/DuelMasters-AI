@@ -8,6 +8,7 @@ import type { DeckScore, ValidationResult, SavedDeckSummary } from "@/lib/types"
 import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";
 import Header from "@/components/Header";
 import ErrorDisplay from "@/components/ErrorDisplay";
+import DeckCardGrid from "@/components/DeckCardGrid";
 
 export default function DeckPage() {
   const [decklist, setDecklist] = useState("");
@@ -16,6 +17,11 @@ export default function DeckPage() {
   const [score, setScore] = useState<DeckScore | null>(null);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [buildResult, setBuildResult] = useState<string>("");
+  // デッキが持つカード (評価/読込/自動構築のたびにサーバのパース結果で更新する)。
+  // カード画像グリッド (#129) の入力。
+  const [deckEntries, setDeckEntries] = useState<Array<{ name: string; count: number }>>([]);
+  // 中央カラムの表示切替: 内容(警告/構築結果) か カード画像グリッド か (#129)。
+  const [centerView, setCenterView] = useState<"info" | "grid">("info");
   const [loading, setLoading] = useState(false);
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
@@ -93,6 +99,7 @@ export default function DeckPage() {
       setDecklist(deck.cards.map((c) => `${c.count} ${c.name}`).join("\n"));
       setFormat(deck.format);
       setScore(deck.scores ?? null);
+      setDeckEntries(deck.cards);
       // 殿堂チェック (validation) は保存していないので復元しない。スコアだけ即表示する。
       setValidation(null);
       setBuildResult("");
@@ -121,11 +128,13 @@ export default function DeckPage() {
     setValidation(null);
     try {
       const res = await apiPost<{
+        parsed: { entries: Array<{ name: string; count: number }> };
         score: DeckScore;
         validation: ValidationResult;
       }>("/api/deck/evaluate", { decklist, format });
       setScore(res.score);
       setValidation(res.validation);
+      setDeckEntries(res.parsed.entries);
     } catch (err) {
       setPageError(`評価に失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     } finally {
@@ -153,6 +162,7 @@ export default function DeckPage() {
         `${res.strategy}\n\n--- デッキリスト ---\n${deckText}\n\n弱点: ${res.weaknesses.join(", ") || "なし"}`,
       );
       setDecklist(deckText);
+      setDeckEntries(res.entries);
     } catch (err) {
       setPageError(`自動構築に失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     } finally {
@@ -329,11 +339,35 @@ export default function DeckPage() {
         <div className="col-span-12 lg:col-span-6 flex flex-col bg-bg-surface border border-border-highlight rounded-xl overflow-hidden">
           <div className="p-4 border-b border-border-highlight flex items-center justify-between gap-4">
             <h3 className="text-sm font-semibold text-text-muted">
-              {buildResult ? "構築結果" : "デッキ内容"}
+              {centerView === "grid" ? "カード画像" : buildResult ? "構築結果" : "デッキ内容"}
             </h3>
+            {/* 表示切替: 内容(警告/構築結果) ⇄ カード画像グリッド (#129) */}
+            <div className="flex gap-1 rounded-lg bg-bg-dark p-0.5">
+              {(
+                [
+                  { v: "info", label: "内容", icon: "description" },
+                  { v: "grid", label: "画像", icon: "grid_view" },
+                ] as const
+              ).map(({ v, label, icon }) => (
+                <button
+                  key={v}
+                  onClick={() => setCenterView(v)}
+                  className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                    centerView === v
+                      ? "bg-bg-surface-highlight text-white"
+                      : "text-text-muted hover:text-white"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">{icon}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4">
-            {buildResult ? (
+            {centerView === "grid" ? (
+              <DeckCardGrid entries={deckEntries} />
+            ) : buildResult ? (
               <pre className="whitespace-pre-wrap font-mono text-sm text-text-muted leading-relaxed">
                 {buildResult}
               </pre>

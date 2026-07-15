@@ -278,6 +278,17 @@ export const DeckSaveRequestSchema = z.object({
 });
 export type DeckSaveRequest = z.infer<typeof DeckSaveRequestSchema>;
 
+/**
+ * POST /api/card/resolve — カード名から画像URLを引く (#129)。
+ *
+ * デッキのカードは最大 40 種。上限 200 は十分な余裕を持たせつつ、
+ * 巨大な配列でクエリを食い潰されるのを防ぐ。
+ */
+export const CardResolveRequestSchema = z.object({
+  names: z.array(z.string().min(1)).min(1, "names は必須です").max(200, "names が多すぎます"),
+});
+export type CardResolveRequest = z.infer<typeof CardResolveRequestSchema>;
+
 /** PUT /api/user/settings */
 export const UserSettingsRequestSchema = z.object({
   format: z.enum(FORMATS),
