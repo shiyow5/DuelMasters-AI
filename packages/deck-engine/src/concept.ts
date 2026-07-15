@@ -1,5 +1,5 @@
 import type { Card, DeckConcept } from "@dm-ai/core";
-import { isDefensiveCard } from "./tagger.js";
+import { isDefensiveCard, REMOVAL_RE } from "./tagger.js";
 
 export type { DeckConcept };
 
@@ -22,19 +22,25 @@ function normalize(text: string): string {
 }
 
 /**
- * ループ/コンボの**強い**信号。単発では弱いので、デッキ内の枚数で見る。
- * 墓地回収・踏み倒しのような「多くのデッキに出る」語は誤検出を招くので入れない。
+ * ループ/コンボの**強い**信号。
+ *
+ * 「多くのデッキに出る」語は入れない。特に **「山札の一番下」は除外した** — 《母なる大地》の
+ * 「残りを好きな順序で山札の一番下に置く」のように、コンボ性の無い汎用ドロー/セレクト呪文の
+ * 定型句で、これを入れるとビートダウンを combo と誤判定してしまう (レビュー指摘)。
  */
 const COMBO_SIGNAL =
-  /無限|好きなだけ|繰り返|山札の一番下|このターン.{0,15}(もう一度|追加のターン)|次のターン.{0,10}追加/;
-
-/** 除去 (tagger の除去判定と同じ語彙)。コントロール判定の相互作用量に数える。 */
-const REMOVAL = /相手の.{0,30}(破壊する|手札に戻す|マナゾーンに置く|シールド.{0,10}加える|封印)/;
+  /無限|好きなだけ|繰り返|このターン.{0,15}(もう一度|追加のターン)|次のターン.{0,10}追加/;
 
 /** これ未満のカード数では分類の材料が足りない (パースだけで展開できていない等)。 */
 const MIN_CARDS = 20;
-/** ループ/コンボ信号カードがこの枚数以上なら combo。 */
-const COMBO_MIN = 4;
+/**
+ * combo と判定する、コンボ信号を持つカードの**種類数** (枚数ではない)。
+ *
+ * **枚数で数えると、汎用ドロー呪文を1プレイセット (4枚) 積んだだけで到達してしまう**
+ * (レビュー指摘)。ループデッキは複数種のループ部品で成り立つので、異なるカード名で
+ * この数以上あることを要求する。
+ */
+const COMBO_MIN = 3;
 /** コントロール: クリーチャー比がこれ以下。 */
 const CONTROL_CREATURE_MAX = 0.4;
 /** コントロール: 受け + 除去 の合計がこれ以上 (相互作用が厚い)。 */
@@ -58,14 +64,16 @@ function isCreature(card: Card): boolean {
 export function inferDeckConcept(cards: Card[]): DeckConcept {
   if (cards.length < MIN_CARDS) return "unknown";
 
-  const norm = cards.map((c) => normalize(c.text));
-  const comboCount = norm.filter((t) => COMBO_SIGNAL.test(t)).length;
+  // コンボ信号を持つカードの**種類数** (同じカードの複数枚は1種と数える)。
+  const comboKinds = new Set(
+    cards.filter((c) => COMBO_SIGNAL.test(normalize(c.text))).map((c) => c.name),
+  ).size;
   const creatureRatio = cards.filter(isCreature).length / cards.length;
   const defenseCount = cards.filter(isDefensiveCard).length;
-  const removalCount = norm.filter((t) => REMOVAL.test(t)).length;
+  const removalCount = cards.filter((c) => REMOVAL_RE.test(normalize(c.text))).length;
   const avgCost = cards.reduce((sum, c) => sum + c.cost, 0) / cards.length;
 
-  if (comboCount >= COMBO_MIN) return "combo";
+  if (comboKinds >= COMBO_MIN) return "combo";
   if (
     creatureRatio <= CONTROL_CREATURE_MAX &&
     defenseCount + removalCount >= CONTROL_INTERACTION_MIN

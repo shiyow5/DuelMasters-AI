@@ -35,13 +35,23 @@ function many(n: number, c: Card): Card[] {
 }
 
 describe("inferDeckConcept (#130)", () => {
-  it("ループ/コンボ信号カードが多いと combo", () => {
+  it("ループ/コンボ信号カードが**3種以上**あると combo", () => {
     const deck = [
-      ...many(4, card({ text: "無限にクリーチャーを出す", cost: 5 })),
-      ...many(4, card({ text: "この効果を好きなだけ繰り返す", cost: 4 })),
-      ...many(32, card({ text: "" })),
+      ...many(4, card({ name: "ループA", text: "無限にマナを生み出す", cost: 5 })),
+      ...many(4, card({ name: "ループB", text: "好きなだけ召喚する", cost: 4 })),
+      ...many(4, card({ name: "ループC", text: "この効果を繰り返す", cost: 4 })),
+      ...many(28, card({ name: "無地", text: "" })),
     ];
     expect(inferDeckConcept(deck)).toBe("combo");
+  });
+
+  it("同じコンボ信号カードを1プレイセット (4枚) 積んだだけでは combo にしない (種類数で見る)", () => {
+    // 汎用ドロー呪文を4枚積んだだけのビートダウンが combo と誤判定される事故を防ぐ (レビュー指摘)。
+    const deck = [
+      ...many(4, card({ name: "汎用ドロー", text: "無限の可能性を秘めたカードを引く", cost: 3 })),
+      ...many(36, card({ name: "無地", text: "", cost: 3 })),
+    ];
+    expect(inferDeckConcept(deck)).not.toBe("combo");
   });
 
   it("クリーチャーが少なく受け+除去が厚いと control", () => {

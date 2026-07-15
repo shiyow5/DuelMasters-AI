@@ -29,14 +29,18 @@ describe.skipIf(!hasTestDb)("コンセプトによる減点緩和 (統合)", () 
 
   /** コンボ信号あり/なしだけが違う、受け0・高コストの 40枚デッキを作る。 */
   async function seedDeck(comboText: boolean) {
-    // 2枚はコンボ信号の有無を切り替え、残り8枚はどちらも同じ (無地)。
+    // **3種**のカードでコンボ信号の有無を切り替える (combo 判定は種類数 >= 3)。残り7種は無地。
     await card("エンジンA", comboText ? "この効果を無限に繰り返す" : "パワーを+1000する");
     await card("エンジンB", comboText ? "好きなだけ唱えてもよい" : "スピードアタッカーを得る");
-    for (let i = 0; i < 8; i++) await card(`無地${i}`, "");
+    await card("エンジンC", comboText ? "コストを繰り返し軽減する" : "パワーを+2000する");
+    for (let i = 0; i < 7; i++) await card(`無地${i}`, "");
     return parseDecklist(
-      ["4 エンジンA", "4 エンジンB", ...Array.from({ length: 8 }, (_, i) => `4 無地${i}`)].join(
-        "\n",
-      ),
+      [
+        "4 エンジンA",
+        "4 エンジンB",
+        "4 エンジンC",
+        ...Array.from({ length: 7 }, (_, i) => `4 無地${i}`),
+      ].join("\n"),
     );
   }
 

@@ -315,9 +315,10 @@ function calculateOverallScore(params: {
   if (!params.noCardInfo && params.defenseCount === 0) score -= params.relaxed ? 5 : 15;
   // フィニッシャーはテキスト推定が要るのでタグ依存。**未整備なら減点しない** (#120)。
   // 未整備を「0枚」と読むと、どんなデッキも無条件に減点される (本番で実際に起きた)。
-  // combo はループ等で勝つのでタグ上のフィニッシャーが0でも問題ない → 緩和対象。
+  // combo/control は勝ち筋が「フィニッシャー」タグに乗らない (ループ/制圧) ことがあるので緩和する。
+  // **ただしゼロにはしない** (control は最終的な勝ち手段が要る。誤判定時に雑なデッキを見逃さない)。
   if (params.hasRoleData && (params.roleBalance["フィニッシャー"] ?? 0) === 0) {
-    score -= params.relaxed ? 0 : 10;
+    score -= params.relaxed ? 3 : 10;
   }
 
   return Math.max(0, Math.min(100, score));
