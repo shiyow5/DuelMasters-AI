@@ -46,6 +46,10 @@ export const ROLE_TAGS = [
 ] as const;
 export type RoleTag = (typeof ROLE_TAGS)[number];
 
+/** デッキ全体の戦略コンセプト (#130)。役割タグ (カード単位) より上のレイヤ。 */
+export const DECK_CONCEPTS = ["combo", "control", "beatdown", "unknown"] as const;
+export type DeckConcept = (typeof DECK_CONCEPTS)[number];
+
 /** ティア区分 (#132)。
  *
  * Tier1〜Tier5 の5段 + 「その他」(ノイズフロア以下のロングテール)。

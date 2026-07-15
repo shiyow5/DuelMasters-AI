@@ -3,6 +3,7 @@ import type { Card, DeckEntry } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import type { ParsedDeck } from "./parser.js";
 import { isDefensiveCard } from "./tagger.js";
+import { inferDeckConcept, isRelaxedConcept, conceptLabel } from "./concept.js";
 
 /** scoreDeck 内部のスコアリング閾値 (DECK_GUIDELINES に無い減点基準) */
 const HAND_SIZE = 5; // 初手枚数
@@ -81,14 +82,32 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   const noCardInfo = expandedCards.length === 0 && deck.totalCards > 0;
 
   /**
+   * デッキ全体の戦略コンセプト (#130)。
+   *
+   * combo/control は受けやフィニッシャーを**意図的に絞る**ことがある。ビートダウン前提の
+   * テンプレで一律減点すると、ループ/コントロールのまともなデッキが不当に低スコアになる。
+   * `relaxed` のときは該当の減点を軽くし、**軽くしたことを警告で明示する** (黙って消さない)。
+   * 確信が無ければ unknown = 現行どおり (緩和しない)。
+   */
+  const concept = inferDeckConcept(expandedCards);
+  const relaxed = isRelaxedConcept(concept);
+
+  /**
    * **受け札はタグに頼らない。** `is_shield_trigger` はカードの列で、ブロッカー等の
    * キーワードもテキストにある。カード自身の情報だけで判定できるものを、
    * わざわざ別テーブルの派生データ (tags) 経由で見に行くから壊れる。
    */
   const defenseCount = expandedCards.filter(isDefensiveCard).length;
   if (!noCardInfo && defenseCount < MIN_DEFENSE_CARDS) {
-    warnings.push("受け札が少なく、攻撃に弱い構成です");
-    suggestions.push("S・トリガーやブロッカーなどの受け札を追加しましょう");
+    if (relaxed) {
+      // 意図的に受けを絞っている可能性を明示する (「攻撃に弱い」と断じない)。
+      warnings.push(
+        `受け札が${defenseCount}枚と少なめですが、${conceptLabel(concept)}型では意図的な構成の可能性があります`,
+      );
+    } else {
+      warnings.push("受け札が少なく、攻撃に弱い構成です");
+      suggestions.push("S・トリガーやブロッカーなどの受け札を追加しましょう");
+    }
   }
 
   if (noCardInfo) {
@@ -114,6 +133,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
     defenseCount,
     noCardInfo,
     totalCards: deck.totalCards,
+    relaxed,
   });
 
   return {
@@ -126,6 +146,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
     overall,
     warnings,
     suggestions,
+    concept,
   };
 }
 
@@ -257,6 +278,12 @@ function calculateOverallScore(params: {
   /** カード情報が1枚も引けなかったか。true なら「0枚だから減点」は成り立たない (#120)。 */
   noCardInfo: boolean;
   totalCards: number;
+  /**
+   * combo/control 型 (#130)。true なら受け0・低コスト極少・フィニッシャー0 の減点を軽くする。
+   * これらの要素はコンボ/コントロールでは意図的に絞られるため。**ゼロにはしない**
+   * (本当に不足した悪いデッキを見逃さないよう、軽い減点は残す)。
+   */
+  relaxed: boolean;
 }): number {
   let score = 100;
 
@@ -272,7 +299,8 @@ function calculateOverallScore(params: {
 
   // コストカーブペナルティ
   if (params.costCurve.low < DECK_GUIDELINES.costCurve.low) score -= 10;
-  if (params.costCurve.low < LOW_COST_SEVERE_THRESHOLD) score -= 10;
+  // 低コスト「極端に少ない」の追加減点。combo/control は高いカーブを許容するので緩和する。
+  if (params.costCurve.low < LOW_COST_SEVERE_THRESHOLD) score -= params.relaxed ? 3 : 10;
 
   // 色事故ペナルティ
   if (params.civCount >= MULTI_CIV_WARN_THRESHOLD) score -= 10;
@@ -283,10 +311,14 @@ function calculateOverallScore(params: {
 
   // 受け札ゼロの減点。**タグではなくカード自身の情報から数える** (#120)。
   // カード情報がそもそも引けていないなら「0枚」ではない。減点しない。
-  if (!params.noCardInfo && params.defenseCount === 0) score -= 15;
+  // combo/control は受けを意図的に絞ることがあるので緩和する (ただしゼロにはしない)。
+  if (!params.noCardInfo && params.defenseCount === 0) score -= params.relaxed ? 5 : 15;
   // フィニッシャーはテキスト推定が要るのでタグ依存。**未整備なら減点しない** (#120)。
   // 未整備を「0枚」と読むと、どんなデッキも無条件に減点される (本番で実際に起きた)。
-  if (params.hasRoleData && (params.roleBalance["フィニッシャー"] ?? 0) === 0) score -= 10;
+  // combo はループ等で勝つのでタグ上のフィニッシャーが0でも問題ない → 緩和対象。
+  if (params.hasRoleData && (params.roleBalance["フィニッシャー"] ?? 0) === 0) {
+    score -= params.relaxed ? 0 : 10;
+  }
 
   return Math.max(0, Math.min(100, score));
 }

@@ -7,6 +7,7 @@ import {
   ROLE_TAGS,
   DOC_TYPES,
   TIERS,
+  DECK_CONCEPTS,
 } from "./constants.js";
 
 /** カード */
@@ -171,6 +172,11 @@ export const DeckScoreSchema = z.object({
   overall: z.number(),
   warnings: z.array(z.string()),
   suggestions: z.array(z.string()),
+  /**
+   * 推定したデッキ戦略コンセプト (#130)。combo/control のときは受け・フィニッシャー等の
+   * 減点を緩和している。**optional** — 過去に保存した scores (concept 無し) も通すため。
+   */
+  concept: z.enum(DECK_CONCEPTS).optional(),
 });
 export type DeckScore = z.infer<typeof DeckScoreSchema>;
 
