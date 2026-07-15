@@ -4,6 +4,7 @@
  * Workers 版では discord.js の EmbedBuilder を使わない (Worker を軽量に保つため)。
  * 配色と項目は gateway 版 (commands/index.ts) と揃える。
  */
+import { MAIN_TIERS, TIER_BELOW } from "@dm-ai/core";
 import type { DeckScore, ValidationResult } from "@dm-ai/core";
 
 /** Embed の配色 (Tailwind 由来のブランドカラー) */
@@ -123,7 +124,7 @@ export function deckSaveEmbed(name: string, overall: number | undefined): Embed 
 
 export function tierEmbed(format: string, tierData: TierEntry[]): Embed {
   const fields: EmbedField[] = [];
-  for (const tier of ["Tier1", "Tier2", "Tier3"]) {
+  for (const tier of [...MAIN_TIERS, TIER_BELOW]) {
     const entries = tierData.filter((e) => e.tier === tier);
     if (entries.length > 0) {
       fields.push({

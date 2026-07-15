@@ -7,6 +7,10 @@ import type { TierEntry, TierData } from "@/lib/types";
 import Header from "@/components/Header";
 import ErrorDisplay from "@/components/ErrorDisplay";
 
+// **@dm-ai/core の MAIN_TIERS / TIER_BELOW と一致させること** (#132)。web は core に依存しないため写し。
+const MAIN_TIERS = ["Tier1", "Tier2", "Tier3", "Tier4", "Tier5"] as const;
+const TIER_BELOW = "その他";
+
 const TIER_STYLES: Record<string, { accent: string; badge: string; valueColor: string }> = {
   Tier1: {
     accent: "bg-gradient-to-b from-primary to-primary-dark",
@@ -15,13 +19,28 @@ const TIER_STYLES: Record<string, { accent: string; badge: string; valueColor: s
   },
   Tier2: {
     accent: "bg-bg-surface-highlight",
-    badge: "bg-bg-card text-text-muted",
+    badge: "bg-bg-card text-text-main",
     valueColor: "text-text-main",
   },
   Tier3: {
     accent: "bg-text-dim",
-    badge: "bg-bg-card text-text-dim",
+    badge: "bg-bg-card text-text-muted",
     valueColor: "text-text-muted",
+  },
+  Tier4: {
+    accent: "bg-text-dim",
+    badge: "bg-bg-card text-text-muted",
+    valueColor: "text-text-muted",
+  },
+  Tier5: {
+    accent: "bg-text-dim",
+    badge: "bg-bg-card text-text-dim",
+    valueColor: "text-text-dim",
+  },
+  その他: {
+    accent: "bg-text-dim",
+    badge: "bg-bg-card text-text-dim",
+    valueColor: "text-text-dim",
   },
 };
 
@@ -31,7 +50,7 @@ export default function MetaPage() {
   const [data, setData] = useState<TierData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showTier3, setShowTier3] = useState(false);
+  const [showBelow, setShowBelow] = useState(false);
 
   useEffect(() => {
     fetchTierData();
@@ -133,19 +152,21 @@ export default function MetaPage() {
 
           {data && data.tier_data.length > 0 && (
             <>
-              {(["Tier1", "Tier2"] as const).map((tier) => {
+              {MAIN_TIERS.map((tier) => {
                 const entries = data.tier_data.filter((e) => e.tier === tier);
                 if (entries.length === 0) return null;
                 const style = TIER_STYLES[tier];
+                // 相対分類 (#132)。固定閾値ではなく、その段に入ったアーキタイプの使用率レンジを出す。
+                const rates = entries.map((e) => e.usage_rate);
+                const hi = Math.max(...rates);
+                const lo = Math.min(...rates);
                 return (
                   <div key={tier} className="flex flex-col gap-4">
                     <div className="flex items-center gap-3">
                       <div className={`h-8 w-1 rounded-full ${style.accent}`} />
                       <h2 className="text-2xl font-bold text-white">{tier}</h2>
                       <span className={`text-sm font-medium px-2 py-0.5 rounded ${style.badge}`}>
-                        使用率{" "}
-                        {/* 閾値は apps/api の TIER_THRESHOLDS (15% / 8%) と一致させること */}
-                        {tier === "Tier1" ? "15%以上" : "8% - 15%"}
+                        使用率 {hi === lo ? `${hi}%` : `${lo}〜${hi}%`}
                       </span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -157,32 +178,32 @@ export default function MetaPage() {
                 );
               })}
 
-              {/* Tier 3 Collapsible */}
-              {data.tier_data.filter((e) => e.tier === "Tier3").length > 0 && (
+              {/* その他 (ノイズフロア以下のロングテール) Collapsible (#132) */}
+              {data.tier_data.filter((e) => e.tier === TIER_BELOW).length > 0 && (
                 <div className="flex flex-col gap-4 mt-8 pb-10">
                   <button
-                    onClick={() => setShowTier3(!showTier3)}
+                    onClick={() => setShowBelow(!showBelow)}
                     className="flex items-center justify-between w-full p-4 rounded-xl bg-bg-card hover:bg-bg-card-hover transition-colors group"
                   >
                     <div className="flex items-center gap-3">
                       <div className="h-6 w-1 bg-text-dim rounded-full" />
-                      <h2 className="text-lg font-bold text-white">Tier 3 / その他</h2>
+                      <h2 className="text-lg font-bold text-white">{TIER_BELOW}</h2>
                       <span className="text-sm text-text-muted">
-                        {data.tier_data.filter((e) => e.tier === "Tier3").length} デッキタイプ
+                        {data.tier_data.filter((e) => e.tier === TIER_BELOW).length} デッキタイプ
                       </span>
                     </div>
                     <span
-                      className={`material-symbols-outlined text-text-muted group-hover:text-white transition-all ${showTier3 ? "rotate-180" : ""}`}
+                      className={`material-symbols-outlined text-text-muted group-hover:text-white transition-all ${showBelow ? "rotate-180" : ""}`}
                     >
                       expand_more
                     </span>
                   </button>
-                  {showTier3 && (
+                  {showBelow && (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {data.tier_data
-                        .filter((e) => e.tier === "Tier3")
+                        .filter((e) => e.tier === TIER_BELOW)
                         .map((entry, i) => (
-                          <DeckCard key={i} entry={entry} tier="Tier3" />
+                          <DeckCard key={i} entry={entry} tier={TIER_BELOW} />
                         ))}
                     </div>
                   )}
