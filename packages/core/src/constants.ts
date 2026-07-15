@@ -46,8 +46,15 @@ export const ROLE_TAGS = [
 ] as const;
 export type RoleTag = (typeof ROLE_TAGS)[number];
 
-/** ティア区分 */
-export const TIERS = ["Tier1", "Tier2", "Tier3"] as const;
+/** ティア区分 (#132)。
+ *
+ * Tier1〜Tier5 の5段 + 「その他」(ノイズフロア以下のロングテール)。
+ * **旧 Tier1/2/3 の値はそのまま残す** — 過去に保存した3段スナップショットが z.enum(TIERS) の
+ * 検証を通り続けるようにするため (後方互換)。追加するだけで削除しない。 */
+export const MAIN_TIERS = ["Tier1", "Tier2", "Tier3", "Tier4", "Tier5"] as const;
+/** ノイズフロア以下 (単発入賞のロングテール) を入れる区分。UI は折りたたみで出す。 */
+export const TIER_BELOW = "その他";
+export const TIERS = ["Tier1", "Tier2", "Tier3", "Tier4", "Tier5", "その他"] as const;
 export type Tier = (typeof TIERS)[number];
 
 /** デッキ枚数制限 */
@@ -67,8 +74,17 @@ export const DECK_GUIDELINES = {
 export const DOC_TYPES = ["comprehensive_rules", "ruling", "faq"] as const;
 export type DocType = (typeof DOC_TYPES)[number];
 
-/** ティア判定閾値 (大会結果からの集計時の使用率) */
-export const TIER_THRESHOLDS = {
-  tier1: 0.15,
-  tier2: 0.08,
+/** ティア分類のパラメータ (#132)。
+ *
+ * **固定閾値をやめ、順位ベースの相対分類にする。** 使用率 (=入賞シェア) は全アーキタイプの平均が
+ * 1/N で、DM のヘビーテール分布では先頭1〜2個だけが高シェア・残りは急落する。固定の絶対閾値
+ * (旧: 15% / 8%) だと 8-15% の中間帯が構造的に空き、Tier1 と Tier3 しか出なかった。
+ * 有意アーキタイプを使用率降順に並べ、順位で `count` 段に等分すれば中間帯は空かない。 */
+export const TIER_PARAMS = {
+  /** 段数 (Tier1〜TierN)。 */
+  count: 5,
+  /** これ未満の使用率シェアは「その他」へ落とす (ロングテールを段に混ぜない)。 */
+  noiseFloor: 0.02,
+  /** これ未満の入賞数は「その他」へ落とす (母数が小さいと高シェアでも1件は誤差)。 */
+  minEntries: 2,
 } as const;
