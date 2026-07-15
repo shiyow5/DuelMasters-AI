@@ -285,7 +285,13 @@ export type DeckSaveRequest = z.infer<typeof DeckSaveRequestSchema>;
  * 巨大な配列でクエリを食い潰されるのを防ぐ。
  */
 export const CardResolveRequestSchema = z.object({
-  names: z.array(z.string().min(1)).min(1, "names は必須です").max(200, "names が多すぎます"),
+  // カード名1件あたりにも上限を設ける (この schema の message=32000 / title=100 と同じ思想)。
+  // カード名が 200 文字を超えることはないので、巨大な文字列で translate/normalize を回させる
+  // DoS 隣接の穴を塞ぐ。
+  names: z
+    .array(z.string().min(1).max(200))
+    .min(1, "names は必須です")
+    .max(200, "names が多すぎます"),
 });
 export type CardResolveRequest = z.infer<typeof CardResolveRequestSchema>;
 

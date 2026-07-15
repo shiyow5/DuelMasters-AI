@@ -10,8 +10,12 @@ import { getSql } from "@dm-ai/db";
  *
  * `resolveMainCards` (#122) は「アーキタイプ名 → 代表カード」を**部分一致**で当てるが、
  * こちらは**デッキが実際に持つカード名**を引くので、別カードへ誤爆させない完全一致にする。
- * ただし中黒 (・)・全角/半角スペース・囲み記号のゆれは吸収する
- * (#111 でカード検索が中黒で全滅したのと同じ translate 集合)。
+ * ただし次のゆれは吸収する:
+ * - 中黒 (・)・全角/半角スペース・囲み記号 (#111 でカード検索が中黒で全滅したのと同じ translate 集合)
+ * - **全角/半角の英数** (NFKC 幅畳み)。《接続 CS-20》のように英数コードを含むカード名があり、
+ *   ユーザーが全角「ＣＳ－２０」で貼っても引けるようにする
+ *   (agent の `normalizeCardName` が NFKC を使うのと同じ意図)。
+ *   両側に同じ SQL 式 (`normalize(..., NFKC)`) をかけるので照合は対称のまま。
  *
  * ## 引けない名前は null
  *
@@ -40,8 +44,10 @@ export async function resolveCardImages(names: string[]): Promise<Map<string, st
       SELECT DISTINCT ON (i.name) i.name AS input_name, c.card_image_url
       FROM input i
       JOIN cards c
-        ON lower(translate(c.name, ${NAME_NORMALIZE_CHARS}, ''))
-         = lower(translate(i.name, ${NAME_NORMALIZE_CHARS}, ''))
+        -- normalize(..., NFKC) で全角/半角 (英数含む) を畳んでから、記号を落として小文字化。
+        -- 両側に同じ式をかけるので照合は対称 (DB 列が全角でも入力が全角でも一致する)。
+        ON lower(translate(normalize(c.name, NFKC), ${NAME_NORMALIZE_CHARS}, ''))
+         = lower(translate(normalize(i.name, NFKC), ${NAME_NORMALIZE_CHARS}, ''))
        AND c.card_image_url IS NOT NULL
       -- 同名正規化が複数当たったら短い名前 (素の名前に近い方) を採る。
       ORDER BY i.name, length(c.name), c.name

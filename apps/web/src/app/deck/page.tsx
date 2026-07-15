@@ -126,6 +126,9 @@ export default function DeckPage() {
     setPageError("");
     setScore(null);
     setValidation(null);
+    // 評価開始時に前回のカードグリッドも消す。ここで消さないと、評価が失敗したとき
+    // (セッション切れ/500/通信断) に前のデッキのカード画像が新しい入力の隣に残る (Codex P2)。
+    setDeckEntries([]);
     try {
       const res = await apiPost<{
         parsed: { entries: Array<{ name: string; count: number }> };
@@ -365,9 +368,15 @@ export default function DeckPage() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4">
-            {centerView === "grid" ? (
+            {/*
+              グリッドは常にマウントしたまま CSS で表示を切り替える。ternary で unmount すると
+              タブを切り替えるたびに再マウントされ、同じデッキで /api/card/resolve を無駄打ちして
+              しまう (認証リクエストとレート制限を消費/ちらつき。Codex/サブエージェント指摘)。
+            */}
+            <div className={centerView === "grid" ? "" : "hidden"}>
               <DeckCardGrid entries={deckEntries} />
-            ) : buildResult ? (
+            </div>
+            {centerView === "grid" ? null : buildResult ? (
               <pre className="whitespace-pre-wrap font-mono text-sm text-text-muted leading-relaxed">
                 {buildResult}
               </pre>
