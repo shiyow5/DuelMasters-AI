@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/helpers/db.js";
-import { deriveStrategy, autoBuild } from "../src/builder.js";
+import { deriveStrategy } from "../src/strategy.js";
+import { autoBuild } from "../src/builder.js";
 import { scoreDeck } from "../src/scorer.js";
 import { parseDecklist } from "../src/parser.js";
 
@@ -47,6 +48,20 @@ describe("deriveStrategy (純関数)", () => {
     const s = deriveStrategy("速攻コントロール");
     expect(s.profile?.label).toContain("速攻");
     expect(s.core).toBe("");
+  });
+
+  it("境界一致: 戦略語を部分文字列として偶然含むだけでは誤爆しない", () => {
+    // 「トランプ」は「ランプ」を部分文字列に含むが、戦略ではない (ランプは語彙から除外済み)。
+    expect(deriveStrategy("トランプ").profile).toBeNull();
+    expect(deriveStrategy("トランプ").core).toBe("トランプ");
+    // カード名の**途中**に戦略語が埋まっていても、境界 (先頭/末尾) 一致なので拾わない。
+    // 《消火機装コントロール・ファイア》の「コントロール」は真ん中にあるので誤爆させない。
+    expect(deriveStrategy("消火機装コントロール・ファイア").profile).toBeNull();
+  });
+
+  it("「〜デッキ」「〜型」の接尾辞を落として戦略語を拾う", () => {
+    expect(deriveStrategy("コントロールデッキ").profile?.label).toContain("コントロール");
+    expect(deriveStrategy("速攻型").profile?.label).toContain("速攻");
   });
 });
 
@@ -101,6 +116,20 @@ describe.skipIf(!hasTestDb)("autoBuild 戦略制約とトリガー下限 (統合
     });
     // 高コストクリーチャーが実際に採用されている (cap で締め出されていない)。
     expect(Math.max(...creatureCosts, 0)).toBeGreaterThanOrEqual(7);
+  });
+
+  it("ユーザー指定の maxCost が戦略プロファイルの maxCost を上書きする", async () => {
+    // 速攻は既定 maxCost 5 だが、ユーザーが maxCost 10 を明示したら高コストも許容されるべき。
+    for (let i = 0; i < 8; i++) await card(`高竜${i}`, { cost: 8 });
+    for (let i = 0; i < 10; i++)
+      await card(`トリガー${i}`, { type: "spell", cost: 4, trigger: true });
+
+    const r = await autoBuild("速攻", "original", { civilizations: ["fire"], maxCost: 10 });
+    const rows =
+      await sql`SELECT name, cost FROM cards WHERE name IN ${sql(r.entries.map((e) => e.name))}`;
+    const maxCost = Math.max(...rows.map((x) => x.cost as number));
+    // ユーザーの 10 が効いていれば cost8 が入る。戦略の 5 のままなら締め出されて 4 止まりになる。
+    expect(maxCost).toBeGreaterThan(5);
   });
 
   it("トリガー下限: テーマがクリーチャーだけでも S・トリガーを8枚以上に補う (swap)", async () => {

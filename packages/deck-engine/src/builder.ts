@@ -9,6 +9,7 @@ import {
 import { getSql } from "@dm-ai/db";
 import { classifyRegulations, applyRegulationToRequired } from "./regulation-rules.js";
 import { pickReplacements } from "./suggest.js";
+import { deriveStrategy } from "./strategy.js";
 
 export interface BuildConstraints {
   /** 必須カード */
@@ -25,77 +26,6 @@ export interface BuildConstraints {
 
 /** 攻撃役として数えるカード種別の既定比率。速攻でも殴れないデッキにならない下限。 */
 const MIN_CREATURE_RATIO = 0.55;
-
-/**
- * 戦略語 → 構築制約のマッピング (#128 Stage 1)。
- *
- * 「速攻」「コントロール」等の**戦略語はカードテキストにほぼ出現しない**。literal ILIKE で
- * 探すと `themeCards` がほぼ 0件になり、以降はコスト昇順フィラーだけの「テーマ非依存の低コスト山」に
- * 退化する。そこで戦略語を検出したら (a) それを構造化制約 (max_cost / クリーチャー比 / トリガー下限)
- * へ翻訳し、(b) テーマ文字列から戦略語を**取り除いて**、残りの意味のある語 (種族・カード名) で検索する。
- */
-interface StrategyProfile {
-  /** 最大コスト上限 (ユーザー指定が優先)。 */
-  maxCost?: number;
-  /** クリーチャーの最低比率 (ユーザーの minCreatures 指定が優先)。 */
-  minCreatureRatio?: number;
-  /** S・トリガーの下限。DECK_GUIDELINES.triggerCount より下げることはない。 */
-  triggerFloor?: number;
-  /** strategy 文言に出す短いラベル。 */
-  label: string;
-}
-
-const STRATEGY_PROFILES: Array<{ words: string[]; profile: StrategyProfile }> = [
-  {
-    // 速攻/アグロ: 低コスト・クリーチャー主体で押し切る。高コストを切り、クリーチャー比を上げる。
-    words: ["速攻", "アグロ", "ビートダウン", "ビート", "ラッシュ", "ウィニー"],
-    profile: { maxCost: 5, minCreatureRatio: 0.65, label: "速攻 (低コスト・クリーチャー主体)" },
-  },
-  {
-    // コントロール: 受けを厚くし高コストを許容する。クリーチャー比は下げ、トリガー下限を上げる。
-    words: ["コントロール", "制圧"],
-    profile: {
-      minCreatureRatio: 0.4,
-      triggerFloor: 10,
-      label: "コントロール (受け厚め・高コスト許容)",
-    },
-  },
-  {
-    words: ["ミッドレンジ"],
-    profile: { maxCost: 7, minCreatureRatio: 0.55, label: "ミッドレンジ" },
-  },
-  {
-    words: ["ランプ", "マナ加速"],
-    profile: { minCreatureRatio: 0.45, label: "ランプ (マナ加速)" },
-  },
-];
-
-export interface DerivedStrategy {
-  profile: StrategyProfile | null;
-  /** 戦略語を取り除いたテーマ (種族・カード名などの実体)。空なら「戦略だけ」の指定。 */
-  core: string;
-}
-
-/**
- * テーマ文字列から戦略プロファイルを抽出し、戦略語を取り除いたコア語を返す。
- *
- * 例: 「ボルシャック速攻」→ profile=速攻, core="ボルシャック" (「ボルシャック」で検索 + 速攻制約)。
- *     「コントロール」→ profile=コントロール, core="" (コア無し = 制約主導で構築)。
- * 複数の戦略語があれば**最初に一致したものを主戦略**とする (語はすべて取り除く)。
- */
-export function deriveStrategy(theme: string): DerivedStrategy {
-  let core = theme;
-  let profile: StrategyProfile | null = null;
-  for (const { words, profile: p } of STRATEGY_PROFILES) {
-    for (const w of words) {
-      if (core.includes(w)) {
-        profile = profile ?? p;
-        core = core.split(w).join("");
-      }
-    }
-  }
-  return { profile, core: core.trim() };
-}
 
 /** クリーチャー系の種別か (進化クリーチャー等も含む)。 */
 function isCreatureType(type: string | null | undefined): boolean {
@@ -337,7 +267,8 @@ export async function autoBuild(
       const idx = entries.findIndex((e) => e.name === best!.name);
       const e = entries[idx];
       entries[idx] = { ...e, count: e.count - 1 };
-      counts.set(e.name, (counts.get(e.name) ?? 1) - 1);
+      // counts は entries と同期している。entries 側の真の値から引く (?? フォールバックに頼らない)。
+      counts.set(e.name, e.count - 1);
       if (best.creature) creatureCount -= 1;
       totalCards -= 1;
       if (entries[idx].count <= 0) entries.splice(idx, 1);
