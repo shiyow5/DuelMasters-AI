@@ -34,13 +34,19 @@ const COMBO_SIGNAL =
 /** これ未満のカード数では分類の材料が足りない (パースだけで展開できていない等)。 */
 const MIN_CARDS = 20;
 /**
- * combo と判定する、コンボ信号を持つカードの**種類数** (枚数ではない)。
+ * combo と判定する条件は**種類数と合計枚数の両方**で見る。
  *
- * **枚数で数えると、汎用ドロー呪文を1プレイセット (4枚) 積んだだけで到達してしまう**
- * (レビュー指摘)。ループデッキは複数種のループ部品で成り立つので、異なるカード名で
- * この数以上あることを要求する。
+ * - **種類数**だけだと、コンボ信号を持つカードを各1枚だけ3種入れた (合計3/40枚) デッキが
+ *   combo になり、まばらな枠でも緩和が効いてしまう (Codex/レビュー指摘)。
+ * - **合計枚数**だけだと、汎用ドロー呪文を1プレイセット (1種4枚) 積んだだけで到達する
+ *   (最初のレビュー指摘)。
+ *
+ * そこで「異なるカード名で `COMBO_MIN_KINDS` 種以上」かつ「合計 `COMBO_MIN_COPIES` 枚以上」の
+ * 両方を満たすときだけ combo とする。1〜2部品のループデッキ (各プレイセット) は拾いつつ、
+ * 1プレイセットだけ・シングルトン3種のような誤検出を防ぐ。
  */
-const COMBO_MIN = 3;
+const COMBO_MIN_KINDS = 2;
+const COMBO_MIN_COPIES = 6;
 /** コントロール: クリーチャー比がこれ以下。 */
 const CONTROL_CREATURE_MAX = 0.4;
 /** コントロール: 受け + 除去 の合計がこれ以上 (相互作用が厚い)。 */
@@ -64,16 +70,15 @@ function isCreature(card: Card): boolean {
 export function inferDeckConcept(cards: Card[]): DeckConcept {
   if (cards.length < MIN_CARDS) return "unknown";
 
-  // コンボ信号を持つカードの**種類数** (同じカードの複数枚は1種と数える)。
-  const comboKinds = new Set(
-    cards.filter((c) => COMBO_SIGNAL.test(normalize(c.text))).map((c) => c.name),
-  ).size;
+  // コンボ信号を持つカード (展開済み=枚数ぶん)。種類数と合計枚数の両方で combo を判定する。
+  const comboCards = cards.filter((c) => COMBO_SIGNAL.test(normalize(c.text)));
+  const comboKinds = new Set(comboCards.map((c) => c.name)).size;
   const creatureRatio = cards.filter(isCreature).length / cards.length;
   const defenseCount = cards.filter(isDefensiveCard).length;
   const removalCount = cards.filter((c) => REMOVAL_RE.test(normalize(c.text))).length;
   const avgCost = cards.reduce((sum, c) => sum + c.cost, 0) / cards.length;
 
-  if (comboKinds >= COMBO_MIN) return "combo";
+  if (comboKinds >= COMBO_MIN_KINDS && comboCards.length >= COMBO_MIN_COPIES) return "combo";
   if (
     creatureRatio <= CONTROL_CREATURE_MAX &&
     defenseCount + removalCount >= CONTROL_INTERACTION_MIN

@@ -35,22 +35,35 @@ function many(n: number, c: Card): Card[] {
 }
 
 describe("inferDeckConcept (#130)", () => {
-  it("ループ/コンボ信号カードが**3種以上**あると combo", () => {
+  it("コンボ信号が2種以上かつ合計6枚以上なら combo (1〜2部品のループを拾う)", () => {
     const deck = [
       ...many(4, card({ name: "ループA", text: "無限にマナを生み出す", cost: 5 })),
       ...many(4, card({ name: "ループB", text: "好きなだけ召喚する", cost: 4 })),
-      ...many(4, card({ name: "ループC", text: "この効果を繰り返す", cost: 4 })),
-      ...many(28, card({ name: "無地", text: "" })),
+      ...many(32, card({ name: "無地", text: "" })),
     ];
+    // 2種 × 各4枚 = 8枚 → combo
     expect(inferDeckConcept(deck)).toBe("combo");
   });
 
-  it("同じコンボ信号カードを1プレイセット (4枚) 積んだだけでは combo にしない (種類数で見る)", () => {
+  it("同じコンボ信号カードを1プレイセット (1種4枚) 積んだだけでは combo にしない", () => {
     // 汎用ドロー呪文を4枚積んだだけのビートダウンが combo と誤判定される事故を防ぐ (レビュー指摘)。
     const deck = [
       ...many(4, card({ name: "汎用ドロー", text: "無限の可能性を秘めたカードを引く", cost: 3 })),
       ...many(36, card({ name: "無地", text: "", cost: 3 })),
     ];
+    // 1種のみ (合計4枚) → combo でない
+    expect(inferDeckConcept(deck)).not.toBe("combo");
+  });
+
+  it("コンボ信号が3種でも各1枚 (合計3枚) なら combo にしない (合計枚数の下限)", () => {
+    // まばらな splash / 制限カードでスコアが緩まないようにする (Codex/レビュー指摘)。
+    const deck = [
+      card({ name: "散らしA", text: "無限の可能性", cost: 5 }),
+      card({ name: "散らしB", text: "好きなだけ", cost: 5 }),
+      card({ name: "散らしC", text: "繰り返す", cost: 5 }),
+      ...many(37, card({ name: "無地", text: "", cost: 5 })),
+    ];
+    // 3種だが合計3枚 (< 6) → combo でない
     expect(inferDeckConcept(deck)).not.toBe("combo");
   });
 
