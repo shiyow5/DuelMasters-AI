@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { getSql } from "@dm-ai/db";
+import { resolveMainCards } from "../main-card.js";
 import {
   FORMATS,
   IngestUrlRequestSchema,
@@ -87,6 +88,21 @@ function isPublicHttpUrl(raw: string): boolean {
 }
 
 /** ティアリスト取得 */
+/**
+ * ティア表の各行にメインカードの画像を添える (#122)。
+ *
+ * **スナップショットに焼き込まない。** カード画像は表示の都合であって集計結果ではないし、
+ * 照合の規則を改善したときに再スナップショットを待たずに効くようにしたい。
+ * 引けなかったアーキタイプには何も足さない (無関係なカードを出すより空欄のほうがよい)。
+ */
+async function withMainCards<T extends { archetype: string }>(entries: T[]): Promise<T[]> {
+  const cards = await resolveMainCards(entries.map((e) => e.archetype));
+  return entries.map((e) => {
+    const card = cards.get(e.archetype);
+    return card ? { ...e, main_card: card } : e;
+  });
+}
+
 metaRouter.get("/tier", async (c) => {
   const format = c.req.query("format") ?? "original";
   if (!(FORMATS as readonly string[]).includes(format)) {
@@ -161,7 +177,7 @@ metaRouter.get("/tier", async (c) => {
         period: `${weeks}w`,
         period_start: isoDate(periodStart),
         period_end: isoDate(periodEnd),
-        tier_data: tierData,
+        tier_data: await withMainCards(tierData),
       });
     }
 
@@ -170,7 +186,9 @@ metaRouter.get("/tier", async (c) => {
       period: `${weeks}w`,
       period_start: snapshots[0].period_start,
       period_end: snapshots[0].period_end,
-      tier_data: snapshots[0].tier_data,
+      tier_data: await withMainCards(
+        snapshots[0].tier_data as Array<Record<string, unknown> & { archetype: string }>,
+      ),
     });
   } catch (err) {
     console.error("[api/meta] tier 取得に失敗 (フォールバック応答を返します):", err);

@@ -96,7 +96,8 @@ export default function MetaPage() {
                 環境分析
               </h1>
               <p className="text-text-muted text-base mt-1">
-                最新のCS/大会結果に基づいたティアリストと勝率データ
+                {/* **勝率は取込元に存在しない** (#122)。出せないものを謳わない。 */}
+                最新のCS入賞データに基づいたティアリスト (使用率・入賞数)
               </p>
             </div>
           </div>
@@ -228,15 +229,27 @@ function DeckCard({ entry, tier }: { entry: TierEntry; tier: string }) {
 
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-xl bg-bg-card border border-border-highlight transition-all shadow-sm">
-      {/* Header: アーキタイプ名から決定的に生成するグラデーション */}
+      {/* Header: メインカードの画像 (#122)。引けなければアーキタイプ名から作るグラデーション */}
       <div className="h-32 w-full relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-t from-bg-card to-transparent z-10" />
-        <div
-          className="w-full h-full group-hover:scale-105 transition-transform duration-500 opacity-80"
-          style={{
-            background: `linear-gradient(135deg, hsl(${hue} 60% 35%), hsl(${(hue + 40) % 360} 60% 20%))`,
-          }}
-        />
+        {entry.main_card ? (
+          // カード画像は縦長。上部 (イラスト部分) が見えるように object-top で寄せる。
+          // eslint-disable-next-line @next/next/no-img-element -- 外部 CDN の画像 (公式サイト)
+          <img
+            src={entry.main_card.image_url}
+            alt={entry.main_card.name}
+            title={entry.main_card.name}
+            loading="lazy"
+            className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
+          />
+        ) : (
+          <div
+            className="w-full h-full group-hover:scale-105 transition-transform duration-500 opacity-80"
+            style={{
+              background: `linear-gradient(135deg, hsl(${hue} 60% 35%), hsl(${(hue + 40) % 360} 60% 20%))`,
+            }}
+          />
+        )}
       </div>
 
       <div className="flex flex-col p-4 -mt-12 relative z-20">
@@ -248,18 +261,17 @@ function DeckCard({ entry, tier }: { entry: TierEntry; tier: string }) {
             <span className="text-xs text-text-muted">使用率</span>
             <span className={`text-lg font-bold ${style.valueColor}`}>{entry.usage_rate}%</span>
           </div>
+          {/*
+            **勝率は出せないので出さない** (#122)。
+            取込元 (公認 CS の結果記事) には順位しか載っておらず、勝敗が無い。そもそも
+            入賞デッキしか分からないので、負けたデッキの母集団が存在せず原理的に計算できない。
+            以前は常に「--」を表示していた。**実データで裏付けられる入賞数に置き換える。**
+          */}
           <div className="flex flex-col">
-            <span className="text-xs text-text-muted">勝率</span>
-            <span
-              className={`text-lg font-bold ${
-                entry.win_rate !== null
-                  ? entry.win_rate >= 50
-                    ? "text-success"
-                    : "text-warning"
-                  : "text-text-dim"
-              }`}
-            >
-              {entry.win_rate !== null ? `${entry.win_rate}%` : "--"}
+            <span className="text-xs text-text-muted">入賞数</span>
+            <span className={`text-lg font-bold ${style.valueColor}`}>
+              {entry.entries}
+              <span className="text-xs font-normal text-text-muted">/{entry.total_entries}</span>
             </span>
           </div>
           <div className="flex flex-col">

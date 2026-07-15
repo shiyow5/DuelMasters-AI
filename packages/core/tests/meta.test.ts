@@ -24,7 +24,11 @@ describe("aggregateTierData", () => {
       tier: "Tier2",
       usage_rate: 10,
     });
-    expect(out[0].win_rate).toBeNull();
+    // **勝率は返さない** (#122)。取込元に勝敗が無く、原理的に計算できない。
+    // 代わりに実データで裏付けられる入賞数を返す。
+    expect(out[0]).not.toHaveProperty("win_rate");
+    expect(out[0].entries).toBeGreaterThan(0);
+    expect(out[0].total_entries).toBeGreaterThan(0);
   });
 
   it("COUNT が文字列でも数値として集計する (postgres.js 対策)", () => {

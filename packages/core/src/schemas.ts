@@ -118,8 +118,11 @@ export const MetaSnapshotSchema = z.object({
       tier: z.enum(TIERS),
       archetype: z.string(),
       usage_rate: z.number(),
-      win_rate: z.number().nullable().default(null),
-      sample_decklist: z.array(DeckEntrySchema).nullable().default(null),
+      // **勝率は取込元に存在しない** (#122)。CS の入賞データからは原理的に計算できない
+      // (入賞デッキしか分からないので、負けたデッキの母集団が無い)。
+      // 常に null を返していたので、フィールドごと消した。
+      entries: z.number(),
+      total_entries: z.number(),
     }),
   ),
 });
