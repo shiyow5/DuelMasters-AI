@@ -3,7 +3,44 @@ import type { Citation } from "../src/state.js";
 import { citedArticles } from "../src/citations.js";
 
 export { citedArticles };
-import type { PR } from "./types.js";
+import type { PR, DeckQualitySpec, DeckQualityStats, DeckQualityResult } from "./types.js";
+
+/** civShare の既定閾値 (spec.minCivShare 未指定時)。中心文明は過半を占めるべき。 */
+const DEFAULT_MIN_CIV_SHARE = 0.5;
+
+/**
+ * 構築デッキの数値品質を検証する (#140)。**純粋関数** (I/O は run.ts が担う)。
+ *
+ * spec で指定された観点だけを検査し、満たさなかったものを failures に説明として並べる。
+ * LLM judge に品質を判定させない ([[llm-judge-unreliable]]) ための、機械的な数値ゲート。
+ */
+export function deckQuality(spec: DeckQualitySpec, stats: DeckQualityStats): DeckQualityResult {
+  const failures: string[] = [];
+
+  if (spec.archetype !== undefined && stats.archetype !== spec.archetype) {
+    failures.push(`アーキタイプが ${spec.archetype} でない (実際: ${stats.archetype ?? "不明"})`);
+  }
+  if (spec.civilization !== undefined) {
+    const minShare = spec.minCivShare ?? DEFAULT_MIN_CIV_SHARE;
+    const share = stats.civShares[spec.civilization] ?? 0;
+    if (share < minShare) {
+      failures.push(
+        `${spec.civilization} 文明の占有率 ${share.toFixed(2)} < ${minShare} (中心文明になっていない)`,
+      );
+    }
+  }
+  if (spec.minTrigger !== undefined && stats.triggerCount < spec.minTrigger) {
+    failures.push(`S・トリガー ${stats.triggerCount}枚 < ${spec.minTrigger}枚`);
+  }
+  if (spec.minLowCost !== undefined && stats.lowCost < spec.minLowCost) {
+    failures.push(`低コスト ${stats.lowCost}枚 < ${spec.minLowCost}枚`);
+  }
+  if (spec.minOverall !== undefined && stats.overall < spec.minOverall) {
+    failures.push(`総合スコア ${stats.overall} < ${spec.minOverall}`);
+  }
+
+  return { passed: failures.length === 0, failures };
+}
 
 /** 集合の precision/recall。expected が空なら「評価対象外」として recall=1 とする。 */
 export function prScore(expected: string[], actual: string[]): PR {
@@ -78,6 +115,7 @@ export function aggregate(
     citationGrounding?: number | null;
     factCoverage?: number;
     hasEvidence?: boolean;
+    deckQuality?: DeckQualityResult;
     toolFailures?: string[];
     judgeScore?: number;
     judgeFailed?: boolean;
@@ -107,6 +145,13 @@ export function aggregate(
    * 引数エラーは含まない (モデルの推測ミスであってシステムの退行ではない)。
    */
   toolFailureItems: number;
+  /**
+   * 構築デッキが数値品質基準を満たさなかった問の件数 (#140)。**0 でなければならない。**
+   * expectedDeck を持つ問だけが分母。judge 非依存でデッキ構築の退行を捕まえる番人。
+   */
+  deckQualityFailItems: number;
+  /** 構築デッキ品質を計測した問の件数 (0 なら計測対象が無い = ゲート対象外)。 */
+  deckQualityItems: number;
   judgeMean: number | null;
   /** judge を回したのに失敗した件数。部分的な judge 障害を検出する。 */
   judgeFailures: number;
@@ -131,6 +176,8 @@ export function aggregate(
       ok.filter((r) => r.hasEvidence !== undefined).map((r) => (r.hasEvidence ? 1 : 0)),
     ),
     toolFailureItems: ok.filter((r) => (r.toolFailures?.length ?? 0) > 0).length,
+    deckQualityItems: ok.filter((r) => r.deckQuality !== undefined).length,
+    deckQualityFailItems: ok.filter((r) => r.deckQuality && !r.deckQuality.passed).length,
     judgeMean: mean(ok.filter((r) => r.judgeScore !== undefined).map((r) => r.judgeScore!)),
     judgeFailures: ok.filter((r) => r.judgeFailed).length,
   };

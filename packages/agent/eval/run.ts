@@ -10,6 +10,8 @@
  */
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { autoBuild, scoreDeck } from "@dm-ai/deck-engine";
+import type { Format } from "@dm-ai/core";
 import { runAgent } from "../src/index.js";
 import {
   toolTrajectory,
@@ -17,11 +19,57 @@ import {
   citationGrounding,
   citedArticles,
   factCoverage,
+  deckQuality,
   aggregate,
 } from "./metrics.js";
 import { checkThresholds, THRESHOLDS } from "./thresholds.js";
 import { judgeAnswer } from "./judge.js";
-import type { GoldenItem, ItemResult } from "./types.js";
+import type { GoldenItem, ItemResult, DeckQualityStats, DeckQualityResult } from "./types.js";
+
+/**
+ * 構築デッキの数値品質を測る (#140)。
+ *
+ * **エージェントが build_deck に渡した引数から deck-engine を呼び直す。** autoBuild は同一 DB に
+ * 対して純粋・決定的なので、これはエージェントが実際に組んだのと同じデッキになる。狙いは
+ * 「エージェントが『火文明中心の速攻』から civilizations=['fire'] / max_cost=低 を正しく抽出できたか」
+ * という **agent レベルの信号**を、judge を介さず数値で検証すること。build_deck を呼んでいなければ
+ * その時点で不合格 (デッキを組む問なのに組まなかった = 退行)。
+ */
+async function measureDeckQuality(
+  item: GoldenItem,
+  toolCalls: Array<{ name: string; args: Record<string, unknown> }>,
+): Promise<DeckQualityResult> {
+  const spec = item.expectedDeck!;
+  const build = toolCalls.find((t) => t.name === "build_deck");
+  if (!build) return { passed: false, failures: ["build_deck を呼ばなかった"] };
+
+  const a = build.args;
+  const format: Format =
+    a.format === "advance" ? "advance" : item.format === "advance" ? "advance" : "original";
+  const result = await autoBuild(String(a.theme ?? item.question), format, {
+    requiredCards: Array.isArray(a.required_cards) ? (a.required_cards as string[]) : undefined,
+    civilizations: Array.isArray(a.civilizations) ? (a.civilizations as string[]) : undefined,
+    maxCost: typeof a.max_cost === "number" ? a.max_cost : undefined,
+    minCreatures: typeof a.min_creatures === "number" ? a.min_creatures : undefined,
+  });
+  const score = await scoreDeck({ entries: result.entries, totalCards: result.totalCards });
+
+  const civShares: Record<string, number> = {};
+  if (result.totalCards > 0) {
+    for (const [civ, count] of Object.entries(score.civilizationBalance)) {
+      civShares[civ] = count / result.totalCards;
+    }
+  }
+  const stats: DeckQualityStats = {
+    archetype: score.archetype,
+    triggerCount: score.triggerCount,
+    lowCost: score.costCurve.low,
+    overall: score.overall,
+    civShares,
+    totalCards: result.totalCards,
+  };
+  return deckQuality(spec, stats);
+}
 
 function loadGolden(dir: string): GoldenItem[] {
   const items: GoldenItem[] = [];
@@ -76,6 +124,10 @@ async function evalItem(item: GoldenItem, noJudge: boolean): Promise<ItemResult>
     res.response = out.response;
     res.citedArticles = citedArticles(out.response);
     res.ungroundedCitations = out.ungroundedCitations;
+    // 構築デッキの数値品質 (#140)。build_deck の引数からデッキを組み直して機械的に検証する。
+    if (item.expectedDeck) {
+      res.deckQuality = await measureDeckQuality(item, out.toolCalls ?? []);
+    }
     if (item.rubric && !noJudge) {
       // judge 失敗 (構造化出力/quota/一時エラー) を item 全体の失敗にせず、
       // 既算出の tool/fact/citation 指標を保持する (judge 障害を agent 失敗に見せない)。
@@ -113,6 +165,7 @@ function renderReport(agg: ReturnType<typeof aggregate>): string {
     `- 出典の裏取り (本文の条番号が資料にあるか): **${fmt(agg.citationGrounding)}**`,
     `- 根拠あり率 (引用 or ツール結果。1未満 = 記憶だけで答えた問がある): **${fmt(agg.evidenceRate)}**`,
     `- **システム障害でツールが落ちた問: ${agg.toolFailureItems}件** (0 でなければならない)`,
+    `- **構築デッキが品質基準を外した問: ${agg.deckQualityFailItems}件** / 計測 ${agg.deckQualityItems}件 (0 でなければならない)`,
     `- 事実カバレッジ: **${fmt(agg.factCoverage)}**`,
     `- judge 平均 (1-5): **${fmt(agg.judgeMean)}**` +
       (agg.judgeFailures > 0 ? ` (**judge 失敗 ${agg.judgeFailures}件**)` : ""),
@@ -141,7 +194,11 @@ async function main(): Promise<number> {
       `  ${r.id} [${r.mode}] ${
         r.error
           ? "ERR " + r.error
-          : `judge=${r.judgeScore ?? "-"} tool=${fmt(r.tool?.recall ?? null)} facts=${fmt(r.factCoverage ?? null)} ${r.latencyMs}ms`
+          : `judge=${r.judgeScore ?? "-"} tool=${fmt(r.tool?.recall ?? null)} facts=${fmt(r.factCoverage ?? null)}` +
+            (r.deckQuality
+              ? ` deck=${r.deckQuality.passed ? "OK" : "NG(" + r.deckQuality.failures.join("; ") + ")"}`
+              : "") +
+            ` ${r.latencyMs}ms`
       }`,
     );
   }

@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import type { Card } from "@dm-ai/core";
-import { inferDeckConcept, isRelaxedConcept, conceptLabel } from "../src/concept.js";
+import {
+  inferDeckConcept,
+  inferDeckArchetype,
+  isRelaxedConcept,
+  conceptLabel,
+  archetypeLabel,
+} from "../src/concept.js";
 
 /**
  * デッキ戦略コンセプト検出 (#130)。
@@ -121,5 +127,83 @@ describe("inferDeckConcept (#130)", () => {
     expect(conceptLabel("combo")).toBe("コンボ");
     expect(conceptLabel("control")).toBe("コントロール");
     expect(conceptLabel("unknown")).toBe("不明");
+  });
+});
+
+/**
+ * デッキアーキタイプ推定 (#140)。
+ *
+ * concept (#130) を土台に、classic な aggro / midrange / control / combo (+ unknown) へ分類する。
+ * **分類器は inferDeckConcept を内部再利用して1本にする** (二重分類を作らない。Issue #128/#140 の指示)。
+ * combo/control は concept の意図をそのまま採り、beatdown = aggro。concept が unknown に落ちたものを
+ * 速度とクリーチャー比で aggro / midrange に割る (#130 が midrange を unknown に落としていた穴を埋める)。
+ */
+describe("inferDeckArchetype (#140)", () => {
+  it("combo コンセプトは combo アーキタイプ (意図を最優先)", () => {
+    const deck = [
+      ...many(4, card({ name: "ループA", text: "無限にマナを生み出す", cost: 5 })),
+      ...many(4, card({ name: "ループB", text: "好きなだけ召喚する", cost: 4 })),
+      ...many(32, card({ name: "無地", text: "" })),
+    ];
+    expect(inferDeckArchetype(deck)).toBe("combo");
+  });
+
+  it("control コンセプトは control アーキタイプ", () => {
+    const deck = [
+      ...many(12, card({ type: "spell", cost: 5, text: "相手のクリーチャーを1体破壊する" })),
+      ...many(8, card({ type: "spell", cost: 4, is_shield_trigger: true, text: "相手を止める" })),
+      ...many(8, card({ type: "creature", cost: 7, text: "" })),
+      ...many(12, card({ type: "spell", cost: 3, text: "カードを2枚引く" })),
+    ];
+    expect(inferDeckArchetype(deck)).toBe("control");
+  });
+
+  it("beatdown (高クリーチャー比・低コスト) は aggro", () => {
+    const deck = many(40, card({ type: "creature", cost: 2, text: "" }));
+    expect(inferDeckArchetype(deck)).toBe("aggro");
+  });
+
+  it("クリーチャー主体だが平均コストがやや高い (beatdown 未満) デッキも aggro に拾う", () => {
+    // 平均コスト 3.8: beatdown の 3.5 を超えるので concept は unknown。だが速攻寄りなので aggro。
+    const deck = [
+      ...many(28, card({ type: "creature", cost: 4, text: "" })),
+      ...many(12, card({ type: "creature", cost: 3, text: "" })),
+    ];
+    // creatureRatio = 1.0, avgCost = (28*4 + 12*3)/40 = 3.8
+    expect(inferDeckConcept(deck)).toBe("unknown");
+    expect(inferDeckArchetype(deck)).toBe("aggro");
+  });
+
+  it("クリーチャー半々・中コストの中庸デッキは midrange (#130 では unknown に落ちていた穴)", () => {
+    const deck = [
+      ...many(20, card({ type: "creature", cost: 5, text: "" })),
+      ...many(20, card({ type: "spell", cost: 4, text: "マナを1枚増やす" })),
+    ];
+    // creatureRatio = 0.5, avgCost = 4.5 → aggro 帯には届かず midrange
+    expect(inferDeckConcept(deck)).toBe("unknown");
+    expect(inferDeckArchetype(deck)).toBe("midrange");
+  });
+
+  it("クリーチャーが乏しく重く、相互作用も薄い (どの確信条件にも届かない) デッキは unknown", () => {
+    // creatureRatio 0.3・平均コスト 6.5・受け/除去も薄い → control の確信条件に届かず、
+    // aggro/midrange のクリーチャー比にも届かない。緩めず unknown のままにする。
+    const deck = [
+      ...many(12, card({ type: "creature", cost: 7, text: "" })),
+      ...many(28, card({ type: "spell", cost: 6, text: "マナを1枚増やす" })),
+    ];
+    expect(inferDeckArchetype(deck)).toBe("unknown");
+  });
+
+  it("カード数が少なすぎる (展開できていない) と unknown", () => {
+    const deck = many(5, card({ type: "creature", cost: 2 }));
+    expect(inferDeckArchetype(deck)).toBe("unknown");
+  });
+
+  it("archetypeLabel は日本語ラベルを返す", () => {
+    expect(archetypeLabel("aggro")).toBe("アグロ");
+    expect(archetypeLabel("midrange")).toBe("ミッドレンジ");
+    expect(archetypeLabel("control")).toBe("コントロール");
+    expect(archetypeLabel("combo")).toBe("コンボ");
+    expect(archetypeLabel("unknown")).toBe("不明");
   });
 });

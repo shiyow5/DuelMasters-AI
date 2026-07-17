@@ -30,6 +30,58 @@ export interface GoldenItem {
    * 遊戯王の質問のように「根拠なしで断るのが正解」の問には付けない。
    */
   expectEvidence?: boolean;
+  /**
+   * 構築デッキの**数値**品質基準 (#140)。build_deck を呼ぶ問だけに付ける。
+   *
+   * LLM judge に品質判定を任せない ([[llm-judge-unreliable]])。エージェントが build_deck に
+   * 渡した引数から deck-engine を呼び直し (autoBuild → scoreDeck)、得たデッキが基準を満たすかを
+   * **機械的に**検証する。judge は「火文明中心か」「速攻の方針か」を言葉で見るだけだが、これは
+   * 実際に組まれたデッキが火文明中心・低コスト・アグロ採点かを数値で見る。
+   */
+  expectedDeck?: DeckQualitySpec;
+}
+
+/**
+ * 構築デッキの数値品質基準 (#140)。すべて任意 (指定した観点だけを検査する)。
+ * 値は「エージェントが妥当な引数を渡せば deck-engine が達成できる水準」に置く
+ * (ベースラインを実測してから margin を取って締める。THRESHOLDS と同じ運用)。
+ */
+export interface DeckQualitySpec {
+  /** scoreDeck が推定すべきアーキタイプ (aggro/midrange/control/combo)。 */
+  archetype?: string;
+  /** 中心文明の内部コード (例 "fire")。構築デッキでこの文明が minCivShare 以上を占めること。 */
+  civilization?: string;
+  /** civilization の最低占有率 (0-1)。既定 0.5。 */
+  minCivShare?: number;
+  /** S・トリガーの最低枚数。 */
+  minTrigger?: number;
+  /** 低コスト(3以下)の最低枚数。 */
+  minLowCost?: number;
+  /** 総合スコアの最低値 (0-100)。 */
+  minOverall?: number;
+}
+
+/** deckQuality に渡す、構築デッキから抽出した実測値 (#140)。 */
+export interface DeckQualityStats {
+  /** scoreDeck が推定したアーキタイプ。 */
+  archetype?: string;
+  /** S・トリガー枚数。 */
+  triggerCount: number;
+  /** 低コスト(3以下)の枚数 (costCurve.low)。 */
+  lowCost: number;
+  /** 総合スコア。 */
+  overall: number;
+  /** 文明コード → 占有率 (その文明のカード数 / 総枚数)。多色は各文明に計上。 */
+  civShares: Record<string, number>;
+  /** 総枚数。 */
+  totalCards: number;
+}
+
+/** 構築デッキ品質の検証結果 (#140)。 */
+export interface DeckQualityResult {
+  passed: boolean;
+  /** 満たさなかった基準の説明 (退行診断用)。空なら合格。 */
+  failures: string[];
 }
 
 /** precision / recall のペア (該当なし時は 1 とみなす方針は算出側で明示)。 */
@@ -69,6 +121,11 @@ export interface ItemResult {
    * false = 記憶だけで答えた = ハルシネーションの温床。
    */
   hasEvidence?: boolean;
+  /**
+   * 構築デッキの数値品質 (#140)。expectedDeck を持つ問だけ計測する。
+   * passed=false は「エージェントの引数が悪く、組まれたデッキが基準を満たさない」= 退行。
+   */
+  deckQuality?: DeckQualityResult;
   /**
    * 失敗したツール名 (#109)。**測らないものは直せない。**
    *
