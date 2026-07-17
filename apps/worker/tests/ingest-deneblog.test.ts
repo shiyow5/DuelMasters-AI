@@ -64,8 +64,25 @@ describe("parseRecipeTitle", () => {
   });
 });
 
-/** 実記事の構造を写したフィクスチャ。定型文の前後に画像が1枚ずつ来るのが要点。 */
-function bodyHtml(opts: { eyecatch: string; decklist: string; participants?: string }): string {
+/**
+ * 実記事の構造を写したフィクスチャ。募集の定型文の前後に画像が1枚ずつ来るのが要点。
+ *
+ * `era` で新旧を切り替える。**定型文は時期で変わっている**:
+ * - new: 「※もし1ヶ月以上掲載が行われていない場合は、…よりお問い合わせ下さい。」が**ある**
+ * - old: それが**無い**(2026年前半までの記事)。ここをアンカーにしていたため本番で
+ *   古い記事 41/117 件を取りこぼした。
+ * どちらにも「応募方法はこちら」はある。
+ */
+function bodyHtml(opts: {
+  eyecatch: string;
+  decklist: string;
+  participants?: string;
+  era?: "new" | "old";
+}): string {
+  const contactLine =
+    opts.era === "old"
+      ? ""
+      : `※もし1ヶ月以上掲載が行われていない場合は、<a href="/form">メールフォーム</a>よりお問い合わせ下さい。<br>`;
   return `
   <div class="ently_body">
     <div class="entry_date">2026.07.13 16:21</div>
@@ -76,7 +93,8 @@ function bodyHtml(opts: { eyecatch: string; decklist: string; participants?: str
       サガループ　🍣mofura🍣さん<br>
       ※有志の方よりデッキレシピを提供して頂いてはじめて成り立つコンテンツです。<br>
       公認大会優勝・CS入賞デッキレシピ募集中！<br>
-      ※もし1ヶ月以上掲載が行われていない場合は、<a href="/form">メールフォーム</a>よりお問い合わせ下さい。<br>
+      →<a href="/apply">応募方法はこちら。</a>（タップすると移動します。）<br>
+      ${contactLine}
       トレカラインCS優勝　サガループ　🍣mofura🍣さん<br>
       <a href="${opts.decklist}"><img src="${opts.decklist.replace(".jpg", "s.jpg")}"></a><br>
       ${opts.participants ?? ""}
@@ -100,6 +118,19 @@ describe("parseRecipeBody", () => {
       decklist_image_url: DECKLIST,
       participants: 55,
     });
+  });
+
+  it("古い記事 (問い合わせ定型文が無い) でもデッキリスト画像を取れる", () => {
+    // **本番の初回取込で実際に踏んだ回帰。** 定型文「…よりお問い合わせ下さい。」を
+    // アンカーにしていたため、それが無い古い記事 41/117 件をまるごと落としていた。
+    // 検証に使った実記事20件が全部最近のもので、古い定型文を1件も含んでいなかった
+    // (サンプリングの偏り)。
+    const html = bodyHtml({
+      eyecatch: "https://blog-imgs-166.fc2.com/d/e/n/deneblog1/2023062200542261f.jpg",
+      decklist: DECKLIST,
+      era: "old",
+    });
+    expect(parseRecipeBody(html)?.decklist_image_url).toBe(DECKLIST);
   });
 
   it("アイキャッチが記事と同じ日にアップされていてもデッキリスト画像を選ぶ", () => {
