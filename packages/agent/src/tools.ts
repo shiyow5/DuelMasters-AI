@@ -49,10 +49,27 @@ export interface ToolResult {
 
 type Format = "original" | "advance";
 
-function resolveFormat(value: unknown, fallback?: string): Format {
+export function resolveFormat(value: unknown, fallback?: string): Format {
   const v = (value as string) ?? fallback ?? "original";
   return v === "advance" ? "advance" : "original";
 }
+
+/**
+ * build_deck ツールの引数スキーマ。グラフの tools ノードは zod schema を通さず args を直接渡すので
+ * runTool 内で検証する。**eval の deckQuality もこれを再利用して「実ツールなら拒否される呼び出し」を
+ * 正しく不合格にする** (#140 レビュー: 拒否される引数でもデッキを捏造してゲートを素通りしていた)。
+ *
+ * `.positive()` は排他境界 (exclusiveMinimum) になり Gemini の function declaration が 400 を返す。
+ * `.min(1)` で包含境界にする。
+ */
+export const BUILD_DECK_SCHEMA = z.object({
+  theme: z.string(),
+  format: z.enum(["original", "advance"]).optional(),
+  required_cards: z.array(z.string()).optional(),
+  civilizations: z.array(z.enum(CIVILIZATIONS)).nonempty().optional(),
+  max_cost: z.number().optional(),
+  min_creatures: z.number().int().min(1).optional(),
+});
 
 /**
  * ツール実行のディスパッチャ。グラフの tools ノードが state.format を渡して呼ぶ。
@@ -156,17 +173,7 @@ export async function runTool(
         // グラフの tools ノードは zod schema を通さず args を直接渡すのでここで検証する。
         // 不正な文明コード (例: 日本語の "火") を黙って捨てると制約なしで構築が走り、
         // まさに防ぎたい混色デッキが返るため、引数エラーとしてモデルに再指定させる。
-        const schema = z.object({
-          theme: z.string(),
-          format: z.enum(["original", "advance"]).optional(),
-          required_cards: z.array(z.string()).optional(),
-          civilizations: z.array(z.enum(CIVILIZATIONS)).nonempty().optional(),
-          max_cost: z.number().optional(),
-          // .positive() は排他境界 (exclusiveMinimum) になり Gemini の function declaration が
-          // 400 を返す。.min(1) で包含境界にする。
-          min_creatures: z.number().int().min(1).optional(),
-        });
-        const parsed = schema.safeParse(args);
+        const parsed = BUILD_DECK_SCHEMA.safeParse(args);
         if (!parsed.success) {
           // 引数エラー。**システム障害ではない** — モデルは正しい引数で呼び直せる。
           return {

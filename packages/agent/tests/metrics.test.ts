@@ -149,8 +149,16 @@ describe("deckQuality (#140 構築デッキの数値品質)", () => {
     expect(deckQuality({ minOverall: 80 }, stats({ overall: 70 })).passed).toBe(false);
   });
 
-  it("指定していない観点は検査しない (空 spec は常に合格)", () => {
+  it("指定していない観点は検査しない (空 spec でも 40枚なら合格)", () => {
     expect(deckQuality({}, stats()).passed).toBe(true);
+  });
+
+  it("40枚に満たない不完全なデッキは spec によらず不合格 (#140 Codex 指摘)", () => {
+    // カードプール不足で autoBuild が 20枚しか組めなくても、scoreDeck は -20 しか課さないので
+    // 他の基準を通り抜けうる。枚数は spec と無関係に必ず検査する。
+    const r = deckQuality({}, stats({ totalCards: 20 }));
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("20枚");
   });
 });
 

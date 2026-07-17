@@ -3,6 +3,7 @@ import type { Citation } from "../src/state.js";
 import { citedArticles } from "../src/citations.js";
 
 export { citedArticles };
+import { DECK_SIZE } from "@dm-ai/core";
 import type { PR, DeckQualitySpec, DeckQualityStats, DeckQualityResult } from "./types.js";
 
 /** civShare の既定閾値 (spec.minCivShare 未指定時)。中心文明は過半を占めるべき。 */
@@ -16,6 +17,13 @@ const DEFAULT_MIN_CIV_SHARE = 0.5;
  */
 export function deckQuality(spec: DeckQualitySpec, stats: DeckQualityStats): DeckQualityResult {
   const failures: string[] = [];
+
+  // **枚数は spec によらず必ず検査する。** カードプールや制約が厳しいと autoBuild が 40枚に届かない
+  // ことがある。scoreDeck は枚数不足に -20 しか課さないので、20枚の不正なデッキでも 70点台で他の
+  // 基準を通り抜けうる (Codex 指摘)。40枚ちょうどでなければ、それは「組めなかった」= 不合格。
+  if (stats.totalCards !== DECK_SIZE) {
+    failures.push(`デッキ枚数が ${stats.totalCards}枚 (正しくは ${DECK_SIZE}枚。構築が不完全)`);
+  }
 
   if (spec.archetype !== undefined && stats.archetype !== spec.archetype) {
     failures.push(`アーキタイプが ${spec.archetype} でない (実際: ${stats.archetype ?? "不明"})`);

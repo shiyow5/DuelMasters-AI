@@ -11,8 +11,9 @@
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { autoBuild, scoreDeck } from "@dm-ai/deck-engine";
-import { DECK_ARCHETYPES, type Format } from "@dm-ai/core";
+import { DECK_ARCHETYPES } from "@dm-ai/core";
 import { runAgent } from "../src/index.js";
+import { BUILD_DECK_SCHEMA, resolveFormat } from "../src/tools.js";
 import {
   toolTrajectory,
   citationScore,
@@ -40,7 +41,7 @@ async function measureDeckQuality(
   toolCalls: Array<{ name: string; args: Record<string, unknown> }>,
 ): Promise<DeckQualityResult> {
   const spec = item.expectedDeck!;
-  // **最後の** build_deck 呼び出しを採る (最初のではない)。モデルは引数エラー (tools.ts の zod で
+  // **最後の** build_deck 呼び出しを採る (最初のではない)。モデルは引数エラー (BUILD_DECK_SCHEMA で
   // 弾かれる不正な文明コード等) で build_deck を呼び直すことがあり、その retry は toolCalls に
   // 積み上がる。先頭を採ると、破棄された最初の試行から組み直してしまい「エージェントが実際に組んだ
   // デッキ」とズレる (誤判定・見逃しの両方が起きる)。最終回答を導いたのは最後の呼び出し。
@@ -48,14 +49,23 @@ async function measureDeckQuality(
   const build = buildCalls[buildCalls.length - 1];
   if (!build) return { passed: false, failures: ["build_deck を呼ばなかった"] };
 
-  const a = build.args;
-  const format: Format =
-    a.format === "advance" ? "advance" : item.format === "advance" ? "advance" : "original";
-  const result = await autoBuild(String(a.theme ?? item.question), format, {
-    requiredCards: Array.isArray(a.required_cards) ? (a.required_cards as string[]) : undefined,
-    civilizations: Array.isArray(a.civilizations) ? (a.civilizations as string[]) : undefined,
-    maxCost: typeof a.max_cost === "number" ? a.max_cost : undefined,
-    minCreatures: typeof a.min_creatures === "number" ? a.min_creatures : undefined,
+  // **実ツール (runTool の build_deck) と同じ検証・引数抽出を再利用する。** そうしないと:
+  // - 実ツールなら拒否される引数 (theme 欠落など) でも item.question を代入してデッキを捏造し、
+  //   エージェントが実際にはデッキを作れていないのにゲートを通してしまう。
+  // - format の優先順位が実ツール (引数優先) とズレ、別レギュレーションのデッキを採点してしまう。
+  const parsed = BUILD_DECK_SCHEMA.safeParse(build.args);
+  if (!parsed.success) {
+    return {
+      passed: false,
+      failures: ["build_deck の引数が実ツールの検証を通らない (拒否される呼び出し)"],
+    };
+  }
+  const format = resolveFormat(parsed.data.format, item.format);
+  const result = await autoBuild(parsed.data.theme, format, {
+    requiredCards: parsed.data.required_cards,
+    civilizations: parsed.data.civilizations,
+    maxCost: parsed.data.max_cost,
+    minCreatures: parsed.data.min_creatures,
   });
   // ParsedDeck は errors も要求する (autoBuild の結果には無いので空で補う。scoreDeck は読まない)。
   const score = await scoreDeck({
