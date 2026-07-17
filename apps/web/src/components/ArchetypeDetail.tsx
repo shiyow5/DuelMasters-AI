@@ -49,10 +49,16 @@ interface ArchetypeDetailResponse {
 export default function ArchetypeDetail({
   entry,
   format,
+  period,
   onClose,
 }: {
   entry: TierEntry;
   format: "original" | "advance";
+  /**
+   * ティア表で選んでいる期間 (2w/4w/8w)。**必ず渡すこと。**
+   * これを渡さないと詳細の戦績だけ全期間になり、開いたカードの使用率・入賞数と矛盾する。
+   */
+  period: string;
   onClose: () => void;
 }) {
   const [data, setData] = useState<ArchetypeDetailResponse | null>(null);
@@ -65,6 +71,7 @@ export default function ArchetypeDetail({
     let cancelled = false;
     apiGet<ArchetypeDetailResponse>(`/api/meta/archetype/${encodeURIComponent(entry.archetype)}`, {
       format,
+      period,
     })
       .then((res) => {
         if (cancelled) return;
@@ -80,7 +87,7 @@ export default function ArchetypeDetail({
     return () => {
       cancelled = true;
     };
-  }, [entry.archetype, format]);
+  }, [entry.archetype, format, period]);
 
   const dialogRef = useRef<HTMLDialogElement>(null);
 

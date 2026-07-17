@@ -257,7 +257,13 @@ export default function MetaPage() {
 
       {/* デッキの詳細 (クリックで開く) */}
       {selected && (
-        <ArchetypeDetail entry={selected} format={format} onClose={() => setSelected(null)} />
+        <ArchetypeDetail
+          entry={selected}
+          format={format}
+          // **期間もティア表と揃えて渡す** (渡さないと戦績だけ全期間になり数字が矛盾する)。
+          period={period}
+          onClose={() => setSelected(null)}
+        />
       )}
     </div>
   );
