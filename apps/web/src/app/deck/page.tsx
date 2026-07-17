@@ -338,8 +338,16 @@ export default function DeckPage() {
           )}
         </div>
 
-        {/* Center Column: Build Result / Validation */}
-        <div className="col-span-12 lg:col-span-6 flex flex-col bg-bg-surface border border-border-highlight rounded-xl overflow-hidden">
+        {/*
+          Center Column: Build Result / Validation
+
+          **overflow は lg 以上でだけ効かせる** (左右カラムの `lg:overflow-y-auto` と同じ方針)。
+          lg 未満では 3カラムが縦積みになり、このカラムの高さはグリッド行の内容で決まる。
+          そこで `overflow-hidden` と `flex-1`(basis 0) を無条件に付けると、**カラムが
+          高さ2px(上下ボーダーのみ)に潰れたままヘッダをクリップ**し、ヘッダ内のトグルが
+          「見えているのに押せない」状態になっていた (実測: 375/414/768/1000px で再現)。
+        */}
+        <div className="col-span-12 lg:col-span-6 flex flex-col bg-bg-surface border border-border-highlight rounded-xl lg:overflow-hidden">
           <div className="p-4 border-b border-border-highlight flex items-center justify-between gap-4">
             <h3 className="text-sm font-semibold text-text-muted">
               {centerView === "grid" ? "カード画像" : buildResult ? "構築結果" : "デッキ内容"}
@@ -367,7 +375,11 @@ export default function DeckPage() {
               ))}
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-4">
+          {/*
+            本文も lg 以上でだけスクロール枠にする。lg 未満で `flex-1`(basis 0) にすると
+            カラムの内容高さに寄与せず、上記の潰れを招く。縦積み時はページ側がスクロールする。
+          */}
+          <div className="p-4 lg:flex-1 lg:overflow-y-auto">
             {/*
               グリッドは常にマウントしたまま CSS で表示を切り替える。ternary で unmount すると
               タブを切り替えるたびに再マウントされ、同じデッキで /api/card/resolve を無駄打ちして
