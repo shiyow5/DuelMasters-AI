@@ -5,6 +5,7 @@ import { chatRouter } from "./routes/chat.js";
 import { deckRouter } from "./routes/deck.js";
 import { cardRouter } from "./routes/card.js";
 import { metaRouter } from "./routes/meta.js";
+import { recipesRouter } from "./routes/recipes.js";
 import { userRouter } from "./routes/user.js";
 import { conversationRouter } from "./routes/conversations.js";
 import { optionalAuth, requireAuthUnlessAnonymous } from "./middleware/auth.js";
@@ -63,6 +64,7 @@ app.route("/api/chat", chatRouter);
 app.route("/api/deck", deckRouter);
 app.route("/api/card", cardRouter);
 app.route("/api/meta", metaRouter);
+app.route("/api/recipes", recipesRouter);
 app.route("/api/user", userRouter);
 app.route("/api/conversations", conversationRouter);
 
