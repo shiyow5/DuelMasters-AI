@@ -16,6 +16,7 @@
     "ingest:tags": "tsx src/jobs/ingest-tags.ts",
     "ingest:faq": "tsx src/jobs/ingest-faq.ts",
     "ingest:tournaments": "tsx src/jobs/ingest-tournaments.ts",
+    "ingest:deneblog": "tsx src/jobs/ingest-deneblog.ts",
     "snapshot:meta": "tsx src/jobs/snapshot-meta.ts",
     "fix:card-types": "tsx src/jobs/fix-card-types.ts",
     "typecheck": "tsc --noEmit",

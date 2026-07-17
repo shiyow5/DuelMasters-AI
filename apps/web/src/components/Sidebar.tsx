@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/rule", icon: "gavel", label: "ルール検索" },
   { href: "/deck", icon: "style", label: "デッキビルダー" },
   { href: "/meta", icon: "monitoring", label: "環境分析" },
+  { href: "/recipes", icon: "photo_library", label: "入賞レシピ" },
 ];
 
 export default function Sidebar() {

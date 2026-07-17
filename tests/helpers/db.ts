@@ -24,6 +24,6 @@ export async function truncateAll(sql: ReturnType<typeof postgres>) {
   // conversations は CASCADE で conversation_messages / message_feedback も消える。
   await sql`TRUNCATE cards, regulations, rule_chunks, decks,
             tournament_results, archetype_weekly_stats, meta_snapshots, user_settings,
-            conversations, conversation_messages, message_feedback
+            deck_recipes, conversations, conversation_messages, message_feedback
             RESTART IDENTITY CASCADE`;
 }
