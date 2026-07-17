@@ -11,7 +11,7 @@
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { autoBuild, scoreDeck } from "@dm-ai/deck-engine";
-import type { Format } from "@dm-ai/core";
+import { DECK_ARCHETYPES, type Format } from "@dm-ai/core";
 import { runAgent } from "../src/index.js";
 import {
   toolTrajectory,
@@ -40,7 +40,12 @@ async function measureDeckQuality(
   toolCalls: Array<{ name: string; args: Record<string, unknown> }>,
 ): Promise<DeckQualityResult> {
   const spec = item.expectedDeck!;
-  const build = toolCalls.find((t) => t.name === "build_deck");
+  // **最後の** build_deck 呼び出しを採る (最初のではない)。モデルは引数エラー (tools.ts の zod で
+  // 弾かれる不正な文明コード等) で build_deck を呼び直すことがあり、その retry は toolCalls に
+  // 積み上がる。先頭を採ると、破棄された最初の試行から組み直してしまい「エージェントが実際に組んだ
+  // デッキ」とズレる (誤判定・見逃しの両方が起きる)。最終回答を導いたのは最後の呼び出し。
+  const buildCalls = toolCalls.filter((t) => t.name === "build_deck");
+  const build = buildCalls[buildCalls.length - 1];
   if (!build) return { passed: false, failures: ["build_deck を呼ばなかった"] };
 
   const a = build.args;
@@ -52,7 +57,12 @@ async function measureDeckQuality(
     maxCost: typeof a.max_cost === "number" ? a.max_cost : undefined,
     minCreatures: typeof a.min_creatures === "number" ? a.min_creatures : undefined,
   });
-  const score = await scoreDeck({ entries: result.entries, totalCards: result.totalCards });
+  // ParsedDeck は errors も要求する (autoBuild の結果には無いので空で補う。scoreDeck は読まない)。
+  const score = await scoreDeck({
+    entries: result.entries,
+    totalCards: result.totalCards,
+    errors: [],
+  });
 
   const civShares: Record<string, number> = {};
   if (result.totalCards > 0) {
@@ -79,6 +89,16 @@ function loadGolden(dir: string): GoldenItem[] {
       .map((l) => l.trim())
       .filter(Boolean);
     for (const l of lines) items.push(JSON.parse(l) as GoldenItem);
+  }
+  // expectedDeck.archetype の綴り間違いは「機械的ゲート」を静かに無効化する (どのデッキにも一致せず
+  // 素通り)。golden 読み込み時に既知のアーキタイプかを検証し、違えば即座に落とす (fail fast)。
+  for (const item of items) {
+    const a = item.expectedDeck?.archetype;
+    if (a !== undefined && !(DECK_ARCHETYPES as readonly string[]).includes(a)) {
+      throw new Error(
+        `golden "${item.id}": expectedDeck.archetype が不正です: "${a}" (許可: ${DECK_ARCHETYPES.join(", ")})`,
+      );
+    }
   }
   return items;
 }

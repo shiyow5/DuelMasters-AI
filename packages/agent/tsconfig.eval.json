@@ -1,0 +1,11 @@
+{
+  // eval/ の型検査用 (emit しない)。build (tsconfig.json) は src→dist だけを対象にするため、
+  // eval/ は型検査から漏れていた (#140 レビュー: scoreDeck 呼び出しの errors 欠落が CI を素通り
+  // した)。この構成を typecheck スクリプトで併走させ、eval ハーネスの型退行を CI で捕まえる。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src", "eval"]
+}
