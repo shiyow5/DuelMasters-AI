@@ -94,6 +94,53 @@ test("検索語を API に q として渡す", async ({ page }) => {
     .toBe(true);
 });
 
+test("件数が多くてもスクロールしてページ送りに到達できる", async ({ page }) => {
+  // ルートレイアウトは `h-screen overflow-hidden` で children を包む。ページ側に
+  // スクロール領域が無いと、グリッドとページ送りが**画面外に切り落とされて触れなくなる**
+  // (#142 と同じ壊れ方。1件だけのテストでは絶対に出ない)。
+  const many = Array.from({ length: 24 }, (_, i) => ({
+    ...RECIPE,
+    source_url: `https://deneblog.jp/blog-entry-${1000 + i}.html`,
+    deck_name: `テストデッキ${i}`,
+  }));
+  await page.route("**/api/recipes**", (route) =>
+    route.fulfill({
+      json: { recipes: many, total: 100, limit: 24, offset: 0 },
+      headers: { "Access-Control-Allow-Origin": "*" },
+    }),
+  );
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/recipes");
+
+  const next = page.getByRole("button", { name: "次へ" });
+
+  // **scrollIntoViewIfNeeded は使わない。** overflow:hidden の要素は「プログラムからは
+  // スクロールできるが、ユーザーのホイールではできない」ため、それで検証すると
+  // 壊れていても通ってしまう (実際にこの回帰を取り逃した)。実ユーザーと同じ
+  // ホイール操作で到達できるかを見る。
+  await page.mouse.move(640, 400);
+  for (let i = 0; i < 12; i++) await page.mouse.wheel(0, 400);
+
+  const box = await next.boundingBox();
+  expect(box).not.toBeNull();
+  // ページ送りがビューポート内に来ていること (画面外に切り落とされていない)
+  expect(box!.y).toBeLessThan(800);
+  expect(box!.y + box!.height).toBeGreaterThan(0);
+
+  // 「見えている」だけでなく**実際に押せる**ことまで確かめる (#142 の教訓)
+  await next.click({ timeout: 5000 });
+  await expect(page.getByText("2 / 5")).toBeVisible();
+});
+
+test("モバイルでもサイドバーを開くメニューがある", async ({ page }) => {
+  // lg 未満ではサイドバーがオフキャンバスになり、開く手段は共通 Header のハンバーガーだけ。
+  // 独自ヘッダーだけを置くと、/recipes に直接来たユーザーが他ページへ行けなくなる。
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/recipes");
+  await expect(page.getByRole("button", { name: "メニューを開く" })).toBeVisible();
+});
+
 test("一致が無いときは空表示にする (エラーにしない)", async ({ page }) => {
   await page.route("**/api/recipes**", (route) =>
     route.fulfill({

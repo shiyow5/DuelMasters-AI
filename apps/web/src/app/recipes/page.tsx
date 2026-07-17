@@ -10,6 +10,7 @@
  * **取込元が書いていることだけ**を出す。
  */
 import { useCallback, useEffect, useState } from "react";
+import Header from "@/components/Header";
 import { apiGet } from "@/lib/api";
 
 interface Recipe {
@@ -73,135 +74,159 @@ export default function RecipesPage() {
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
 
   return (
-    <div className="p-4 lg:p-6 max-w-7xl mx-auto">
-      <header className="mb-4">
-        <h1 className="text-2xl font-bold text-text-main">CS入賞デッキレシピ</h1>
-        <p className="text-sm text-text-muted mt-1">
-          デネブログが公開している、CS の入賞デッキレシピ画像です。
-        </p>
-      </header>
-
-      {/* 出せない情報を「無い」と明示する。#122 と同じ思想 (推測で埋めない)。 */}
-      <p className="text-xs text-text-muted bg-bg-surface border border-border-highlight rounded-lg p-3 mb-4">
-        取込元がフォーマット (オリジナル / アドバンス) を記載していないため、この一覧は
-        フォーマットで絞り込めません。環境分析のティア表とも連動していません。
-        デッキ名は取込元の表記のままです。
-      </p>
-
-      <form
-        className="flex gap-2 mb-5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setPage(0);
-          setSearch(query.trim());
-        }}
-      >
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="デッキ名・大会名で検索 (例: ウィリデ)"
-          aria-label="デッキ名・大会名で検索"
-          className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-bg-surface border border-border-highlight text-text-main placeholder:text-text-muted"
-        />
-        <button
-          type="submit"
-          className="px-4 py-2 rounded-lg bg-accent text-white font-medium shrink-0"
-        >
-          検索
-        </button>
-      </form>
-
-      {loading && <p className="text-text-muted">読み込み中…</p>}
-      {error && <p className="text-red-400">{error}</p>}
-
-      {data && !loading && data.recipes.length === 0 && (
-        <p className="text-text-muted">
-          {search
-            ? `「${search}」に一致するレシピはありません。`
-            : "デッキレシピがまだありません。"}
-        </p>
-      )}
-
-      {data && data.recipes.length > 0 && (
-        <>
-          <p className="text-sm text-text-muted mb-3">{data.total} 件</p>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data.recipes.map((r) => (
-              <li
-                key={r.source_url}
-                className="bg-bg-surface border border-border-highlight rounded-xl overflow-hidden flex flex-col"
-              >
-                <button
-                  type="button"
-                  onClick={() => setZoomed(r)}
-                  aria-label={`${r.deck_name} のデッキリストを拡大`}
-                  className="block w-full bg-black/20"
-                >
-                  {/* 外部 CDN (fc2) の画像。next/image の最適化は通さず素の img で出す。 */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={r.decklist_image_url}
-                    alt={`${r.deck_name} のデッキリスト`}
-                    loading="lazy"
-                    className="w-full h-48 object-cover"
-                  />
-                </button>
-                <div className="p-3 flex flex-col gap-1.5 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded border ${placementClass(r.placement_label)}`}
-                    >
-                      {r.placement_label}
-                    </span>
-                    <span className="text-xs text-text-muted">{r.posted_date} 掲載</span>
-                  </div>
-                  <h2 className="font-bold text-text-main break-words">{r.deck_name}</h2>
-                  <p className="text-sm text-text-muted break-words">{r.event_name}</p>
-                  <p className="text-xs text-text-muted break-words">
-                    {r.player && <span>{r.player} さん</span>}
-                    {r.participants !== null && <span> ・ {r.participants}人参加</span>}
-                  </p>
-                  <a
-                    href={r.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-accent hover:underline mt-auto pt-1"
-                  >
-                    デネブログの記事を開く
-                  </a>
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {totalPages > 1 && (
-            <nav className="flex items-center justify-center gap-3 mt-6" aria-label="ページ送り">
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-                className="px-3 py-1.5 rounded-lg border border-border-highlight text-text-main disabled:opacity-40"
-              >
-                前へ
-              </button>
-              <span className="text-sm text-text-muted">
-                {page + 1} / {totalPages}
+    // ルートレイアウトは children を `h-screen` + `overflow-hidden` で包む。ページ側で
+    // 高さを埋めてスクロール領域を作らないと、はみ出したグリッドとページ送りが
+    // **切り落とされて触れなくなる** (#142 と同じ壊れ方)。他ページと同じシェルに揃える。
+    <div className="flex-1 flex flex-col h-full overflow-hidden">
+      {/* 共通 Header。lg 未満ではサイドバーがオフキャンバスになるので、
+          これが唯一のナビゲーション手段 (ハンバーガー) になる。独自ヘッダーで代用しない。 */}
+      <Header
+        left={
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-bg-dark text-[20px]">
+                photo_library
               </span>
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1}
-                className="px-3 py-1.5 rounded-lg border border-border-highlight text-text-main disabled:opacity-40"
-              >
-                次へ
-              </button>
-            </nav>
-          )}
-        </>
-      )}
+            </div>
+            <h1 className="text-lg font-bold leading-tight tracking-tight text-white truncate">
+              CS入賞デッキレシピ
+            </h1>
+          </div>
+        }
+      />
 
-      {zoomed && <ZoomDialog recipe={zoomed} onClose={() => setZoomed(null)} />}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+          <p className="text-sm text-text-muted mb-4">
+            デネブログが公開している、CS の入賞デッキレシピ画像です。
+          </p>
+
+          {/* 出せない情報を「無い」と明示する。#122 と同じ思想 (推測で埋めない)。 */}
+          <p className="text-xs text-text-muted bg-bg-surface border border-border-highlight rounded-lg p-3 mb-4">
+            取込元がフォーマット (オリジナル / アドバンス) を記載していないため、この一覧は
+            フォーマットで絞り込めません。環境分析のティア表とも連動していません。
+            デッキ名は取込元の表記のままです。
+          </p>
+
+          <form
+            className="flex gap-2 mb-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setPage(0);
+              setSearch(query.trim());
+            }}
+          >
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="デッキ名・大会名で検索 (例: ウィリデ)"
+              aria-label="デッキ名・大会名で検索"
+              className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-bg-surface border border-border-highlight text-text-main placeholder:text-text-muted"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-lg bg-accent text-white font-medium shrink-0"
+            >
+              検索
+            </button>
+          </form>
+
+          {loading && <p className="text-text-muted">読み込み中…</p>}
+          {error && <p className="text-red-400">{error}</p>}
+
+          {data && !loading && data.recipes.length === 0 && (
+            <p className="text-text-muted">
+              {search
+                ? `「${search}」に一致するレシピはありません。`
+                : "デッキレシピがまだありません。"}
+            </p>
+          )}
+
+          {data && data.recipes.length > 0 && (
+            <>
+              <p className="text-sm text-text-muted mb-3">{data.total} 件</p>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {data.recipes.map((r) => (
+                  <li
+                    key={r.source_url}
+                    className="bg-bg-surface border border-border-highlight rounded-xl overflow-hidden flex flex-col"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setZoomed(r)}
+                      aria-label={`${r.deck_name} のデッキリストを拡大`}
+                      className="block w-full bg-black/20"
+                    >
+                      {/* 外部 CDN (fc2) の画像。next/image の最適化は通さず素の img で出す。 */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={r.decklist_image_url}
+                        alt={`${r.deck_name} のデッキリスト`}
+                        loading="lazy"
+                        className="w-full h-48 object-cover"
+                      />
+                    </button>
+                    <div className="p-3 flex flex-col gap-1.5 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded border ${placementClass(r.placement_label)}`}
+                        >
+                          {r.placement_label}
+                        </span>
+                        <span className="text-xs text-text-muted">{r.posted_date} 掲載</span>
+                      </div>
+                      <h2 className="font-bold text-text-main break-words">{r.deck_name}</h2>
+                      <p className="text-sm text-text-muted break-words">{r.event_name}</p>
+                      <p className="text-xs text-text-muted break-words">
+                        {r.player && <span>{r.player} さん</span>}
+                        {r.participants !== null && <span> ・ {r.participants}人参加</span>}
+                      </p>
+                      <a
+                        href={r.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-accent hover:underline mt-auto pt-1"
+                      >
+                        デネブログの記事を開く
+                      </a>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              {totalPages > 1 && (
+                <nav
+                  className="flex items-center justify-center gap-3 mt-6"
+                  aria-label="ページ送り"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    disabled={page === 0}
+                    className="px-3 py-1.5 rounded-lg border border-border-highlight text-text-main disabled:opacity-40"
+                  >
+                    前へ
+                  </button>
+                  <span className="text-sm text-text-muted">
+                    {page + 1} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                    disabled={page >= totalPages - 1}
+                    className="px-3 py-1.5 rounded-lg border border-border-highlight text-text-main disabled:opacity-40"
+                  >
+                    次へ
+                  </button>
+                </nav>
+              )}
+            </>
+          )}
+
+          {zoomed && <ZoomDialog recipe={zoomed} onClose={() => setZoomed(null)} />}
+        </div>
+      </div>
     </div>
   );
 }
