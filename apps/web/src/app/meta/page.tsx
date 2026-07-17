@@ -6,6 +6,7 @@ import { nameToHue } from "@/lib/format";
 import type { TierEntry, TierData } from "@/lib/types";
 import Header from "@/components/Header";
 import ErrorDisplay from "@/components/ErrorDisplay";
+import ArchetypeDetail from "@/components/ArchetypeDetail";
 
 // **@dm-ai/core の MAIN_TIERS / TIER_BELOW と一致させること** (#132)。web は core に依存しないため写し。
 const MAIN_TIERS = ["Tier1", "Tier2", "Tier3", "Tier4", "Tier5"] as const;
@@ -51,6 +52,9 @@ export default function MetaPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showBelow, setShowBelow] = useState(false);
+
+  // 詳細を開いているデッキ (クリックで開く)。tier は TierEntry 自身が持っている。
+  const [selected, setSelected] = useState<TierEntry | null>(null);
 
   useEffect(() => {
     fetchTierData();
@@ -171,7 +175,12 @@ export default function MetaPage() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {entries.map((entry, i) => (
-                        <DeckCard key={i} entry={entry} tier={tier} />
+                        <DeckCard
+                          key={i}
+                          entry={entry}
+                          tier={tier}
+                          onSelect={() => setSelected(entry)}
+                        />
                       ))}
                     </div>
                   </div>
@@ -203,7 +212,12 @@ export default function MetaPage() {
                       {data.tier_data
                         .filter((e) => e.tier === TIER_BELOW)
                         .map((entry, i) => (
-                          <DeckCard key={i} entry={entry} tier={TIER_BELOW} />
+                          <DeckCard
+                            key={i}
+                            entry={entry}
+                            tier={TIER_BELOW}
+                            onSelect={() => setSelected(entry)}
+                          />
                         ))}
                     </div>
                   )}
@@ -240,16 +254,35 @@ export default function MetaPage() {
           )}
         </div>
       </div>
+
+      {/* デッキの詳細 (クリックで開く) */}
+      {selected && (
+        <ArchetypeDetail entry={selected} format={format} onClose={() => setSelected(null)} />
+      )}
     </div>
   );
 }
 
-function DeckCard({ entry, tier }: { entry: TierEntry; tier: string }) {
+function DeckCard({
+  entry,
+  tier,
+  onSelect,
+}: {
+  entry: TierEntry;
+  tier: string;
+  onSelect: () => void;
+}) {
   const style = TIER_STYLES[tier] ?? TIER_STYLES.Tier3;
   const hue = nameToHue(entry.archetype);
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-xl bg-bg-card border border-border-highlight transition-all shadow-sm">
+    // カード全体を button にする (キーボード操作もそのまま効く)。
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-label={`${entry.archetype} の詳細を開く`}
+      className="group relative flex w-full flex-col overflow-hidden rounded-xl bg-bg-card border border-border-highlight transition-all shadow-sm text-left hover:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    >
       {/* Header: メインカードの画像 (#122)。引けなければアーキタイプ名から作るグラデーション */}
       <div className="h-32 w-full relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-t from-bg-card to-transparent z-10" />
@@ -301,6 +334,6 @@ function DeckCard({ entry, tier }: { entry: TierEntry; tier: string }) {
           </div>
         </div>
       </div>
-    </div>
+    </button>
   );
 }
