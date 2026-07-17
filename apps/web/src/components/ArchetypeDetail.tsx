@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiGet } from "@/lib/api";
 import type { TierEntry } from "@/lib/types";
 
@@ -37,6 +37,14 @@ interface ArchetypeDetailResponse {
  * (`tournament_results` は順位しか持たない)、自動構築で作った"それっぽい"デッキを
  * 「このデッキの中身」として見せるのは**捏造**になる。実物のデッキリスト取込 (#126) が入るまで、
  * 無いことを画面上で正直に伝える。
+ *
+ * ## **ネイティブ `<dialog>` + `showModal()` を使う**
+ *
+ * 自前の `fixed inset-0` オーバーレイだと、モーダルの要件を手で実装することになり漏れる:
+ * 開いたときにフォーカスを中へ移す / 背景を Tab で辿れなくする / 閉じたらトリガーへ戻す。
+ * (レビュー指摘: 背景の DeckCard に「見えないのにフォーカスが当たる」状態になっていた)
+ * `showModal()` は**トップレイヤ + inert な背景 + フォーカス移動/復帰 + Esc** を
+ * ブラウザ標準で与えてくれる。手作りのフォーカストラップより確実。
  */
 export default function ArchetypeDetail({
   entry,
@@ -74,28 +82,49 @@ export default function ArchetypeDetail({
     };
   }, [entry.archetype, format]);
 
-  // Esc で閉じる (モーダルの基本操作)
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  // マウント時にモーダルとして開く (フォーカス移動・背景の inert 化はブラウザに任せる)。
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    const d = dialogRef.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+
+  /**
+   * 背景を**押して離した**ときだけ閉じる。
+   *
+   * click は mousedown と mouseup で要素が違うと共通の祖先で発火する。押した位置を見ずに
+   * 閉じると、モーダル内のテキストを選択しようとして外までドラッグしただけで閉じてしまい、
+   * 選択も消える (レビュー指摘)。
+   */
+  const downOnBackdrop = useRef(false);
+
+  /**
+   * **閉じるときは必ずネイティブの close() を通す。**
+   *
+   * ここで onClose() を直に呼んで React に unmount させると、dialog が「閉じた」のではなく
+   * 「DOM から消えた」ことになり、**ブラウザのフォーカス復帰が走らない** (トリガーに戻らない)。
+   * close() → close イベント → 親が unmount、の順にする。
+   */
+  const closeDialog = () => dialogRef.current?.close();
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:p-6"
-      role="dialog"
-      aria-modal="true"
+    // ::backdrop がオーバーレイ。dialog 自身は中身の箱なので、背景クリックは target===dialog になる。
+    <dialog
+      ref={dialogRef}
       aria-label={`${entry.archetype} の詳細`}
-      onClick={onClose}
+      // Esc (cancel) も背景クリックも閉じるボタンも、すべてネイティブ close を経由して
+      // ここに届く。フォーカス復帰はブラウザがやってくれる。
+      onClose={onClose}
+      onMouseDown={(e) => {
+        downOnBackdrop.current = e.target === dialogRef.current;
+      }}
+      onClick={(e) => {
+        if (downOnBackdrop.current && e.target === dialogRef.current) closeDialog();
+      }}
+      className="w-full max-w-2xl bg-transparent p-0 text-text-main backdrop:bg-black/60"
     >
-      <div
-        className="relative my-auto w-full max-w-2xl rounded-xl border border-border-highlight bg-bg-surface shadow-2xl"
-        // 中身のクリックで閉じない
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="max-h-[85vh] overflow-y-auto rounded-xl border border-border-highlight bg-bg-surface shadow-2xl">
         {/* ヘッダ */}
         <div className="flex items-start justify-between gap-4 border-b border-border-highlight p-4">
           <div className="min-w-0">
@@ -105,11 +134,14 @@ export default function ArchetypeDetail({
             <h2 className="truncate text-xl font-bold text-white">{entry.archetype}</h2>
           </div>
           <button
-            onClick={onClose}
+            onClick={closeDialog}
             aria-label="閉じる"
             className="flex-shrink-0 rounded-lg p-1 text-text-muted transition-colors hover:bg-bg-surface-highlight hover:text-white"
           >
-            <span className="material-symbols-outlined">close</span>
+            {/* アイコンのリガチャ文字列が読み上げられないように隠す (名前は aria-label 側)。 */}
+            <span aria-hidden="true" className="material-symbols-outlined">
+              close
+            </span>
           </button>
         </div>
 
@@ -202,14 +234,21 @@ export default function ArchetypeDetail({
                             {r.placement === 1 ? "優勝" : `${r.placement}位`}
                           </span>
                           {r.source_url && (
+                            // **aria-label 必須**: アイコンフォントはリガチャなので、無いと
+                            // スクリーンリーダーが中身の文字列 "open_in_new" をリンク名として
+                            // 読み上げてしまう (title より要素のテキストが優先される)。
                             <a
                               href={r.source_url}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-text-dim transition-colors hover:text-white"
+                              aria-label={`${r.event_name} の出典を開く`}
                               title="出典を開く"
                             >
-                              <span className="material-symbols-outlined text-[16px]">
+                              <span
+                                aria-hidden="true"
+                                className="material-symbols-outlined text-[16px]"
+                              >
                                 open_in_new
                               </span>
                             </a>
@@ -239,6 +278,6 @@ export default function ArchetypeDetail({
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

@@ -79,6 +79,30 @@ test("カード一覧が無いことを画面上で正直に伝える", async ({
   ).toBeVisible();
 });
 
+test("開くとフォーカスがモーダル内に移り、閉じるとトリガーに戻る", async ({ page }) => {
+  // ネイティブ <dialog>.showModal() 由来の挙動。手作りオーバーレイでは背景に
+  // 「見えないのにフォーカスが当たる」状態になっていた (レビュー指摘の HIGH)。
+  await page.goto("/meta");
+  const trigger = page.getByRole("button", { name: "モルト系 の詳細を開く" });
+  await trigger.click();
+
+  // フォーカスがダイアログの中にある
+  await expect(page.getByRole("dialog")).toBeVisible();
+  const focusInsideDialog = await page.evaluate(() => {
+    const dlg = document.querySelector("dialog");
+    return !!dlg && !!document.activeElement && dlg.contains(document.activeElement);
+  });
+  expect(focusInsideDialog).toBe(true);
+
+  // 背景はモーダル中 inert。トリガーのカードはクリックできない (トップレイヤの外)。
+  await expect(trigger).not.toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
+  // 閉じたらトリガーへフォーカスが戻る
+  await expect(trigger).toBeFocused();
+});
+
 test("閉じるボタンと Esc で閉じる", async ({ page }) => {
   await page.goto("/meta");
   await page.getByRole("button", { name: "モルト系 の詳細を開く" }).click();
