@@ -4,9 +4,11 @@ import {
   toolTrajectory,
   citationScore,
   factCoverage,
+  deckQuality,
   aggregate,
 } from "../eval/metrics.js";
 import { checkThresholds } from "../eval/thresholds.js";
+import type { DeckQualityStats } from "../eval/types.js";
 
 describe("prScore", () => {
   it("完全一致で precision=recall=1", () => {
@@ -79,6 +81,85 @@ describe("aggregate", () => {
     expect(agg.judgeMean).toBe(3); // (4 + 2) / 2
     expect(agg.factCoverage).toBeNull(); // 該当なし
   });
+
+  it("構築デッキ品質の合格/不合格を数える (#140)", () => {
+    const agg = aggregate([
+      { deckQuality: { passed: true, failures: [] } },
+      { deckQuality: { passed: false, failures: ["fire 文明の占有率 0.20 < 0.5"] } },
+      {}, // expectedDeck なし = 計測対象外
+      { error: "boom", deckQuality: { passed: false, failures: ["x"] } }, // error は除外
+    ]);
+    expect(agg.deckQualityItems).toBe(2); // 計測できたのは 2 件 (error 分は除外)
+    expect(agg.deckQualityFailItems).toBe(1);
+  });
+});
+
+describe("deckQuality (#140 構築デッキの数値品質)", () => {
+  const stats = (o: Partial<DeckQualityStats> = {}): DeckQualityStats => ({
+    archetype: "aggro",
+    triggerCount: 8,
+    lowCost: 20,
+    overall: 90,
+    civShares: { fire: 1 },
+    totalCards: 40,
+    ...o,
+  });
+
+  it("すべての基準を満たせば passed", () => {
+    const r = deckQuality(
+      { civilization: "fire", minCivShare: 0.5, archetype: "aggro", minOverall: 70 },
+      stats(),
+    );
+    expect(r.passed).toBe(true);
+    expect(r.failures).toEqual([]);
+  });
+
+  it("アーキタイプが一致しなければ不合格", () => {
+    const r = deckQuality({ archetype: "control" }, stats({ archetype: "aggro" }));
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("アーキタイプ");
+  });
+
+  it("中心文明の占有率が閾値未満なら不合格", () => {
+    const r = deckQuality(
+      { civilization: "fire", minCivShare: 0.5 },
+      stats({ civShares: { fire: 0.3, water: 0.7 } }),
+    );
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("fire");
+  });
+
+  it("minCivShare 未指定なら既定 0.5 を使う", () => {
+    expect(deckQuality({ civilization: "fire" }, stats({ civShares: { fire: 0.49 } })).passed).toBe(
+      false,
+    );
+    expect(deckQuality({ civilization: "fire" }, stats({ civShares: { fire: 0.51 } })).passed).toBe(
+      true,
+    );
+  });
+
+  it("指定した文明が1枚も無ければ占有率0で不合格", () => {
+    const r = deckQuality({ civilization: "fire" }, stats({ civShares: { water: 1 } }));
+    expect(r.passed).toBe(false);
+  });
+
+  it("トリガー/低コスト/総合スコアの下限を検査する", () => {
+    expect(deckQuality({ minTrigger: 6 }, stats({ triggerCount: 5 })).passed).toBe(false);
+    expect(deckQuality({ minLowCost: 15 }, stats({ lowCost: 10 })).passed).toBe(false);
+    expect(deckQuality({ minOverall: 80 }, stats({ overall: 70 })).passed).toBe(false);
+  });
+
+  it("指定していない観点は検査しない (空 spec でも 40枚なら合格)", () => {
+    expect(deckQuality({}, stats()).passed).toBe(true);
+  });
+
+  it("40枚に満たない不完全なデッキは spec によらず不合格 (#140 Codex 指摘)", () => {
+    // カードプール不足で autoBuild が 20枚しか組めなくても、scoreDeck は -20 しか課さないので
+    // 他の基準を通り抜けうる。枚数は spec と無関係に必ず検査する。
+    const r = deckQuality({}, stats({ totalCards: 20 }));
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("20枚");
+  });
 });
 
 describe("checkThresholds (CI 回帰ゲート)", () => {
@@ -98,6 +179,14 @@ describe("checkThresholds (CI 回帰ゲート)", () => {
   it("v8 のベースライン相当なら通る", () => {
     expect(checkThresholds(OK).failures).toEqual([]);
     expect(checkThresholds(OK).passed).toBe(true);
+  });
+
+  it("構築デッキが品質基準を外した問が1件でもあれば落とす (#140)", () => {
+    // judge は言葉で「火文明中心」と言えば通すが、実際に組まれたデッキが混色/重いなら
+    // ここでしか捕まえられない。expectedDeck を持つ問の機械的ゲート。
+    const r = checkThresholds({ ...OK, deckQualityFailItems: 1 });
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("構築デッキ");
   });
 
   it("エラーが1件でもあれば落とす", () => {

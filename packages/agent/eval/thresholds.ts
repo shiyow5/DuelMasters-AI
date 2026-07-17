@@ -19,6 +19,8 @@ export interface Aggregate {
   evidenceRate: number | null;
   /** ツールが失敗した問の件数 (#109)。 */
   toolFailureItems?: number;
+  /** 構築デッキが数値品質基準を満たさなかった問の件数 (#140)。 */
+  deckQualityFailItems?: number;
   judgeMean: number | null;
   /** judge を回したのに失敗した件数 (quota/スキーマ/キー不正)。 */
   judgeFailures?: number;
@@ -82,6 +84,15 @@ export const THRESHOLDS = {
    * eval は実 DB・実 Gemini を叩くので、ここが 0 でないなら環境かコードが壊れている。
    */
   maxToolFailureItems: 0,
+  /**
+   * 構築デッキが数値品質基準を満たさなかった問の件数 (#140)。**1件も許さない。**
+   *
+   * expectedDeck を持つ問で、エージェントが build_deck に渡した引数から組み直したデッキが
+   * 「火文明中心か」「アグロ採点か」等の**数値**基準を外したら落とす。judge は言葉のうえで
+   * 「火文明中心のデッキを提案」と言えば高評価を付けるが ([[llm-judge-unreliable]])、実際に
+   * 組まれたデッキが混色だったり重かったりする退行はこの機械的ゲートでしか捕まらない。
+   */
+  maxDeckQualityFailures: 0,
 } as const;
 
 export interface GateResult {
@@ -118,6 +129,14 @@ export function checkThresholds(agg: Aggregate, options: GateOptions = {}): Gate
   if (toolFailureItems > THRESHOLDS.maxToolFailureItems) {
     failures.push(
       `ツールが失敗した問 ${toolFailureItems}件 (上限 ${THRESHOLDS.maxToolFailureItems})`,
+    );
+  }
+
+  // 構築デッキの品質退行は judge に見えない (言葉で「火文明中心」と言えば通る)。ここで捕まえる (#140)。
+  const deckQualityFailItems = agg.deckQualityFailItems ?? 0;
+  if (deckQualityFailItems > THRESHOLDS.maxDeckQualityFailures) {
+    failures.push(
+      `構築デッキが品質基準を外した問 ${deckQualityFailItems}件 (上限 ${THRESHOLDS.maxDeckQualityFailures})`,
     );
   }
 

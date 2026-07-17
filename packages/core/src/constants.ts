@@ -50,6 +50,17 @@ export type RoleTag = (typeof ROLE_TAGS)[number];
 export const DECK_CONCEPTS = ["combo", "control", "beatdown", "unknown"] as const;
 export type DeckConcept = (typeof DECK_CONCEPTS)[number];
 
+/**
+ * デッキアーキタイプ (#140)。classic な aggro / midrange / control / combo (+ unknown)。
+ *
+ * concept (#130) と**別の分類器を作らない**。inferDeckArchetype が inferDeckConcept を内部で
+ * 再利用して1本にする (Issue #128/#140 の「scorer.ts で重複しているので調整する」指示)。
+ * concept は減点緩和 (combo/control) のための粗い軸、archetype は採点目標を選ぶための軸。
+ * beatdown(concept) は aggro(archetype) に対応し、concept が unknown のものを速度で aggro/midrange に割る。
+ */
+export const DECK_ARCHETYPES = ["aggro", "midrange", "control", "combo", "unknown"] as const;
+export type DeckArchetype = (typeof DECK_ARCHETYPES)[number];
+
 /** ティア区分 (#132)。
  *
  * Tier1〜Tier5 の5段 + 「その他」(ノイズフロア以下のロングテール)。
@@ -73,6 +84,42 @@ export const DECK_GUIDELINES = {
   /** 3コスト以下 / 4-6コスト / 7コスト以上 */
   costCurve: { low: 15, mid: 11, high: 6 } as const,
 } as const;
+
+/**
+ * アーキタイプ別の採点目標 (#140)。scoreDeck が archetype ごとに S・トリガー/低コストの目標を切り替える。
+ *
+ * **【最重要】緩める方向のみ。現行 (= midrange/unknown) より絶対に厳しくしない。**
+ * 理由: builder.ts が S・トリガー下限に `DECK_GUIDELINES.triggerCount`(8) を使って構築する (#139)。
+ * scorer 側の目標を 8 より厳しくすると、autoBuild の出力が兄弟の scoreDeck に減点される内部矛盾
+ * (#128 が解消したばかり) が再発する。だから **midrange/unknown は現行と完全同値** に固定し、
+ * aggro/control/combo は一部を緩めるだけにする。Issue #140 の要求も「アグロが一律減点されないこと」だけ。
+ *
+ * **この数値はデータ由来ではない (判断ベースのヒューリスティック)。** 裏取りに要るデッキリストの
+ * コーパスが DB に無い (tournament_results はカードを持たず、decks はユーザー保存デッキ。#126 の結論)。
+ * 「測れないので測っていない」ことを明示する。実データが手に入ったら見直す。
+ */
+export const ARCHETYPE_GUIDELINES: Record<
+  DeckArchetype,
+  {
+    /** S・トリガー推奨枚数 (これ未満で軽い減点)。 */
+    triggerCount: number;
+    /** S・トリガー大幅不足の閾値 (これ未満で重い減点)。 */
+    triggerSevere: number;
+    /** 低コスト(3以下)の推奨枚数 (これ未満で減点)。 */
+    lowCostMin: number;
+  }
+> = {
+  // アグロ: 受けは薄めで速度を優先する。8枚要求は速攻の構築思想と噛み合わない。
+  aggro: { triggerCount: 6, triggerSevere: 4, lowCostMin: 15 },
+  // ミッドレンジ: 現行の既定と完全同値 (回帰なし)。
+  midrange: { triggerCount: 8, triggerSevere: 6, lowCostMin: 15 },
+  // コントロール: 受けは厚いが低コストを意図的に絞る。低コスト要求だけ緩める。
+  control: { triggerCount: 8, triggerSevere: 6, lowCostMin: 8 },
+  // コンボ: 受け・低コストとも部品を優先して絞る。
+  combo: { triggerCount: 6, triggerSevere: 4, lowCostMin: 8 },
+  // 不明: 確信が無いので現行の既定で採点する (緩めない = 回帰なし)。
+  unknown: { triggerCount: 8, triggerSevere: 6, lowCostMin: 15 },
+};
 
 /** ルール文書タイプ */
 export const DOC_TYPES = ["comprehensive_rules", "ruling", "faq"] as const;

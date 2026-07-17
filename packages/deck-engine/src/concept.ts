@@ -1,7 +1,7 @@
-import type { Card, DeckConcept } from "@dm-ai/core";
+import type { Card, DeckConcept, DeckArchetype } from "@dm-ai/core";
 import { isDefensiveCard, REMOVAL_RE } from "./tagger.js";
 
-export type { DeckConcept };
+export type { DeckConcept, DeckArchetype };
 
 /**
  * デッキ全体の戦略コンセプト (#130)。
@@ -60,6 +60,16 @@ const BEATDOWN_CREATURE_MIN = 0.6;
 /** ビートダウン: 平均コストがこれ以下 (低く速い)。 */
 const BEATDOWN_AVG_COST_MAX = 3.5;
 
+/**
+ * アーキタイプ分類 (#140) の閾値。concept が unknown に落ちたデッキを速度で aggro/midrange に割る。
+ * beatdown(concept) の条件 (creature>=0.6 && avgCost<=3.5) より**少しだけ広い帯**を aggro に拾い、
+ * それにも届かないクリーチャー主体の中コストを midrange とする。届かなければ unknown のままにする。
+ */
+const AGGRO_CREATURE_MIN = 0.55;
+const AGGRO_AVG_COST_MAX = 4.0;
+const MIDRANGE_CREATURE_MIN = 0.45;
+const MIDRANGE_AVG_COST_MAX = 5.5;
+
 function isCreature(card: Card): boolean {
   return card.type === "creature" || card.type === "star_evolution_creature";
 }
@@ -92,6 +102,31 @@ export function inferDeckConcept(cards: Card[]): DeckConcept {
   return "unknown";
 }
 
+/**
+ * デッキアーキタイプを推定する (#140)。純粋関数。
+ *
+ * **分類器は inferDeckConcept を内部再利用して1本にする** (concept と archetype で二重分類しない。
+ * Issue #128/#140 の指示)。combo/control は concept の意図をそのまま採る。beatdown は速攻寄りなので
+ * aggro に対応させる。concept が unknown = 上記の確信条件に届かなかったデッキを、クリーチャー比と
+ * 平均コストで aggro / midrange に割る (#130 は midrange を unknown に落としていた = その穴を埋める)。
+ * それにも届かなければ unknown のまま (確信が無いなら緩めない、という concept の保守性を引き継ぐ)。
+ */
+export function inferDeckArchetype(cards: Card[]): DeckArchetype {
+  if (cards.length < MIN_CARDS) return "unknown";
+
+  const concept = inferDeckConcept(cards);
+  if (concept === "combo") return "combo";
+  if (concept === "control") return "control";
+  if (concept === "beatdown") return "aggro";
+
+  // concept === "unknown": 速度とクリーチャー比で aggro / midrange を割る。
+  const creatureRatio = cards.filter(isCreature).length / cards.length;
+  const avgCost = cards.reduce((sum, c) => sum + c.cost, 0) / cards.length;
+  if (creatureRatio >= AGGRO_CREATURE_MIN && avgCost <= AGGRO_AVG_COST_MAX) return "aggro";
+  if (creatureRatio >= MIDRANGE_CREATURE_MIN && avgCost <= MIDRANGE_AVG_COST_MAX) return "midrange";
+  return "unknown";
+}
+
 /** combo / control は「受け・フィニッシャーを意図的に絞る」ことがあるので減点を緩和する対象。 */
 export function isRelaxedConcept(concept: DeckConcept): boolean {
   return concept === "combo" || concept === "control";
@@ -106,6 +141,22 @@ export function conceptLabel(concept: DeckConcept): string {
       return "コントロール";
     case "beatdown":
       return "ビートダウン";
+    default:
+      return "不明";
+  }
+}
+
+/** アーキタイプの日本語ラベル (#140)。 */
+export function archetypeLabel(archetype: DeckArchetype): string {
+  switch (archetype) {
+    case "aggro":
+      return "アグロ";
+    case "midrange":
+      return "ミッドレンジ";
+    case "control":
+      return "コントロール";
+    case "combo":
+      return "コンボ";
     default:
       return "不明";
   }

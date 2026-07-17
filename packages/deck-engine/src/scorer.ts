@@ -1,14 +1,14 @@
-import { DECK_SIZE, DECK_GUIDELINES, type DeckScore } from "@dm-ai/core";
+import { DECK_SIZE, DECK_GUIDELINES, ARCHETYPE_GUIDELINES, type DeckScore } from "@dm-ai/core";
 import type { Card, DeckEntry } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import type { ParsedDeck } from "./parser.js";
 import { isDefensiveCard } from "./tagger.js";
-import { inferDeckConcept, isRelaxedConcept, conceptLabel } from "./concept.js";
+import { inferDeckConcept, inferDeckArchetype, isRelaxedConcept, conceptLabel } from "./concept.js";
 
 /** scoreDeck 内部のスコアリング閾値 (DECK_GUIDELINES に無い減点基準) */
 const HAND_SIZE = 5; // 初手枚数
 const OPENING_RATE_TARGET = 0.7; // 初動率の合格ライン
-const TRIGGER_SEVERE_THRESHOLD = 6; // トリガー大幅不足の閾値
+// トリガー目標/大幅不足の閾値はアーキタイプ別 (ARCHETYPE_GUIDELINES) へ移した (#140)。
 const LOW_COST_SEVERE_THRESHOLD = 5; // 低コスト大幅不足の閾値
 const MULTI_CIV_WARN_THRESHOLD = 4; // 色事故警告の文明数
 const MULTI_CIV_SEVERE_THRESHOLD = 5; // 色事故追加減点の文明数
@@ -26,12 +26,29 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   const cardInfoMap = await fetchCardInfo(deck.entries.map((e) => e.name));
   const expandedCards = expandCards(deck.entries, cardInfoMap);
 
-  // S・トリガー枚数
+  /**
+   * デッキアーキタイプ (#140) とコンセプト (#130)。
+   *
+   * - **archetype** は採点目標 (S・トリガー/低コストの目安) を選ぶための軸。aggro は受けが薄めなので
+   *   トリガー目標を下げ、control/combo は低コスト目標を下げる。**緩める方向のみ** (ARCHETYPE_GUIDELINES)。
+   * - **concept** は受け0・フィニッシャー0 等の減点を緩和するかの軸 (combo/control が意図的に絞るため)。
+   *
+   * 分類器は1本 (inferDeckArchetype が inferDeckConcept を内部再利用)。ここでは両方を採るが、
+   * archetype control ⟺ concept control / archetype combo ⟺ concept combo なので relaxed は両者で一致する。
+   *
+   * **カードが一部しか DB で解決できないデッキでは緩和を信用しない** (Codex 指摘)。
+   * 既知の20枚だけから aggro/combo と推定し、未解決の20枚を含む40枚全体のトリガー/受け減点を
+   * 緩めてしまうと、採点していない半分を見逃す。**全カードが解決できたときだけ**アーキタイプ/
+   * コンセプトで緩和し、そうでなければ unknown 扱い (= 緩めない = 従来の厳しめ採点) にする。
+   */
+  const fullyResolved = deck.totalCards > 0 && expandedCards.length === deck.totalCards;
+  const archetype = fullyResolved ? inferDeckArchetype(expandedCards) : "unknown";
+  const guidelines = ARCHETYPE_GUIDELINES[archetype];
+
+  // S・トリガー枚数。目標はアーキタイプ別 (aggro は速度優先で目安が低い)。
   const triggerCount = expandedCards.filter((c) => c.is_shield_trigger).length;
-  if (triggerCount < DECK_GUIDELINES.triggerCount) {
-    warnings.push(
-      `S・トリガーが${triggerCount}枚です (推奨: ${DECK_GUIDELINES.triggerCount}枚以上)`,
-    );
+  if (triggerCount < guidelines.triggerCount) {
+    warnings.push(`S・トリガーが${triggerCount}枚です (推奨: ${guidelines.triggerCount}枚以上)`);
     suggestions.push("S・トリガー持ちのカードを追加して防御力を上げましょう");
   }
 
@@ -42,12 +59,10 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
     suggestions.push("多色カードを減らしてマナ置きの柔軟性を確保しましょう");
   }
 
-  // コスト帯配分
+  // コスト帯配分。低コストの目標もアーキタイプ別 (control/combo は高いカーブを許容する)。
   const costCurve = computeCostCurve(expandedCards);
-  if (costCurve.low < DECK_GUIDELINES.costCurve.low) {
-    warnings.push(
-      `低コスト(3以下)が${costCurve.low}枚です (推奨: ${DECK_GUIDELINES.costCurve.low}枚)`,
-    );
+  if (costCurve.low < guidelines.lowCostMin) {
+    warnings.push(`低コスト(3以下)が${costCurve.low}枚です (推奨: ${guidelines.lowCostMin}枚)`);
     suggestions.push("初動で使える低コストカードを増やしましょう");
   }
 
@@ -88,8 +103,11 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
    * テンプレで一律減点すると、ループ/コントロールのまともなデッキが不当に低スコアになる。
    * `relaxed` のときは該当の減点を軽くし、**軽くしたことを警告で明示する** (黙って消さない)。
    * 確信が無ければ unknown = 現行どおり (緩和しない)。
+   *
+   * archetype と同じく、**一部しか解決できないデッキでは緩和しない** (既知の半分だけから combo/control と
+   * 誤推定して未採点の半分を見逃さないため)。
    */
-  const concept = inferDeckConcept(expandedCards);
+  const concept = fullyResolved ? inferDeckConcept(expandedCards) : "unknown";
   const relaxed = isRelaxedConcept(concept);
 
   /**
@@ -134,6 +152,9 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
     noCardInfo,
     totalCards: deck.totalCards,
     relaxed,
+    triggerFloor: guidelines.triggerCount,
+    triggerSevere: guidelines.triggerSevere,
+    lowCostMin: guidelines.lowCostMin,
   });
 
   return {
@@ -147,6 +168,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
     warnings,
     suggestions,
     concept,
+    archetype,
   };
 }
 
@@ -284,21 +306,29 @@ function calculateOverallScore(params: {
    * (本当に不足した悪いデッキを見逃さないよう、軽い減点は残す)。
    */
   relaxed: boolean;
+  /**
+   * アーキタイプ別の S・トリガー/低コスト目標 (#140)。**緩める方向のみ** (ARCHETYPE_GUIDELINES)。
+   * aggro はトリガー目標が低く (速度優先)、control/combo は低コスト目標が低い (高カーブ許容)。
+   * midrange/unknown は現行と同値なので、これらのデッキのスコアは変わらない (回帰なし)。
+   */
+  triggerFloor: number;
+  triggerSevere: number;
+  lowCostMin: number;
 }): number {
   let score = 100;
 
   // 枚数ペナルティ
   if (params.totalCards !== DECK_SIZE) score -= 20;
 
-  // トリガーペナルティ
-  if (params.triggerCount < TRIGGER_SEVERE_THRESHOLD) score -= 15;
-  else if (params.triggerCount < DECK_GUIDELINES.triggerCount) score -= 5;
+  // トリガーペナルティ。閾値はアーキタイプ別 (aggro は速攻なので低い目安で許容する)。
+  if (params.triggerCount < params.triggerSevere) score -= 15;
+  else if (params.triggerCount < params.triggerFloor) score -= 5;
 
   // 多色ペナルティ
   if (params.rainbowCount > DECK_GUIDELINES.rainbowMax) score -= 10;
 
-  // コストカーブペナルティ
-  if (params.costCurve.low < DECK_GUIDELINES.costCurve.low) score -= 10;
+  // コストカーブペナルティ。低コストの目標もアーキタイプ別 (control/combo は高いカーブを許容)。
+  if (params.costCurve.low < params.lowCostMin) score -= 10;
   // 低コスト「極端に少ない」の追加減点。combo/control は高いカーブを許容するので緩和する。
   if (params.costCurve.low < LOW_COST_SEVERE_THRESHOLD) score -= params.relaxed ? 3 : 10;
 

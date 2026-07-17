@@ -1,7 +1,15 @@
 export { parseDecklist, type ParsedDeck } from "./parser.js";
 export { validateRegulation } from "./validator.js";
 export { scoreDeck } from "./scorer.js";
-export { inferDeckConcept, isRelaxedConcept, conceptLabel, type DeckConcept } from "./concept.js";
+export {
+  inferDeckConcept,
+  inferDeckArchetype,
+  isRelaxedConcept,
+  conceptLabel,
+  archetypeLabel,
+  type DeckConcept,
+  type DeckArchetype,
+} from "./concept.js";
 export {
   autoBuild,
   suggestReplacements,

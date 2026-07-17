@@ -8,6 +8,7 @@ import {
   DOC_TYPES,
   TIERS,
   DECK_CONCEPTS,
+  DECK_ARCHETYPES,
 } from "./constants.js";
 
 /** カード */
@@ -177,6 +178,12 @@ export const DeckScoreSchema = z.object({
    * 減点を緩和している。**optional** — 過去に保存した scores (concept 無し) も通すため。
    */
   concept: z.enum(DECK_CONCEPTS).optional(),
+  /**
+   * 推定したデッキアーキタイプ (#140)。aggro/midrange/control/combo ごとに S・トリガー/低コストの
+   * 採点目標を切り替えている (ARCHETYPE_GUIDELINES)。**optional** — 過去に保存した scores
+   * (archetype 無し) も通すため。
+   */
+  archetype: z.enum(DECK_ARCHETYPES).optional(),
 });
 export type DeckScore = z.infer<typeof DeckScoreSchema>;
 
