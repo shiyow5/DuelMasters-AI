@@ -104,25 +104,40 @@ export async function resolveMainCards(archetypes: string[]): Promise<Map<string
    *
    * 種族の「顔」として**最も重いカード** (フィニッシャー) を採る。同コストなら短い名前・
    * 名前順でタイブレークして決定的にする。
+   *
+   * ## **コアごとに引かない** (アーキタイプ数に比例させない)
+   *
+   * コア名 × cards を結合して種族を相関副問合せで評価すると、`O(コア数 × カード数)` になる。
+   * 実測 (カード11559件・コア30件): Nested Loop 346,770行 / **1483ms**。ティア表の
+   * アーキタイプ数が増えるほど線形に悪化し、`/api/meta/tier` (キャッシュ無し) が直撃する。
+   * **種族 → 代表カードの対応表を1回だけ作り**、コアの絞り込みは JS でやる (実測 **622ms** 固定)。
    */
   const raceRows = await sql`
-    WITH core_names AS (
-      SELECT core FROM jsonb_array_elements_text(${sql.json(cores)}::jsonb) AS core
-    )
-    SELECT DISTINCT ON (n.core) n.core, c.name, c.card_image_url
-    FROM core_names n
-    JOIN cards c
-      ON c.card_image_url IS NOT NULL
-     AND EXISTS (
-       SELECT 1 FROM jsonb_array_elements_text(c.races) r
-       WHERE lower(translate(r, '・･ 　', '')) = lower(translate(n.core, '・･ 　', ''))
-     )
-    ORDER BY n.core, c.cost DESC NULLS LAST, length(c.name), c.name
+    SELECT DISTINCT ON (lower(translate(r.race, '・･ 　', '')))
+      lower(translate(r.race, '・･ 　', '')) AS race_key, c.name, c.card_image_url
+    FROM cards c, jsonb_array_elements_text(c.races) AS r(race)
+    WHERE c.card_image_url IS NOT NULL
+    ORDER BY lower(translate(r.race, '・･ 　', '')), c.cost DESC, length(c.name), c.name
   `;
+  const faceByRace = new Map(
+    raceRows.map((r) => [
+      r.race_key as string,
+      { name: r.name as string, image: r.card_image_url as string },
+    ]),
+  );
+
+  /** SQL の `lower(translate(x, '・･ 　', ''))` と**同じ**正規化 (ズレると照合が壊れる)。 */
+  const raceKey = (s: string) => s.toLowerCase().replace(/[・･ 　]/g, "");
+  const strategyKeys = new Set(STRATEGY_WORDS.map(raceKey));
+
   const resolvedByRace = new Set<string>();
-  for (const row of raceRows) {
-    const core = row.core as string;
-    assign(core, row.name as string, row.card_image_url as string);
+  for (const core of cores) {
+    const key = raceKey(core);
+    // 戦略語は種族側でも拾わない (名前パスと除外を対称に保つ)。
+    if (strategyKeys.has(key)) continue;
+    const face = faceByRace.get(key);
+    if (!face) continue;
+    assign(core, face.name, face.image);
     resolvedByRace.add(core);
   }
 
