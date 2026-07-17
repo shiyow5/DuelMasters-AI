@@ -173,18 +173,53 @@ const COLOR_PREFIXES = [
 const SORTED_PREFIXES = [...COLOR_PREFIXES].sort((a, b) => b.length - a.length);
 
 /**
+ * デッキ名の飾り (#131)。**カード名には現れない**ので、照合前に落とす。
+ *
+ * 本番の主要ティアで画像が出ていなかった実例 (実データで裏取り済み):
+ *   「モルト系」     → `%モルト系%` は0件。「モルト」なら **15件** (《龍覇 グレンモルト》等)
+ *   「ドッコイループ」 → `%ドッコイループ%` は0件。「ドッコイ」なら **2件** (《空神のD ドッコイ》等)
+ *
+ * 「速攻」「コントロール」のような戦略語はここに入れない。**落とすのではなく、
+ * コア全体が戦略語なら照合を諦める**のが正しい (main-card.ts の STRATEGY_WORDS)。
+ */
+const DECK_DECORATIONS = ["系", "ループ", "デッキ"];
+
+/**
  * アーキタイプ名から、カード名に相当する部分を取り出す。
  *
- * 色の接頭辞を1つ落とす (「赤単我我我」→「我我我」)。落とすと空になるなら落とさない
- * (「赤単」だけのアーキタイプ名は、そのまま返す)。
+ * 1. 色の接頭辞を1つ落とす (「赤単我我我」→「我我我」)。落とすと空になるなら落とさない
+ *    (「赤単」だけのアーキタイプ名は、そのまま返す)。
+ * 2. デッキ名の飾りを落とす (「モルト系」→「モルト」)。こちらも**落とすと空になるなら落とさない**
+ *    (「ループ」だけのアーキタイプ名を空にすると `%%` で全カードに当たってしまう)。
  */
 export function archetypeCoreName(archetype: string): string {
   const trimmed = archetype.normalize("NFKC").trim();
+  let core = trimmed;
+
+  // 1. 色の接頭辞 (長い順に試す。「赤」を先に当てると「赤単我我我」が壊れる)
   for (const prefix of SORTED_PREFIXES) {
-    if (trimmed.toLowerCase().startsWith(prefix.toLowerCase())) {
-      const rest = trimmed.slice(prefix.length).trim();
-      if (rest !== "") return rest;
+    if (core.toLowerCase().startsWith(prefix.toLowerCase())) {
+      const rest = core.slice(prefix.length).trim();
+      if (rest !== "") {
+        core = rest;
+        break;
+      }
     }
   }
-  return trimmed;
+
+  // 2. 接頭辞の直後に残る「系」(「アナカラー系革命チェンジ」→「革命チェンジ」)
+  core = core.replace(/^系/, "").trim();
+
+  // 3. 末尾の飾り。複合 (「モルト系デッキ」) もあるので変化が止まるまで繰り返す。
+  let prev = "";
+  while (prev !== core) {
+    prev = core;
+    for (const deco of DECK_DECORATIONS) {
+      if (core.length > deco.length && core.endsWith(deco)) {
+        core = core.slice(0, -deco.length).trim();
+      }
+    }
+  }
+
+  return core === "" ? trimmed : core;
 }

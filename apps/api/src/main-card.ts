@@ -13,10 +13,19 @@ import { getSql } from "@dm-ai/db";
  * あって集計結果ではないし、照合の規則を改善したときに**再スナップショットを待たずに効く**
  * ようにしたい。1リクエストにつき1クエリ増えるだけ。
  *
- * ## 当たらないなら何も出さない
+ * ## 解決の順序 (#131)
  *
- * 「ドッコイループ」(コンボ名) や「メタビート革命チェンジ」(キーワード能力名) は
- * **そもそも単一カード名ではない**ので、原理的に対応付けられない。
+ * 1. **種族ベースのアーキタイプ** (「デスパペット」) → その種族の代表カード。
+ * 2. **カード名ベース** (「モルト系」→「モルト」) → 名前の先頭/末尾に一致するカード。
+ *
+ * アーキタイプ名には色の接頭辞 (「5C」) とデッキ名の飾り (「〜系」「〜ループ」) が付くので、
+ * `archetypeCoreName` で落としてから照合する。落とさないと `%モルト系%` のように
+ * **カード名には絶対に存在しない文字列**で引いてしまい、0件になる (本番で実際に起きていた)。
+ *
+ * ## それでも当たらないなら何も出さない
+ *
+ * 「メタビート革命チェンジ」(デッキ用語 + キーワード能力名) や「ダーバンデ」(該当カード0件) は
+ * **そもそも単一カード名ではない / 実在しない**ので、原理的に対応付けられない。
  * **無関係なカードの画像を出すくらいなら空欄のほうがよい。**
  */
 
@@ -80,6 +89,62 @@ export async function resolveMainCards(archetypes: string[]): Promise<Map<string
   const sql = getSql();
   const cores = [...byCore.keys()];
 
+  /** コア名で引けた1枚を、そのコアを持つ全アーキタイプに割り当てる。 */
+  function assign(core: string, name: string, imageUrl: string): void {
+    for (const archetype of byCore.get(core) ?? [])
+      out.set(archetype, { name, image_url: imageUrl });
+  }
+
+  /**
+   * 1. **種族ベースのアーキタイプ → その種族の代表カード** (#131)。
+   *
+   * 以前は種族名のコアを弾いて空欄にしていた (「代表カードを1枚選ぶ根拠が無い」)。だが本番の
+   * 主要ティアで「デスパペット」等が空欄のままになり、実害が出た。**その種族のカードは
+   * 「無関係なカード」ではない**ので、#122 の「無関係カードより空欄」の原則には反しない。
+   *
+   * 種族の「顔」として**最も重いカード** (フィニッシャー) を採る。同コストなら短い名前・
+   * 名前順でタイブレークして決定的にする。
+   *
+   * ## **コアごとに引かない** (アーキタイプ数に比例させない)
+   *
+   * コア名 × cards を結合して種族を相関副問合せで評価すると、`O(コア数 × カード数)` になる。
+   * 実測 (カード11559件・コア30件): Nested Loop 346,770行 / **1483ms**。ティア表の
+   * アーキタイプ数が増えるほど線形に悪化し、`/api/meta/tier` (キャッシュ無し) が直撃する。
+   * **種族 → 代表カードの対応表を1回だけ作り**、コアの絞り込みは JS でやる (実測 **622ms** 固定)。
+   */
+  const raceRows = await sql`
+    SELECT DISTINCT ON (lower(translate(r.race, '・･ 　', '')))
+      lower(translate(r.race, '・･ 　', '')) AS race_key, c.name, c.card_image_url
+    FROM cards c, jsonb_array_elements_text(c.races) AS r(race)
+    WHERE c.card_image_url IS NOT NULL
+    ORDER BY lower(translate(r.race, '・･ 　', '')), c.cost DESC, length(c.name), c.name
+  `;
+  const faceByRace = new Map(
+    raceRows.map((r) => [
+      r.race_key as string,
+      { name: r.name as string, image: r.card_image_url as string },
+    ]),
+  );
+
+  /** SQL の `lower(translate(x, '・･ 　', ''))` と**同じ**正規化 (ズレると照合が壊れる)。 */
+  const raceKey = (s: string) => s.toLowerCase().replace(/[・･ 　]/g, "");
+  const strategyKeys = new Set(STRATEGY_WORDS.map(raceKey));
+
+  const resolvedByRace = new Set<string>();
+  for (const core of cores) {
+    const key = raceKey(core);
+    // 戦略語は種族側でも拾わない (名前パスと除外を対称に保つ)。
+    if (strategyKeys.has(key)) continue;
+    const face = faceByRace.get(key);
+    if (!face) continue;
+    assign(core, face.name, face.image);
+    resolvedByRace.add(core);
+  }
+
+  // 2. 種族で解決できなかったコアだけ、カード名で照合する。
+  const nameCores = cores.filter((c) => !resolvedByRace.has(c));
+  if (nameCores.length === 0) return out;
+
   /**
    * コア名ごとに、最も短いカード名を1件だけ引く (DISTINCT ON)。
    *
@@ -96,15 +161,16 @@ export async function resolveMainCards(archetypes: string[]): Promise<Map<string
    *    《我我我ガイアール・ブランド》は「我我我」で始まり、《聖霊王アルファディオス》は
    *    「アルファディオス」で終わる。一方《消火機装コントロール・ファイア》の
    *    「コントロール」は真ん中にあるので落ちる。
-   * 2. **種族名は弾く** (`cards.races`)。「ドラゴン」「スノーフェアリー」「グランセクト」は
-   *    種族ベースのアーキタイプで、**代表カードを1枚選ぶ根拠が無い**。
+   * 2. **種族名は弾く** (`cards.races`)。種族ベースのアーキタイプは上の「種族の代表カード」
+   *    パスで解決済み。ここまで残っているのは**画像付きのカードが1枚も無い種族**なので、
+   *    名前だけ似た無関係カード (《ドラゴン・ラボ》) を当てるくらいなら空欄のままにする。
    *
    * 配列は **jsonb で渡す**。`sql.array()` は型推論が prepared statement のキャッシュ状態に
    * 依存し、1回目だけ `malformed array literal` で落ちることがある。
    */
   const rows = await sql`
     WITH core_names AS (
-      SELECT core FROM jsonb_array_elements_text(${sql.json(cores)}::jsonb) AS core
+      SELECT core FROM jsonb_array_elements_text(${sql.json(nameCores)}::jsonb) AS core
     ),
     -- 種族名と一致するコア名は、代表カードを選べないので捨てる
     races AS (
@@ -134,12 +200,7 @@ export async function resolveMainCards(archetypes: string[]): Promise<Map<string
   `;
 
   for (const row of rows) {
-    const core = row.core as string;
-    const card: MainCard = {
-      name: row.name as string,
-      image_url: row.card_image_url as string,
-    };
-    for (const archetype of byCore.get(core) ?? []) out.set(archetype, card);
+    assign(row.core as string, row.name as string, row.card_image_url as string);
   }
   return out;
 }

@@ -19,9 +19,10 @@ describe.skipIf(!hasTestDb)("resolveMainCards (統合)", () => {
     name: string,
     image: string | null = `https://img/${name}.jpg`,
     races: string[] = [],
+    cost = 6,
   ) =>
     sql`INSERT INTO cards (name, civilizations, cost, type, races, text, card_image_url, official_id)
-        VALUES (${name}, ${sql.json(["light"])}, 6, 'creature', ${sql.json(races)}, '', ${image}, ${name})`;
+        VALUES (${name}, ${sql.json(["light"])}, ${cost}, 'creature', ${sql.json(races)}, '', ${image}, ${name})`;
 
   beforeEach(async () => {
     await truncateAll(sql);
@@ -30,8 +31,11 @@ describe.skipIf(!hasTestDb)("resolveMainCards (統合)", () => {
     await card("我我我ガイアール・ブランド");
     await card("MEGATOON・ドッカンデイヤー");
     await card("ゴールド・ウィリデ");
-    // 種族名ベースのアーキタイプの検証用。「ドラゴン」は種族。
-    await card("ドラゴン・ラボ", "https://img/dragonlab.jpg", ["ドラゴン"]);
+    // 種族「ドラゴン」を持つ本物のドラゴン。**名前に「ドラゴン」は含まない** (#131)。
+    await card("ボルシャック・NEX", "https://img/nex.jpg", ["ドラゴン"], 7);
+    await card("小さな竜", "https://img/small.jpg", ["ドラゴン"], 2);
+    // 名前に「ドラゴン」を含むが**種族はドラゴンでない**カード (名前一致の誤爆元)
+    await card("ドラゴン・ラボ", "https://img/dragonlab.jpg", ["メカ"]);
     // 戦略名が名前の真ん中に埋まっているカード (誤検出の元)
     await card("消火機装コントロール・ファイア");
   });
@@ -80,10 +84,25 @@ describe.skipIf(!hasTestDb)("resolveMainCards (統合)", () => {
     expect(map.get("5Cコントロール")).toBeUndefined();
   });
 
-  it("**種族名は弾く** (5Cドラゴン → 《ドラゴン・ラボ》を出さない)", async () => {
-    // 種族ベースのアーキタイプは、代表カードを1枚選ぶ根拠が無い。
+  /**
+   * 種族ベースのアーキタイプ (#131)。
+   *
+   * 以前は「代表カードを1枚選ぶ根拠が無い」として**空欄**にしていた。しかし本番の主要ティアで
+   * 「デスパペット」(種族) 等が空欄のままで、ユーザーから「メインカード表示が解決していない」と
+   * 報告された。**その種族のカードは「無関係なカード」ではない**ので、#122 の
+   * 「無関係カードより空欄」の原則には反しない。種族の「顔」= 最も重いカードを出す。
+   */
+  it("**種族ベースのアーキタイプはその種族の代表カードを出す** (最も重いカード)", async () => {
     const map = await resolveMainCards(["5Cドラゴン"]);
-    expect(map.get("5Cドラゴン")).toBeUndefined();
+    // ドラゴン種族のうちコスト最大 (7) の《ボルシャック・NEX》。《小さな竜》(2) ではない。
+    expect(map.get("5Cドラゴン")?.name).toBe("ボルシャック・NEX");
+  });
+
+  it("種族一致は名前一致に勝つ (《ドラゴン・ラボ》を出さない)", async () => {
+    // 《ドラゴン・ラボ》は名前に「ドラゴン」を含むだけで**種族はドラゴンでない**。
+    // 種族で解決できるアーキタイプに、名前だけ似た無関係カードを当てない。
+    const map = await resolveMainCards(["5Cドラゴン"]);
+    expect(map.get("5Cドラゴン")?.name).not.toBe("ドラゴン・ラボ");
   });
 
   it("名前の途中に一致するだけでも採る (先頭/末尾の一致を優先する)", async () => {
