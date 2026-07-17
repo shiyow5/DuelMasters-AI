@@ -80,6 +80,7 @@ function bodyHtml(opts: { eyecatch: string; decklist: string; participants?: str
       トレカラインCS優勝　サガループ　🍣mofura🍣さん<br>
       <a href="${opts.decklist}"><img src="${opts.decklist.replace(".jpg", "s.jpg")}"></a><br>
       ${opts.participants ?? ""}
+      <p>デュエ祭り・非公認大会で優勝、CSでベスト８以内入賞を収めたデッキレシピを募集中です。（参加人数6名以上ならOK）</p>
     </div>
     <div class="fc2relate"><div class="relate_entry">関連記事</div></div>
   </div>`;
@@ -113,6 +114,9 @@ describe("parseRecipeBody", () => {
   });
 
   it("参加人数が無ければ null (書いていないことは埋めない)", () => {
+    // フィクスチャには実記事と同じ募集定型文「（参加人数6名以上ならOK）」が入っている。
+    // これは**全記事に載っている**ので、「6名」を参加人数として拾うと全件が 6人参加になる。
+    // 「N名」は拾わず「N人」だけを拾うことでかわしている。
     const html = bodyHtml({
       eyecatch: "https://blog-imgs-166.fc2.com/d/e/n/deneblog1/2023062200542261f.jpg",
       decklist: DECKLIST,
