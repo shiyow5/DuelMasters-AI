@@ -156,6 +156,40 @@ describe("parseRecipeBody", () => {
   it("本文コンテナが無ければ null", () => {
     expect(parseRecipeBody("<html><body>まったく別のページ</body></html>")).toBeNull();
   });
+
+  it("関連記事ブロック (fc2relate) が無ければ null (範囲を絞れないなら諦める)", () => {
+    // fc2relate が無いときに「ページ末尾まで」で代用すると、サイドバーや関連ウィジェットの
+    // blog-imgs サムネイルをこの記事のデッキリストとして拾いうる。
+    // 誤ったレシピを見せるより載せないほうがよい。
+    const html = bodyHtml({
+      eyecatch: "https://blog-imgs-166.fc2.com/d/e/n/deneblog1/2023062200542261f.jpg",
+      decklist: DECKLIST,
+    }).replace('<div class="fc2relate"><div class="relate_entry">関連記事</div></div>', "");
+    expect(parseRecipeBody(html)).toBeNull();
+  });
+
+  it("ヘッダに掲載日が無ければ null (コメント欄や最新記事の日時で代用しない)", () => {
+    // 掲載日の探索をページ全体に広げると、記事ヘッダに日付が無いテンプレートで
+    // コメント欄や「最新記事」ウィジェットの日時を掲載日として拾ってしまう。
+    // 掲載日は新着順の並びと「掲載日」表示に使うので、間違えると**静かに**誤る。
+    const html =
+      bodyHtml({
+        eyecatch: "https://blog-imgs-166.fc2.com/d/e/n/deneblog1/2023062200542261f.jpg",
+        decklist: DECKLIST,
+      }).replace('<div class="entry_date">2026.07.13 16:21</div>', "") +
+      `<div class="comment_body">2011.01.01 09:00 コメント</div>`;
+    expect(parseRecipeBody(html)).toBeNull();
+  });
+
+  it("class が複数指定でも本文を見つける", () => {
+    // `class="ently_body clearfix"` のような複数クラスを素の文字列一致で見ると
+    // 記事ごと取りこぼす (テンプレ変更で全件が静かに 0件になる)。
+    const html = bodyHtml({
+      eyecatch: "https://blog-imgs-166.fc2.com/d/e/n/deneblog1/2023062200542261f.jpg",
+      decklist: DECKLIST,
+    }).replace('class="ently_body"', 'class="ently_body clearfix"');
+    expect(parseRecipeBody(html)?.decklist_image_url).toBe(DECKLIST);
+  });
 });
 
 describe("parseRecipeEntryList", () => {

@@ -59,8 +59,16 @@ function decodeEntities(s: string): string {
 
 const RECIPE_TITLE_PATTERN = /^【\s*#デュエマCS入賞デッキレシピ\s*】(.+)$/;
 /**
- * 順位ラベル。**「準優勝」を「優勝」より先に**置く (後にすると「準優勝」が
- * 「準」+「優勝」に割れて大会名が壊れる)。全角数字もそのまま受ける。
+ * 順位ラベル (末尾に固定)。全角数字もそのまま受ける。
+ *
+ * 「準優勝」を先に置いているのは読みやすさのためで、**動作は並び順に依存しない**。
+ * `$` 固定なので、正規表現は「末尾まで一致する最も左の位置」を採る。「…CS準優勝」なら
+ * 「準」の位置でしか末尾まで届かず、そこで一致するのは `準優勝` だけなので、
+ * `優勝` を先に書いても結果は変わらない (node で実測確認済み)。
+ *
+ * 一方 `[0-9０-９]+位(?:入賞)?` の `(?:入賞)?` は**同じ選択肢の中に**入れる必要がある。
+ * `位` と `位入賞` を別の選択肢に割ると、先に書いたほうだけが採られて
+ * 「5位入賞」の「入賞」が大会名側に残る。
  */
 const PLACEMENT_PATTERN = /(準優勝|優勝|[0-9０-９]+位(?:入賞)?|ベスト\s*[0-9０-９]+)$/;
 
@@ -129,19 +137,29 @@ const BODY_ANCHOR = "よりお問い合わせ下さい。";
  * デッキリスト画像が見つからない記事は null を返す (**バナーで代用しない**)。
  */
 export function parseRecipeBody(html: string): RecipeBody | null {
-  const entryStart = html.indexOf('class="ently_body"'); // テーマ側の綴り (entry ではない)
-  if (entryStart < 0) return null;
-  const entry = html.slice(entryStart);
+  // テーマ側の綴りは entry ではなく ently。クラスが増えても拾えるようにする
+  // (`class="ently_body clearfix"` のような複数クラス指定を素の文字列一致で見ると
+  //  記事ごと取りこぼす)。
+  const entryMatch = html.match(/class="[^"]*\bently_body\b[^"]*"/);
+  // index === 0 は falsy なので、存在チェックは undefined 比較で行う
+  if (entryMatch?.index === undefined) return null;
+  const entry = html.slice(entryMatch.index);
 
-  const date = entry.match(POSTED_DATE_PATTERN);
-  if (!date) return null;
-
-  // 本文は ently_text から関連記事 (fc2relate) の手前まで。関連記事のサムネイルには
-  // 同日アップの画像が混ざるので、本文の外は見ない。
+  // 本文は ently_text から関連記事 (fc2relate) の手前まで。
   const textStart = entry.indexOf("ently_text");
   if (textStart < 0) return null;
   const relateStart = entry.indexOf("fc2relate", textStart);
-  const body = entry.slice(textStart, relateStart > textStart ? relateStart : undefined);
+  // **fc2relate が無いときに「ページ末尾まで」で代用しない。** 関連記事ウィジェットも
+  // blog-imgs のサムネイルを張るので、範囲を絞れないまま画像を探すと、無関係な記事の
+  // サムネイルをこの記事のデッキリストとして拾いうる。範囲を確定できないなら諦める
+  // (誤ったレシピを見せるより、載せないほうがよい)。
+  if (relateStart <= textStart) return null;
+  const body = entry.slice(textStart, relateStart);
+
+  // 掲載日は**本文より前**のヘッダ部にある。ページ全体を対象にすると、サイドバーの
+  // 「最新記事」やコメント欄の日時を先に拾いうるので、ently_body〜本文の手前に絞る。
+  const date = entry.slice(0, textStart).match(POSTED_DATE_PATTERN);
+  if (!date) return null;
 
   const anchor = body.indexOf(BODY_ANCHOR);
   if (anchor < 0) return null;
@@ -249,6 +267,9 @@ export async function runIngestDeneblog(
     } catch (err) {
       console.error(`[deneblog] 記事の取得に失敗: ${url}`, err);
       skipped++;
+      // 失敗時こそ待つ。ここで continue して即次を叩くと、相手が不調なときに
+      // ウェイト無しで連打することになる。
+      await sleep(REQUEST_INTERVAL_MS);
       continue;
     }
     await sleep(REQUEST_INTERVAL_MS);
