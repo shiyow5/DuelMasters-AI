@@ -210,6 +210,17 @@ metaRouter.get("/archetype/:name", async (c) => {
   if (!(FORMATS as readonly string[]).includes(format)) {
     return c.json({ error: `format は ${FORMATS.join(" | ")} のいずれかを指定してください` }, 400);
   }
+  /**
+   * **期間はティア表と揃える。**
+   *
+   * ティアカードの使用率・入賞数は `/tier?period=2w|4w|8w` で期間を絞った値。ここで期間を
+   * 見ないと、詳細の優勝/Top4/記録数と直近結果だけが**全期間**になり、開いたカードと
+   * 数字が矛盾する (2週間で5件のデッキを開くと「記録数25」と出る)。
+   */
+  const period = c.req.query("period") ?? "4w";
+  const weeks = parseInt(period.replace("w", ""), 10) || 4;
+  const periodStart = new Date();
+  periodStart.setDate(periodStart.getDate() - weeks * 7);
 
   try {
     const sql = getSql();
@@ -220,11 +231,13 @@ metaRouter.get("/archetype/:name", async (c) => {
     // LIKE のメタ文字はユーザー入力なのでエスケープする。
     const pattern = `%${name.replace(/[\\%_]/g, "\\$&")}%`;
     const match = sql`(deck_archetype = ${name} OR deck_archetype LIKE ${pattern} ESCAPE '\')`;
+    // ティア表と同じ期間窓で絞る (上のコメント参照)。
+    const inPeriod = sql`event_date >= ${isoDate(periodStart)}`;
 
     const results = await sql`
       SELECT event_name, event_date, placement, participants, source_url, deck_archetype
       FROM tournament_results
-      WHERE ${match} AND format = ${format}
+      WHERE ${match} AND format = ${format} AND ${inPeriod}
       ORDER BY event_date DESC
       LIMIT 20
     `;
@@ -236,12 +249,13 @@ metaRouter.get("/archetype/:name", async (c) => {
         (COUNT(*) FILTER (WHERE placement <= 4))::int as top4,
         (COUNT(*) FILTER (WHERE placement <= 8))::int as top8
       FROM tournament_results
-      WHERE ${match} AND format = ${format}
+      WHERE ${match} AND format = ${format} AND ${inPeriod}
     `;
 
     return c.json({
       archetype: name,
       format,
+      period,
       stats: stats[0],
       recent_results: results,
     });
