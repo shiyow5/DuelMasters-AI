@@ -14,14 +14,27 @@ const recipesRouter = new Hono();
 /** 一覧の既定件数と上限 */
 const DEFAULT_LIMIT = 24;
 const MAX_LIMIT = 60;
+/**
+ * offset の上限。レシピは週100件程度しか増えないので、これを超える offset は
+ * 実在するページを指さない。上限を設けないと `offset=9007199254740991` のような
+ * 値で毎回インデックス全走査させられる。
+ */
+const MAX_OFFSET = 100_000;
 /** 検索語の長さ上限 */
 const MAX_QUERY_LENGTH = 100;
 
-/** 数値クエリを安全に読む。不正値は既定値へ落とす (400 にせず一覧を出す)。 */
+/**
+ * 数値クエリを安全に読む (400 にせず一覧を出す)。
+ *
+ * **下限割れは「クランプ」ではなく「既定値」に落とす。** `limit=-5` を下限の 1 に
+ * 丸めると、でたらめな値を送ったユーザーに 1件だけの一覧を返すことになる
+ * (負のページサイズは「最小のページ」ではなく無意味な指定なので、既定に戻すのが正しい)。
+ * 上限超えは意味のある指定なのでクランプする (`limit=100` → 60)。
+ */
 function intParam(raw: string | undefined, fallback: number, min: number, max: number): number {
   const n = parseInt(raw ?? "", 10);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(Math.max(n, min), max);
+  if (!Number.isFinite(n) || n < min) return fallback;
+  return Math.min(n, max);
 }
 
 /**
@@ -37,7 +50,7 @@ recipesRouter.get("/", async (c) => {
   const sql = getSql();
 
   const limit = intParam(c.req.query("limit"), DEFAULT_LIMIT, 1, MAX_LIMIT);
-  const offset = intParam(c.req.query("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
+  const offset = intParam(c.req.query("offset"), 0, 0, MAX_OFFSET);
   const q = (c.req.query("q") ?? "").trim().slice(0, MAX_QUERY_LENGTH);
 
   // デッキ名と大会名のどちらでも引けるようにする (「ウィリデ」でも「妖精CS」でも)

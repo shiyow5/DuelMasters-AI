@@ -104,11 +104,37 @@ describe.skipIf(!hasTestDb)("GET /api/recipes (統合)", () => {
   });
 
   it("不正な limit / offset は既定値に落とす (500 にしない)", async () => {
+    // limit=-5 を下限 1 にクランプすると「1件だけの一覧」を返してしまう。
+    // 負のページサイズは無意味な指定なので、既定 (24件) に戻すのが正しい。
     const res = await makeApp().request("/api/recipes?limit=-5&offset=abc");
     expect(res.status).toBe(200);
     const body = (await res.json()) as ListBody;
+    expect(body.limit).toBe(24);
     expect(body.recipes).toHaveLength(3);
     expect(body.offset).toBe(0);
+  });
+
+  it("limit=0 も既定値に落とす", async () => {
+    const res = await makeApp().request("/api/recipes?limit=0");
+    const body = (await res.json()) as ListBody;
+    expect(body.limit).toBe(24);
+    expect(body.recipes).toHaveLength(3);
+  });
+
+  it("負の offset は 0 にする", async () => {
+    const res = await makeApp().request("/api/recipes?offset=-10");
+    const body = (await res.json()) as ListBody;
+    expect(body.offset).toBe(0);
+    expect(body.recipes).toHaveLength(3);
+  });
+
+  it("巨大な offset は上限で頭打ちにする (全走査させない)", async () => {
+    // 上限が無いと offset=9007199254740991 で毎回インデックス全走査になる
+    const res = await makeApp().request("/api/recipes?offset=9007199254740991");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ListBody;
+    expect(body.offset).toBe(100000);
+    expect(body.recipes).toEqual([]);
   });
 
   it("limit に上限を設ける (取り放題にしない)", async () => {
