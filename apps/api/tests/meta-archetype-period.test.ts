@@ -33,11 +33,12 @@ describe.skipIf(!hasTestDb)("GET /api/meta/archetype/:name の期間フィルタ
     sql`INSERT INTO tournament_results (event_name, event_date, format, deck_archetype, placement)
         VALUES (${"CS " + date}, ${date}, 'original', 'モルト系', ${placement})`;
 
+  // 窓は weeks*7 日。2w=14日 / 4w=28日 / 8w=56日 なので、境界に近すぎない日付を選ぶ。
   beforeEach(async () => {
     await truncateAll(sql);
-    await result(daysAgo(3), 1); // 直近 (2w にも入る)
-    await result(daysAgo(20), 1); // 2w の外、4w の内
-    await result(daysAgo(60), 1); // 4w の外、8w の内
+    await result(daysAgo(3), 1); // 2w(14日)の内
+    await result(daysAgo(20), 1); // 2w の外、4w(28日)の内
+    await result(daysAgo(50), 1); // 4w の外、8w(56日)の内
   });
 
   it("period=2w なら直近2週間の記録だけを数える", async () => {
