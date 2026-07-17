@@ -122,7 +122,14 @@ export default function ArchetypeDetail({
       onClick={(e) => {
         if (downOnBackdrop.current && e.target === dialogRef.current) closeDialog();
       }}
-      className="w-full max-w-2xl bg-transparent p-0 text-text-main backdrop:bg-black/60"
+      /*
+       * **`m-auto` は必須** (消すと左上に張り付く)。
+       *
+       * UA スタイルは `dialog:modal { position:fixed; inset:0; margin:auto }` で中央寄せするが、
+       * Tailwind v4 の preflight が `*, ::backdrop { margin:0 }` をグローバルに当てており、
+       * author CSS は UA CSS を(詳細度に関係なく)上書きするので margin:auto が潰れる。
+       */
+      className="m-auto w-full max-w-2xl bg-transparent p-0 text-text-main backdrop:bg-black/60"
     >
       <div className="max-h-[85vh] overflow-y-auto rounded-xl border border-border-highlight bg-bg-surface shadow-2xl">
         {/* ヘッダ */}
