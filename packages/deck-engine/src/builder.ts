@@ -111,7 +111,7 @@ export async function autoBuild(
       )
     )
     ${excludeFrag} ${civFrag} ${costFrag} ${playableFrag}
-    ORDER BY cost ASC
+    ORDER BY cost ASC, name ASC, official_id ASC
     LIMIT 100
   `;
 
@@ -242,7 +242,7 @@ export async function autoBuild(
       FROM cards
       WHERE is_shield_trigger = true
         ${excludeFrag} ${civFrag} ${costFrag} ${playableFrag}
-      ORDER BY cost ASC
+      ORDER BY cost ASC, name ASC, official_id ASC
       LIMIT 60
     `;
     const requiredSet = new Set(constraints.requiredCards ?? []);
@@ -341,7 +341,7 @@ export async function autoBuild(
       WHERE name NOT IN ${sql(usedList())}
         AND type LIKE ${"%creature%"}
         ${excludeFrag} ${civFrag} ${costFrag} ${playableFrag}
-      ORDER BY cost ASC
+      ORDER BY cost ASC, name ASC, official_id ASC
       LIMIT 20
     `;
     for (const card of creatureFillers) {
@@ -365,7 +365,7 @@ export async function autoBuild(
       WHERE name NOT IN ${sql(usedList())}
         AND is_shield_trigger = true
         ${excludeFrag} ${civFrag} ${costFrag} ${playableFrag}
-      ORDER BY cost ASC
+      ORDER BY cost ASC, name ASC, official_id ASC
       LIMIT 20
     `;
     for (const filler of fillers) {
@@ -446,12 +446,12 @@ export async function suggestReplacements(
           SELECT name, cost, tags FROM cards
           WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) t WHERE t = ${goal})
             AND name NOT IN ${sql(notInDeck)}
-          ORDER BY cost ASC LIMIT 5`
+          ORDER BY cost ASC, name ASC, official_id ASC LIMIT 5`
       : await sql`
           SELECT name, cost, tags FROM cards
           WHERE text ILIKE ${"%" + goal + "%"}
             AND name NOT IN ${sql(notInDeck)}
-          ORDER BY cost ASC LIMIT 5`;
+          ORDER BY cost ASC, name ASC, official_id ASC LIMIT 5`;
     candidatesByGoal.set(
       goal,
       candRows.map((r) => ({

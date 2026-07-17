@@ -35,8 +35,14 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
    *
    * 分類器は1本 (inferDeckArchetype が inferDeckConcept を内部再利用)。ここでは両方を採るが、
    * archetype control ⟺ concept control / archetype combo ⟺ concept combo なので relaxed は両者で一致する。
+   *
+   * **カードが一部しか DB で解決できないデッキでは緩和を信用しない** (Codex 指摘)。
+   * 既知の20枚だけから aggro/combo と推定し、未解決の20枚を含む40枚全体のトリガー/受け減点を
+   * 緩めてしまうと、採点していない半分を見逃す。**全カードが解決できたときだけ**アーキタイプ/
+   * コンセプトで緩和し、そうでなければ unknown 扱い (= 緩めない = 従来の厳しめ採点) にする。
    */
-  const archetype = inferDeckArchetype(expandedCards);
+  const fullyResolved = deck.totalCards > 0 && expandedCards.length === deck.totalCards;
+  const archetype = fullyResolved ? inferDeckArchetype(expandedCards) : "unknown";
   const guidelines = ARCHETYPE_GUIDELINES[archetype];
 
   // S・トリガー枚数。目標はアーキタイプ別 (aggro は速度優先で目安が低い)。
@@ -97,8 +103,11 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
    * テンプレで一律減点すると、ループ/コントロールのまともなデッキが不当に低スコアになる。
    * `relaxed` のときは該当の減点を軽くし、**軽くしたことを警告で明示する** (黙って消さない)。
    * 確信が無ければ unknown = 現行どおり (緩和しない)。
+   *
+   * archetype と同じく、**一部しか解決できないデッキでは緩和しない** (既知の半分だけから combo/control と
+   * 誤推定して未採点の半分を見逃さないため)。
    */
-  const concept = inferDeckConcept(expandedCards);
+  const concept = fullyResolved ? inferDeckConcept(expandedCards) : "unknown";
   const relaxed = isRelaxedConcept(concept);
 
   /**

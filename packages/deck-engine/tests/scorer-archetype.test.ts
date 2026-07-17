@@ -102,4 +102,32 @@ describe.skipIf(!hasTestDb)("アーキタイプ別採点 (統合)", () => {
     // 低コスト 12 は現行目安 15 未満だが、control 目安 8 以上なので警告しない。
     expect(score.warnings.some((w) => w.includes("低コスト"))).toBe(false);
   });
+
+  it("カードが一部しか解決できないデッキは緩和しない: archetype=unknown で従来の厳しめ採点 (Codex 指摘)", async () => {
+    // 既知の24枚は火アグロ (低コストクリーチャー、トリガー4枚)。**これだけなら aggro に分類される**
+    // (creatureRatio 1.0・低コスト、かつ 20枚以上)。だが残り16枚は DB に無い名前で採点されない。
+    // 既知の半分強から aggro と推定して 40枚全体のトリガー目安を 8→6 に緩めると、未採点分を見逃す。
+    // 全解決でないので unknown 扱い (=緩めない) にする。
+    await card("kTrigA", { cost: 2, trigger: true });
+    await card("kTrigB", { cost: 3, trigger: true });
+    for (let i = 0; i < 5; i++) await card(`kAtk${i}`, { cost: 2 });
+
+    const deck = parseDecklist(
+      [
+        "2 kTrigA",
+        "2 kTrigB", // 既知トリガー 4
+        ...Array.from({ length: 5 }, (_, i) => `4 kAtk${i}`), // 既知クリーチャー 20 → 既知計 24
+        ...Array.from({ length: 4 }, (_, i) => `4 unknown${i}`), // 未解決 16
+      ].join("\n"),
+    );
+    const score = await scoreDeck(deck);
+
+    // 解決できたのは 24枚 / 全40枚。fullyResolved でないので緩和しない。
+    expect(score.archetype).toBe("unknown");
+    expect(score.triggerCount).toBe(4);
+    // unknown = 現行の 8枚目安。4枚では不足警告が出る (aggro なら 6枚目安で緩むが、ここでは緩めない)。
+    expect(score.warnings.some((w) => w.includes("S・トリガー") && w.includes("推奨: 8枚"))).toBe(
+      true,
+    );
+  });
 });
