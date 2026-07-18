@@ -73,4 +73,32 @@ describe.skipIf(!hasTestDb)("コンセプトによる減点緩和 (統合)", () 
     // 構成は同一 (コンボ信号テキストの有無だけ違う)。緩和のぶん combo の方が高い。
     expect(comboScore.overall).toBeGreaterThan(plainScore.overall);
   });
+
+  it("超無限進化の進化デッキは combo と誤判定せず、緩和もしない (#137 実カード文面)", async () => {
+    // 本番の実際の文面。素の「無限」を信号にすると2種6枚以上でこれが combo 扱いになり、受け0の
+    // 減点が不当に緩和されていた。ループ文脈 (無限に) に絞ったので、進化デッキは unknown = 緩和なし。
+    await card(
+      "進化デーモン",
+      "超無限進化：デーモン・コマンド・クリーチャー１体以上の上に置く。",
+      8,
+    );
+    await card(
+      "進化ドラゴン",
+      "超無限墓地進化：クリーチャーを１体以上自分の墓地から選び重ねる。",
+      7,
+    );
+    for (let i = 0; i < 8; i++) await card(`無地${i}`, "", 6);
+    const deck = parseDecklist(
+      [
+        "4 進化デーモン",
+        "4 進化ドラゴン",
+        ...Array.from({ length: 8 }, (_, i) => `4 無地${i}`),
+      ].join("\n"),
+    );
+    const score = await scoreDeck(deck);
+
+    expect(score.concept).not.toBe("combo");
+    // 緩和されていない = 受け0の通常の厳しい警告が出る (combo 扱いなら緩和され警告文が変わっていた)。
+    expect(score.warnings).toContain("受け札が少なく、攻撃に弱い構成です");
+  });
 });

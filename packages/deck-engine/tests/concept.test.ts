@@ -106,6 +106,30 @@ describe("inferDeckConcept (#130)", () => {
     expect(inferDeckConcept(deck)).toBe("unknown");
   });
 
+  it("超無限進化などの進化キーワードを combo と誤検出しない (#137 データ実測)", () => {
+    // 本番 cards の「無限」36枚を実測すると、ほぼ全てが**超無限進化 (進化キーワード)**・∞パワー
+    // アタッカー・カード名の一部で、ループ部品は0件だった。素の「無限」を信号にすると、進化
+    // クリーチャーを2種6枚以上積んだ**普通の進化デッキが combo 扱い**になり、受け/フィニッシャーの
+    // 減点が不当に緩和 (過小評価) される。信号をループ文脈 (無限に…する) に絞ってこれを防ぐ。
+    const deck = [
+      ...many(
+        4,
+        card({ name: "進化A", text: "超無限進化：クリーチャー１体以上の上に置く。", cost: 7 }),
+      ),
+      ...many(
+        4,
+        card({
+          name: "進化B",
+          text: "超無限墓地進化：クリーチャーを１体以上自分の墓地から選ぶ。",
+          cost: 6,
+        }),
+      ),
+      ...many(32, card({ name: "無地", text: "", cost: 3 })),
+    ];
+    // 2種 × 各4枚 = 8枚。素の「無限」なら combo と誤判定するが、進化KWはループではない。
+    expect(inferDeckConcept(deck)).not.toBe("combo");
+  });
+
   it("墓地回収や踏み倒し等の一般的な語だけでは combo と誤検出しない", () => {
     // これらは多くのデッキに出るので COMBO_SIGNAL に含めていない
     const deck = [
@@ -161,6 +185,27 @@ describe("inferDeckArchetype (#140)", () => {
   it("beatdown (高クリーチャー比・低コスト) は aggro", () => {
     const deck = many(40, card({ type: "creature", cost: 2, text: "" }));
     expect(inferDeckArchetype(deck)).toBe("aggro");
+  });
+
+  it("超無限進化の進化デッキは archetype combo にもならない (#137 が #140 の分類にも波及)", () => {
+    // inferDeckArchetype は inferDeckConcept を再利用するので、combo 誤検出の修正はここにも効く。
+    // 進化デッキが誤って combo archetype に分類され緩和されるのを防ぐ (concept 側と対で固定)。
+    const deck = [
+      ...many(
+        4,
+        card({ name: "進化A", text: "超無限進化：クリーチャー１体以上の上に置く。", cost: 7 }),
+      ),
+      ...many(
+        4,
+        card({
+          name: "進化B",
+          text: "超無限墓地進化：クリーチャーを１体以上自分の墓地から選ぶ。",
+          cost: 6,
+        }),
+      ),
+      ...many(32, card({ name: "無地", text: "", cost: 3 })),
+    ];
+    expect(inferDeckArchetype(deck)).not.toBe("combo");
   });
 
   it("クリーチャー主体だが平均コストがやや高い (beatdown 未満) デッキも aggro に拾う", () => {
