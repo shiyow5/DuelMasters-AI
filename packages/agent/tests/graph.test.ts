@@ -146,6 +146,35 @@ describe("runAgent グラフ制御フロー", () => {
     expect(out.citations?.[0]).toMatchObject({ article: "1234.5" });
   });
 
+  it("節の展開で補った兄弟条文は出典に出さないが、引用しても捏造扱いしない (#116)", async () => {
+    const { runAgent } = await import("../src/index.js");
+    // 113.9 は節の展開で補った兄弟条文 (expanded)。context には載るが出典には出さない。
+    searchRulesMock.mockResolvedValueOnce({
+      chunks: [
+        { text: "本則", meta: { article: "113.6", section: "113" }, score: 0.85, expanded: false },
+        {
+          text: "例外規定",
+          meta: { article: "113.9", section: "113" },
+          score: 0.4,
+          expanded: true,
+        },
+      ],
+    });
+    invokeMock.mockResolvedValueOnce(
+      aiText("本則【総合ルール 113.6】と例外【総合ルール 113.9】がある。"),
+    );
+
+    const out = await runAgent({ message: "Sトリガーの例外は？", mode: "rule" });
+
+    // UI 出典は本則だけ (兄弟条文 113.9 はノイズなので出さない)。内部フラグも残さない。
+    expect(out.citations).toHaveLength(1);
+    expect(out.citations?.[0]).toMatchObject({ article: "113.6" });
+    expect(out.citations?.[0] && "expanded" in out.citations[0]).toBe(false);
+    // だが本文の 113.9 は retrieve 済みの資料なので、裏取りで捏造扱いされず本文に残る。
+    expect(out.response).toContain("113.9");
+    expect(out.ungroundedCitations ?? []).not.toContain("113.9");
+  });
+
   it("rule モードで RAG ヒット無しなら citations 無しで通常応答", async () => {
     const { runAgent } = await import("../src/index.js");
     searchRulesMock.mockResolvedValueOnce({ chunks: [] });

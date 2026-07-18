@@ -8,8 +8,9 @@ import {
   type BaseMessage,
 } from "@langchain/core/messages";
 import { searchRules } from "@dm-ai/rag";
-import { AgentState, type AgentMode, type AgentStateType, type Citation } from "./state.js";
+import { AgentState, type AgentMode, type AgentStateType } from "./state.js";
 import { AGENT_TOOLS, runTool } from "./tools.js";
+import { citationsFromChunks } from "./citations.js";
 import { buildChatModel } from "./models.js";
 import { SYSTEM_PROMPTS } from "./prompts.js";
 
@@ -155,10 +156,9 @@ async function retrieveNode(state: AgentStateType): Promise<Partial<AgentStateTy
   if (!query) return {};
   const result = await searchRules(query);
   if (!acceptsRagResult(state.mode, result.chunks)) return {};
-  const citations: Citation[] = result.chunks.map((ch) => ({
-    text: ch.text.slice(0, 100),
-    ...ch.meta,
-  }));
+  // **context は全チャンク、出典は兄弟条文を外す (#116)。** 節の展開で補った兄弟条文は
+  // モデルへの資料としては正しいが、UI の出典としてはノイズ (0.49 のチャンクが出典に並ぶ)。
+  const citations = citationsFromChunks(result.chunks);
   // context は messages に human として積まず、ragContext として system へ畳み込む。
   return { ragContext: formatRagContext(result.chunks), citations };
 }

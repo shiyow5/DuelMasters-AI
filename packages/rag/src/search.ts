@@ -32,6 +32,14 @@ interface ChunkResult {
   text: string;
   score: number;
   meta: Record<string, unknown>;
+  /**
+   * 節の展開 (expandTopSection) で**補った**兄弟条文か (#116)。
+   *
+   * 兄弟条文はスコアに関係なく節から足すので、モデルへの context としては正しいが、
+   * 利用者に見せる**出典としてはノイズ**。この印で両者を区別し、citations からは外す。
+   * 検索でヒットした一次結果 (primary) は false。
+   */
+  expanded: boolean;
 }
 
 /**
@@ -132,12 +140,13 @@ async function expandTopSection(
       LIMIT ${limit}
     `,
   );
-  return rows.map((row) => toChunk(row, row.similarity as number));
+  // 節の展開で補った兄弟条文。出典としてはノイズなので expanded 印を付ける (#116)。
+  return rows.map((row) => toChunk(row, row.similarity as number, true));
 }
 
 function toResult(chunks: ChunkResult[]): SearchResult {
   return {
-    chunks: chunks.map(({ text, score, meta }) => ({ text, score, meta })),
+    chunks: chunks.map(({ text, score, meta, expanded }) => ({ text, score, meta, expanded })),
     total: chunks.length,
   };
 }
@@ -230,7 +239,7 @@ async function searchByVector(
 }
 
 /** doc_type は meta に載せて返す。回答時に条文 (一次情報) と裁定 (Q&A) を区別するため。 */
-function toChunk(row: Record<string, unknown>, score: number): ChunkResult {
+function toChunk(row: Record<string, unknown>, score: number, expanded = false): ChunkResult {
   return {
     id: row.id as number,
     text: row.chunk_text as string,
@@ -239,6 +248,7 @@ function toChunk(row: Record<string, unknown>, score: number): ChunkResult {
       ...((row.chunk_meta as Record<string, unknown>) ?? {}),
       doc_type: row.doc_type as string,
     },
+    expanded,
   };
 }
 

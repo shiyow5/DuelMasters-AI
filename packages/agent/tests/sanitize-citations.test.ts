@@ -1,6 +1,60 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeCitations } from "../src/citations.js";
+import { sanitizeCitations, citationsFromChunks, visibleCitations } from "../src/citations.js";
 import type { Citation } from "../src/state.js";
+
+describe("citationsFromChunks / visibleCitations (#116 出典と context の分離)", () => {
+  const chunk = (article: string, expanded: boolean) => ({
+    text: `条文 ${article} の本文`,
+    score: 0.5,
+    meta: { article, doc_type: "comprehensive_rules", section: article.split(".")[0] },
+    expanded,
+  });
+
+  it("citationsFromChunks は全チャンクを載せ、expanded 印を保つ (裏取り用に兄弟も残す)", () => {
+    const cites = citationsFromChunks([chunk("113.6", false), chunk("113.9", true)]);
+    expect(cites.map((c) => c.article)).toEqual(["113.6", "113.9"]);
+    expect(cites.find((c) => c.article === "113.6")?.expanded).toBe(false);
+    expect(cites.find((c) => c.article === "113.9")?.expanded).toBe(true);
+  });
+
+  it("expanded 未指定 (後方互換) のチャンクは expanded=false になる", () => {
+    const cites = citationsFromChunks([
+      { text: "x", score: 0.5, meta: { article: "500.1", doc_type: "comprehensive_rules" } },
+    ]);
+    expect(cites[0].expanded).toBe(false);
+  });
+
+  it("visibleCitations は兄弟条文 (expanded) を落とし、内部 expanded 印も取り除く", () => {
+    const all = citationsFromChunks([chunk("113.6", false), chunk("113.9", true)]);
+    const visible = visibleCitations(all);
+    expect(visible.map((c) => c.article)).toEqual(["113.6"]); // 兄弟 113.9 は消える
+    expect("expanded" in visible[0]).toBe(false); // 内部フラグは出力に残さない
+  });
+
+  it("出典は本文を100字に切り詰め、meta を展開して載せる", () => {
+    const long = "あ".repeat(200);
+    const cites = citationsFromChunks([
+      {
+        text: long,
+        score: 0.5,
+        meta: { article: "113.6", doc_type: "comprehensive_rules" },
+        expanded: false,
+      },
+    ]);
+    expect((cites[0].text as string).length).toBe(100);
+    expect(cites[0].article).toBe("113.6");
+    expect(cites[0].doc_type).toBe("comprehensive_rules");
+  });
+
+  it("裏取りは兄弟条文も認める: 引用した兄弟条番号を捏造扱いしない (#116 の要)", () => {
+    // 兄弟 (expanded) を citations から先に落とすと、モデルが読んで正しく引用した 113.9 が
+    // sanitizeCitations に「retrieve していない番号」と判定され本文から消える。全 citations で裏取りする。
+    const all = citationsFromChunks([chunk("113.6", false), chunk("113.9", true)]);
+    const { text, stripped } = sanitizeCitations("例外は【総合ルール 113.9】にある。", all);
+    expect(stripped).not.toContain("113.9");
+    expect(text).toContain("113.9");
+  });
+});
 
 const cite = (article: string): Citation =>
   ({ article, text: "", doc_type: "comprehensive_rules" }) as unknown as Citation;

@@ -1,5 +1,51 @@
 import type { Citation } from "./state.js";
 
+/** searchRules が返すチャンク (出典生成に必要な最小形)。 */
+interface RuleChunk {
+  text: string;
+  meta: Record<string, unknown>;
+  /** 節の展開で補った兄弟条文か (#116)。true は出典から外す。 */
+  expanded?: boolean;
+}
+
+/** 出典に載せる本文プレビューの最大文字数。 */
+const CITATION_TEXT_LIMIT = 100;
+
+/**
+ * 検索チャンクを citations に変換する (#116)。**兄弟条文もここでは落とさない。**
+ *
+ * citations は2つの用途に使われる:
+ * 1. **裏取り** (sanitizeCitations の #99)。本文の条番号が「retrieve した資料にあるか」を照合する。
+ *    節の展開で補った兄弟条文 (expanded) も**実際に retrieve した資料**なので、ここから外すと、
+ *    モデルが読んで正しく引用した兄弟条文の条番号が「捏造」と誤判定され本文から消える。
+ * 2. **UI の出典**。ここでは兄弟条文はノイズなので見せたくない。
+ *
+ * そこで citations には全チャンクを載せつつ `expanded` 印を残し、**UI へ出す直前だけ**
+ * `visibleCitations` で兄弟を落とす。裏取りは全件、表示は絞り込み、で両立させる。
+ */
+export function citationsFromChunks(chunks: RuleChunk[]): Citation[] {
+  // text は meta 展開の**後**に置く。出典の text は必ず「切り詰めた本文プレビュー」であるべきで、
+  // 万一 chunk_meta が text キーを持っても上書きされないようにする (防御。現行 meta には無い)。
+  return chunks.map((ch) => ({
+    ...ch.meta,
+    text: ch.text.slice(0, CITATION_TEXT_LIMIT),
+    expanded: ch.expanded === true,
+  }));
+}
+
+/**
+ * UI に見せる出典だけに絞る (#116)。**出力の直前で**呼ぶ。
+ *
+ * 節の展開で補った兄弟条文 (expanded) を落とし、内部用の `expanded` 印も取り除く
+ * (利用者に見せる出典に内部フラグを残さない)。裏取り (sanitizeCitations) は絞り込み前の
+ * 全 citations を使うので、これは表示のためだけの操作。
+ */
+export function visibleCitations(citations: Citation[]): Citation[] {
+  return citations
+    .filter((c) => c.expanded !== true)
+    .map(({ expanded: _expanded, ...rest }) => rest);
+}
+
 /**
  * 回答本文の条番号を、実際に retrieve した資料に照らして機械的に検証する (#99)。
  *
