@@ -187,6 +187,27 @@ describe("inferDeckArchetype (#140)", () => {
     expect(inferDeckArchetype(deck)).toBe("aggro");
   });
 
+  it("超無限進化の進化デッキは archetype combo にもならない (#137 が #140 の分類にも波及)", () => {
+    // inferDeckArchetype は inferDeckConcept を再利用するので、combo 誤検出の修正はここにも効く。
+    // 進化デッキが誤って combo archetype に分類され緩和されるのを防ぐ (concept 側と対で固定)。
+    const deck = [
+      ...many(
+        4,
+        card({ name: "進化A", text: "超無限進化：クリーチャー１体以上の上に置く。", cost: 7 }),
+      ),
+      ...many(
+        4,
+        card({
+          name: "進化B",
+          text: "超無限墓地進化：クリーチャーを１体以上自分の墓地から選ぶ。",
+          cost: 6,
+        }),
+      ),
+      ...many(32, card({ name: "無地", text: "", cost: 3 })),
+    ];
+    expect(inferDeckArchetype(deck)).not.toBe("combo");
+  });
+
   it("クリーチャー主体だが平均コストがやや高い (beatdown 未満) デッキも aggro に拾う", () => {
     // 平均コスト 3.8: beatdown の 3.5 を超えるので concept は unknown。だが速攻寄りなので aggro。
     const deck = [
