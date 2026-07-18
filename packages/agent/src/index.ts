@@ -1,6 +1,6 @@
 import { AIMessage, HumanMessage, type BaseMessage } from "@langchain/core/messages";
 import { buildAgentGraph } from "./graph.js";
-import { sanitizeCitations } from "./citations.js";
+import { sanitizeCitations, visibleCitations } from "./citations.js";
 import type { AgentMode, Citation } from "./state.js";
 
 export { configureAgent } from "./models.js";
@@ -96,15 +96,20 @@ function toOutput(
   // **本文の条番号を機械的に裏取りする。** プロンプトで「資料に無い条番号を書くな」と
   // 明示しても agent は捏造する (eval で【総合ルール 114.6】を確認。114章は 114.4 までしか無い)。
   // 利用者が存在しない条文を調べに行くのが最悪なので、裏取りできない番号は落とす。
+  // **裏取りは絞り込み前の全 citations で行う** — 節の展開で補った兄弟条文も retrieve 済みの
+  // 資料であり、それを引いた条番号は捏造ではない (#116)。
   const { text: response, stripped } = sanitizeCitations(
     messageText(result.messages.at(-1)),
     result.citations,
   );
 
+  // UI に見せる出典は兄弟条文 (expanded) を落とす (#116)。裏取りは上で全件済み。
+  const citations = visibleCitations(result.citations);
+
   const toolFailures = result.toolFailures ?? [];
   return {
     response,
-    citations: result.citations.length > 0 ? result.citations : undefined,
+    citations: citations.length > 0 ? citations : undefined,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     mode,
     ungroundedCitations: stripped.length > 0 ? stripped : undefined,

@@ -11,6 +11,7 @@ import {
 } from "@dm-ai/deck-engine";
 import { getSql } from "@dm-ai/db";
 import { buildCardSearchArgs, normalizeCardName } from "./card-search.js";
+import { citationsFromChunks } from "./citations.js";
 import type { Citation } from "./state.js";
 
 export interface ToolResult {
@@ -84,13 +85,12 @@ export async function runTool(
     switch (name) {
       case "search_rules": {
         const result = await searchRules(args.query as string);
+        // モデルへ渡す text は全チャンク (兄弟条文=例外規定も資料として要る)。
         const text = result.chunks
           .map((ch) => `${ch.meta.article ? `[${ch.meta.article}] ` : ""}${ch.text}`)
           .join("\n\n");
-        const citations: Citation[] = result.chunks.map((ch) => ({
-          text: ch.text.slice(0, 100),
-          ...ch.meta,
-        }));
+        // UI の出典は兄弟条文 (expanded) を外す (#116)。context としては正しいが出典としてはノイズ。
+        const citations = citationsFromChunks(result.chunks);
         return { text: text || "該当するルールが見つかりませんでした", citations };
       }
 

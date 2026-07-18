@@ -98,6 +98,16 @@ describe.skipIf(!hasTestDb)("searchRules (統合)", () => {
     expect(r.chunks.map((c) => c.meta.article)).not.toContain("113.9");
   });
 
+  it("節の展開で補った兄弟条文には expanded 印が付く (#116 出典と context の分離)", async () => {
+    // 113.9 はベクトルでもキーワードでも引けず、113.6 の節から**補った**兄弟条文。
+    // context (モデルへの資料) としては正しいが、UI の出典としてはノイズなので印を付けて区別する。
+    const r = await searchRules(QUESTION);
+    const primary = r.chunks.find((c) => c.meta.article === "113.6");
+    const sibling = r.chunks.find((c) => c.meta.article === "113.9");
+    expect(primary?.expanded).toBe(false);
+    expect(sibling?.expanded).toBe(true);
+  });
+
   it("日本語のキーワード検索が効く (空白が無くても語を切り出せる)", async () => {
     // ベクトルは裁定の方が近い。キーワード「S・トリガー」は条文にしか無いので、
     // キーワード検索が死んでいると条文枠でしか出てこない。

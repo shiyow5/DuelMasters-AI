@@ -202,6 +202,12 @@ export const SearchResultSchema = z.object({
       text: z.string(),
       score: z.number(),
       meta: RuleChunkSchema.shape.chunk_meta,
+      /**
+       * 節の展開で補った兄弟条文か (#116)。context (モデルへの資料) には載せるが、
+       * 出典 (citations) からは外す。**optional** — searchRules は必ず設定するが、
+       * 過去に SearchResult を組んでいた箇所との後方互換のため。
+       */
+      expanded: z.boolean().optional(),
     }),
   ),
   total: z.number(),
