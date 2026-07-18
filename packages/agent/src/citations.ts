@@ -24,9 +24,11 @@ const CITATION_TEXT_LIMIT = 100;
  * `visibleCitations` で兄弟を落とす。裏取りは全件、表示は絞り込み、で両立させる。
  */
 export function citationsFromChunks(chunks: RuleChunk[]): Citation[] {
+  // text は meta 展開の**後**に置く。出典の text は必ず「切り詰めた本文プレビュー」であるべきで、
+  // 万一 chunk_meta が text キーを持っても上書きされないようにする (防御。現行 meta には無い)。
   return chunks.map((ch) => ({
-    text: ch.text.slice(0, CITATION_TEXT_LIMIT),
     ...ch.meta,
+    text: ch.text.slice(0, CITATION_TEXT_LIMIT),
     expanded: ch.expanded === true,
   }));
 }
