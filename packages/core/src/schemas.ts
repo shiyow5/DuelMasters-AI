@@ -184,6 +184,19 @@ export const DeckScoreSchema = z.object({
    * (archetype 無し) も通すため。
    */
   archetype: z.enum(DECK_ARCHETYPES).optional(),
+  /**
+   * 種族トライバルの軽量シナジー信号 (#141)。支配的な種族が過半を占めるときだけ入る (それ以外は null)。
+   * **採点には影響しない情報提供のみ。** null = トライバルでない / 種族が乏しい。
+   * **optional** — 過去に保存した scores (synergy 無し) も通すため。
+   */
+  synergy: z
+    .object({
+      tribe: z.string(),
+      count: z.number(),
+      ratio: z.number(),
+    })
+    .nullable()
+    .optional(),
 });
 export type DeckScore = z.infer<typeof DeckScoreSchema>;
 
