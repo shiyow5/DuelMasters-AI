@@ -17,6 +17,7 @@ export {
   type BuildResult,
 } from "./builder.js";
 export { inferTagsByRule } from "./tagger.js";
+export { computeTribalSynergy, type TribalSynergy } from "./synergy.js";
 export {
   classifyRegulations,
   applyRegulationToRequired,

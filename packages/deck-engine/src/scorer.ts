@@ -4,6 +4,7 @@ import { getSql } from "@dm-ai/db";
 import type { ParsedDeck } from "./parser.js";
 import { isDefensiveCard } from "./tagger.js";
 import { inferDeckConcept, inferDeckArchetype, isRelaxedConcept, conceptLabel } from "./concept.js";
+import { computeTribalSynergy } from "./synergy.js";
 
 /** scoreDeck 内部のスコアリング閾値 (DECK_GUIDELINES に無い減点基準) */
 const HAND_SIZE = 5; // 初手枚数
@@ -111,6 +112,18 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
   const relaxed = isRelaxedConcept(concept);
 
   /**
+   * 種族トライバルの軽量シナジー信号 (#141)。**採点は動かさない (情報提供のみ)。**
+   * 支配種族が過半を占めるときだけ、種族シナジーが期待できる旨を suggestions に添える。
+   * どの比率が「強い」かの裏取りができない (デッキリストのコーパスが無い) ので、加点はしない。
+   */
+  const synergy = computeTribalSynergy(expandedCards);
+  if (synergy) {
+    suggestions.push(
+      `種族「${synergy.tribe}」が${synergy.count}枚で揃っており、種族シナジーが期待できます`,
+    );
+  }
+
+  /**
    * **受け札はタグに頼らない。** `is_shield_trigger` はカードの列で、ブロッカー等の
    * キーワードもテキストにある。カード自身の情報だけで判定できるものを、
    * わざわざ別テーブルの派生データ (tags) 経由で見に行くから壊れる。
@@ -169,6 +182,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
     suggestions,
     concept,
     archetype,
+    synergy,
   };
 }
 
