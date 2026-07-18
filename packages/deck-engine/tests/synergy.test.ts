@@ -77,14 +77,21 @@ describe("computeTribalSynergy (#141)", () => {
     expect(computeTribalSynergy(many(5, card({ races: ["ジョーカーズ"] })))).toBeNull();
   });
 
-  it("同率首位は決定的に決まる (種族名でタイブレーク)", () => {
-    // 20 vs 20 の同率。実行ごとに結果が変わらないよう、名前順で決める。
+  it("別々の2種族で20/20に割れたデッキは null (拮抗=非支配。Codex 指摘)", () => {
+    // 首位種族も 20/40 = 0.5 で過半に届かない。二種族デッキなのに片方だけ「揃っている」と
+    // 誤報しないよう、過半 (> 0.5) を要求する。
     const deck = [
       ...many(20, card({ races: ["ゼータ"] })),
       ...many(20, card({ races: ["アルファ"] })),
     ];
+    expect(computeTribalSynergy(deck)).toBeNull();
+  });
+
+  it("同率首位は決定的に決まる (種族名でタイブレーク)", () => {
+    // 全カードが両種族を持つと両方 40枚 (ratio 1.0) で同率。実行ごとに結果が変わらないよう名前順で決める。
+    const deck = many(40, card({ races: ["ゼータ", "アルファ"] }));
     const s = computeTribalSynergy(deck);
     expect(s?.tribe).toBe("アルファ"); // 文字列順で先
-    expect(s?.count).toBe(20);
+    expect(s?.count).toBe(40);
   });
 });

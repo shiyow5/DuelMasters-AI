@@ -25,10 +25,12 @@ export interface TribalSynergy {
 /** これ未満のカード数では信号の材料が足りない (パースだけで展開できていない等)。 */
 const MIN_CARDS = 20;
 /**
- * 支配種族と認める最低比率。**半数以上 (>= 0.5)** を要求する (ちょうど 0.5 も支配種族とみなす)。
+ * 支配種族と認める最低比率。**過半 (> 0.5)** を要求する。
  *
- * これ未満は「種族がバラけている = トライバルではない」と判断して null を返す。競技的な
- * トライバルデッキは中心種族が概ね半数以上を占める、という経験則に基づく (ヒューリスティック)。
+ * ちょうど半々 (0.5) は含めない。40枚が別々の2種族で 20/20 に割れると、首位種族も 0.5 で、
+ * これを支配種族とみなすと**二種族デッキなのに片方だけを「揃っている」と誤報**する (Codex 指摘)。
+ * 過半を要求すれば、そういう拮抗デッキは null になり、真に一種族へ寄ったデッキだけが信号を得る。
+ * 競技的なトライバルデッキは中心種族が過半を占める、という経験則に基づく (ヒューリスティック)。
  */
 const TRIBAL_RATIO = 0.5;
 
@@ -53,6 +55,6 @@ export function computeTribalSynergy(cards: Card[]): TribalSynergy | null {
   // 枚数降順 → 同率は種族名昇順。先頭が支配種族。
   const [tribe, count] = [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0];
   const ratio = count / cards.length;
-  if (ratio < TRIBAL_RATIO) return null;
+  if (ratio <= TRIBAL_RATIO) return null; // 過半を要求 (ちょうど半々は非支配)
   return { tribe, count, ratio };
 }
