@@ -113,10 +113,14 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
 
   /**
    * 種族トライバルの軽量シナジー信号 (#141)。**採点は動かさない (情報提供のみ)。**
-   * 支配種族が過半を占めるときだけ、種族シナジーが期待できる旨を suggestions に添える。
+   * 支配種族が半数以上を占めるときだけ、種族シナジーが期待できる旨を suggestions に添える。
    * どの比率が「強い」かの裏取りができない (デッキリストのコーパスが無い) ので、加点はしない。
+   *
+   * archetype/concept と同じく、**一部しか解決できないデッキでは信号を出さない** (#141 レビュー)。
+   * ratio は解決できた既知カードだけで計算するので、未解決の半分を見ずに「100%トライバル」と
+   * 誤報しうる (既知20枚が同種族・残り20枚が未解決 → ratio 1.0)。全解決のときだけ信号を出す。
    */
-  const synergy = computeTribalSynergy(expandedCards);
+  const synergy = fullyResolved ? computeTribalSynergy(expandedCards) : null;
   if (synergy) {
     suggestions.push(
       `種族「${synergy.tribe}」が${synergy.count}枚で揃っており、種族シナジーが期待できます`,

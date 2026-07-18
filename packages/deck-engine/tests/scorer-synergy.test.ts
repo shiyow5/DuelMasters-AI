@@ -52,6 +52,22 @@ describe.skipIf(!hasTestDb)("種族トライバルシナジー (統合)", () => 
     expect(score.suggestions.some((s) => s.includes("シナジー"))).toBe(false);
   });
 
+  it("一部しか解決できないデッキは synergy を出さない (#141 レビュー: 未解決半分を見ずに誤報しない)", async () => {
+    // 既知の20枚は全部ジョーカーズ。だが残り20枚は DB に無い名前。既知だけで計算すると ratio 1.0 で
+    // 「揃っている」と誤報するので、全解決でないときは信号を出さない (archetype/concept と同じ規律)。
+    for (let i = 0; i < 5; i++) await card(`既知${i}`, ["ジョーカーズ"]);
+    const deck = parseDecklist(
+      [
+        ...Array.from({ length: 5 }, (_, i) => `4 既知${i}`), // 解決可 20枚
+        ...Array.from({ length: 5 }, (_, i) => `4 未解決${i}`), // DB に無い 20枚
+      ].join("\n"),
+    );
+    const score = await scoreDeck(deck);
+
+    expect(score.synergy).toBeNull();
+    expect(score.suggestions.some((s) => s.includes("シナジー"))).toBe(false);
+  });
+
   it("種族シナジーは overall を動かさない (情報提供のみ)", async () => {
     // 同一構成で種族だけ差し替える。トライバル版と非トライバル版で overall が一致することを確認。
     for (let i = 0; i < 8; i++) await card(`T${i}`, ["ハンター"]);
