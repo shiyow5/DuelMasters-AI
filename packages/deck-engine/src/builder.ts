@@ -161,7 +161,7 @@ export async function autoBuild(
   /** 殿堂・高コストを踏まえた、そのカードのデッキ内上限枚数。 */
   function copyLimit(card: Record<string, unknown>): number {
     const name = card.name as string;
-    if (reg.limited.has(name)) return 1; // 殿堂入りは1枚
+    if (reg.isLimited(name)) return 1; // 殿堂入りは1枚
     if ((card.cost as number) >= 7) return 2;
     return MAX_COPIES;
   }
@@ -169,7 +169,7 @@ export async function autoBuild(
   /** カードを最大 want 枚まで入れる。実際に入れた枚数を返す (0 なら不採用)。 */
   function takeCard(card: Record<string, unknown>, want = MAX_COPIES, limit = DECK_SIZE): number {
     const name = card.name as string;
-    if (reg.banned.has(name)) return 0;
+    if (reg.isBanned(name)) return 0;
 
     const already = counts.get(name) ?? 0;
     let add = Math.min(copyLimit(card) - already, want, limit - totalCards);
@@ -297,7 +297,7 @@ export async function autoBuild(
     for (const cand of candRows) {
       if (triggers >= floor) break;
       const name = cand.name as string;
-      if (reg.banned.has(name)) continue;
+      if (reg.isBanned(name)) continue;
       const room = copyLimit(cand) - (counts.get(name) ?? 0);
       for (let k = 0; k < room && triggers < floor; k++) {
         // 40枚なら1枚空けてから差す。空けられなければこれ以上は無理。
