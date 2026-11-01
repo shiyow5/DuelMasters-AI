@@ -55,7 +55,7 @@ jobs:
       # 書き込みはしないので読み取り専用の用途。
       - name: Run eval with gate
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.EVAL_DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           args="--gate --out=eval-report.json"
