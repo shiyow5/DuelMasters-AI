@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiPost, apiGet, apiDelete } from "@/lib/api";
 import { scoreGrade } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
@@ -9,6 +9,13 @@ import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";
 import Header from "@/components/Header";
 import ErrorDisplay from "@/components/ErrorDisplay";
 import DeckCardGrid from "@/components/DeckCardGrid";
+import EvalSummaryStrip from "@/components/EvalSummaryStrip";
+import {
+  DESKTOP_MEDIA_QUERY,
+  REDUCED_MOTION_MEDIA_QUERY,
+  evalAnnouncement,
+  resultScrollBehavior,
+} from "@/lib/eval-result";
 
 export default function DeckPage() {
   const [decklist, setDecklist] = useState("");
@@ -31,6 +38,15 @@ export default function DeckPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   // 読込/削除/評価/自動構築のエラーを画面内で統一表示する (alert は使わない)
   const [pageError, setPageError] = useState("");
+  // 評価完了時に結果へ移動する (UI改善 P-3)。
+  // サマリーストリップ (lg 未満のスクロール&フォーカス先) と pageError のラッパ。
+  const resultRef = useRef<HTMLElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  // 評価が成功するたびに +1。`score` の変化で発火させると loadDeck (マイデッキ読込) でも
+  // スクロールしてしまうので専用カウンタにする (loadDeck では増やさない: P-3-7 決定 1)。
+  const [evalSeq, setEvalSeq] = useState(0);
+  // デスクトップ幅用のスクリーンリーダー通知 (フォーカスを動かさない側)
+  const [announce, setAnnounce] = useState("");
 
   const refreshMyDecks = useCallback(async () => {
     if (!supabase) {
@@ -60,6 +76,29 @@ export default function DeckPage() {
     });
     return () => sub.subscription.unsubscribe();
   }, [refreshMyDecks]);
+
+  // 評価成功 → lg 未満ならサマリーストリップへスクロールしてフォーカスを移す。
+  // lg 以上は 3 カラムで結果が評価ボタンと同時に見えているので動かさない (announce で通知)。
+  // effect は commit 後に走るので、同じバッチで描画されたストリップの DOM は既にある。
+  useEffect(() => {
+    if (evalSeq === 0) return; // 初期表示では動かない
+    if (window.matchMedia(DESKTOP_MEDIA_QUERY).matches) return;
+    const el = resultRef.current;
+    if (!el) return;
+    const reduce = window.matchMedia(REDUCED_MOTION_MEDIA_QUERY).matches;
+    // フォーカスは先に当て、スクロールは scrollIntoView に任せる (二重スクロール防止)
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ behavior: resultScrollBehavior(reduce), block: "start" });
+  }, [evalSeq]);
+
+  // エラーはコンテナ最上部に出る。lg 未満で評価ボタンまでスクロールしていると見えないので、
+  // 見えていないときだけ可視域へ入れる (`nearest` = 既に見えていれば動かない)。
+  // フォーカスは動かさない (role="alert" で読み上げられ、入力を続けられるように)。
+  useEffect(() => {
+    if (!pageError) return;
+    const reduce = window.matchMedia(REDUCED_MOTION_MEDIA_QUERY).matches;
+    errorRef.current?.scrollIntoView({ behavior: resultScrollBehavior(reduce), block: "nearest" });
+  }, [pageError]);
 
   async function handleSave() {
     if (!title.trim() || !score || saving) return;
@@ -126,6 +165,8 @@ export default function DeckPage() {
     setPageError("");
     setScore(null);
     setValidation(null);
+    // 連続評価で同じ文面でも読み上げ直されるよう、いったん空にする
+    setAnnounce("");
     // 評価開始時に前回のカードグリッドも消す。ここで消さないと、評価が失敗したとき
     // (セッション切れ/500/通信断) に前のデッキのカード画像が新しい入力の隣に残る (Codex P2)。
     setDeckEntries([]);
@@ -138,6 +179,11 @@ export default function DeckPage() {
       setScore(res.score);
       setValidation(res.validation);
       setDeckEntries(res.parsed.entries);
+      // 成功時のみ。失敗 (catch) では結果へ移動しない
+      setEvalSeq((n) => n + 1);
+      if (window.matchMedia(DESKTOP_MEDIA_QUERY).matches) {
+        setAnnounce(evalAnnouncement(res.score, res.validation));
+      }
     } catch (err) {
       setPageError(`評価に失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     } finally {
@@ -188,13 +234,13 @@ export default function DeckPage() {
       {/* Header */}
       <Header
         left={
-          <div>
-            <div className="flex items-center gap-2 text-text-muted text-sm mb-1">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-text-muted text-sm mb-1 max-sm:hidden">
               <span>Decks</span>
               <span className="material-symbols-outlined text-[14px]">chevron_right</span>
               <span className="text-white">デッキビルダー</span>
             </div>
-            <h1 className="text-3xl font-bold text-white">デッキ構築・評価</h1>
+            <h1 className="text-xl sm:text-3xl font-bold text-white truncate">デッキ構築・評価</h1>
           </div>
         }
         right={
@@ -207,7 +253,7 @@ export default function DeckPage() {
                   setScore(null);
                   setValidation(null);
                 }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                   format === f
                     ? "bg-primary/20 text-primary border border-primary/20"
                     : "bg-bg-surface-highlight text-text-muted hover:text-white border border-border-subtle"
@@ -222,9 +268,14 @@ export default function DeckPage() {
 
       {/* Dashboard Columns */}
       <div className="flex-1 overflow-y-auto lg:overflow-hidden p-6 grid grid-cols-12 gap-6">
+        {/* デスクトップ幅の評価完了通知 (SR 用)。中身だけ差し替えるので常に描画しておく */}
+        <p role="status" aria-live="polite" className="sr-only">
+          {announce}
+        </p>
+
         {/* ページ全体のエラー (読込/削除/評価/自動構築) */}
         {pageError && (
-          <div className="col-span-12">
+          <div className="col-span-12" ref={errorRef}>
             <ErrorDisplay message={pageError} variant="error" onDismiss={() => setPageError("")} />
           </div>
         )}
@@ -337,6 +388,9 @@ export default function DeckPage() {
             </div>
           )}
         </div>
+
+        {/* 評価結果サマリー (lg 未満のみ。DOM 順: 入力 → ここ → 中央 → スコア) */}
+        {score && <EvalSummaryStrip ref={resultRef} score={score} validation={validation} />}
 
         {/*
           Center Column: Build Result / Validation

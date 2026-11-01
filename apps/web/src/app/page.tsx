@@ -212,18 +212,20 @@ function Chat() {
       {/* Header */}
       <Header
         left={
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30 shrink-0">
               <span className="material-symbols-outlined text-primary">psychology</span>
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                AI戦略アドバイザー
-                <span className="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[10px] font-bold border border-primary/20 uppercase">
+                <span className="truncate min-w-0">AI戦略アドバイザー</span>
+                <span className="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[10px] font-bold border border-primary/20 uppercase shrink-0">
                   Beta
                 </span>
               </h2>
-              <p className="text-xs text-text-muted">Gemini Based Duel Masters Engine</p>
+              <p className="text-xs text-text-muted truncate max-sm:hidden">
+                Gemini Based Duel Masters Engine
+              </p>
             </div>
           </div>
         }
