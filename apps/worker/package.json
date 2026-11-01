@@ -18,6 +18,7 @@
     "ingest:tournaments": "tsx src/jobs/ingest-tournaments.ts",
     "ingest:deneblog": "tsx src/jobs/ingest-deneblog.ts",
     "snapshot:meta": "tsx src/jobs/snapshot-meta.ts",
+    "check:freshness": "tsx src/jobs/check-freshness.ts",
     "fix:card-types": "tsx src/jobs/fix-card-types.ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
