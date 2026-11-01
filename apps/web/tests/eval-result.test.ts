@@ -95,7 +95,7 @@ describe("EvalSummaryStrip", () => {
   it("殿堂チェック違反は色だけでなく文字で件数を出す", () => {
     const html = render(score(), invalid);
     expect(html).toContain("エラー2件");
-    expect(html).toContain("text-danger");
+    expect(html).toContain("text-red-400");
     expect(html).not.toContain(">OK</dd>");
   });
 
