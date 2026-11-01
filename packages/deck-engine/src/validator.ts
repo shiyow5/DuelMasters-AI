@@ -1,7 +1,12 @@
 import { DECK_SIZE, MAX_COPIES, type Format, type ValidationResult } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import type { ParsedDeck } from "./parser.js";
-import { mergeEntriesByName, regulationNameKey, type MergedEntry } from "./card-name.js";
+import {
+  mergeEntriesByName,
+  regulationNameKey,
+  twinpactSideKeys,
+  type MergedEntry,
+} from "./card-name.js";
 
 /** regulations テーブルの1行 (照合に使う列だけ) */
 export interface RegulationRow {
@@ -64,10 +69,41 @@ export async function validateRegulation(
 }
 
 /**
+ * 規制の強さ。片面名のキーが2つの規制にぶつかったときは強いほうを採る
+ * (弱いほうを採ると、すり抜けの穴を新しく作ることになる)。
+ */
+const RESTRICTION_STRENGTH: Record<string, number> = {
+  プレミアム殿堂: 3,
+  殿堂入り: 2,
+  プレミアム殿堂コンビ: 1,
+};
+
+function strength(restriction: string): number {
+  return RESTRICTION_STRENGTH[restriction] ?? 0;
+}
+
+/** 照合で当たった規制1件 */
+interface RegHit {
+  /** 規制の全体名のキー (同じ規制に当たったデッキの行を合算するための ID) */
+  id: string;
+  restriction: string;
+}
+
+/**
  * 殿堂・プレミアム殿堂の判定 (DB に触らない純粋関数。テスト用に export)。
  *
  * `merged` は {@link mergeEntriesByName} で正規化キーごとに合算済みのデッキ。
  * regulations 側の名前も同じキーにして照合する。
+ *
+ * ## ツインパクトの片面名 (#167)
+ *
+ * 規制が `A / B` でデッキが `A` だけ (またはその逆) でも当たるようにする。
+ * - 規制側: 全体名 `a/b` に加え、片面 `a` `b` でも regMap に登録する。
+ *   **全体名での登録が常に優先**し、片面キーが別の規制の全体名と同じなら上書きしない。
+ *   片面キー同士がぶつかったら強い規制を採る。
+ * - デッキ側: 全体名で当たらなければ、片面 `a` `b` でも引く (規制が片面だけで載っている場合)。
+ * - `A / B` と `A` を別の行に書いても同じ規制として**枚数を合算**する
+ *   (殿堂入り1枚制限を行の書き分けですり抜けさせない)。
  */
 export function checkRestrictions(
   merged: Map<string, MergedEntry>,
@@ -76,29 +112,67 @@ export function checkRestrictions(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const regMap = new Map<string, string>();
+  const regMap = new Map<string, RegHit>();
+  // 1) 全体名。完全一致はいつも片面より優先する。
   for (const reg of regulations) {
-    regMap.set(regulationNameKey(reg.card_name), reg.restriction_type);
+    const key = regulationNameKey(reg.card_name);
+    regMap.set(key, { id: key, restriction: reg.restriction_type });
+  }
+  const fullKeys = new Set(regMap.keys());
+  // 2) ツインパクトの片面。全体名を上書きしない。片面同士の衝突は強い方。
+  for (const reg of regulations) {
+    const id = regulationNameKey(reg.card_name);
+    for (const side of twinpactSideKeys(id)) {
+      if (fullKeys.has(side)) continue;
+      const prev = regMap.get(side);
+      if (!prev || strength(reg.restriction_type) > strength(prev.restriction)) {
+        regMap.set(side, { id, restriction: reg.restriction_type });
+      }
+    }
   }
 
+  // 同じ規制に当たった行をまとめる (並びは最初に当たった順)
+  const hits = new Map<string, { restriction: string; names: string[]; count: number }>();
   for (const [key, entry] of merged) {
-    const restriction = regMap.get(key);
-    if (!restriction) continue;
+    const hit = lookup(regMap, key);
+    if (!hit) continue;
+    const agg = hits.get(hit.id);
+    if (agg) {
+      agg.names.push(entry.name);
+      agg.count += entry.count;
+    } else {
+      hits.set(hit.id, { restriction: hit.restriction, names: [entry.name], count: entry.count });
+    }
+  }
 
+  for (const { restriction, names, count } of hits.values()) {
+    const name = names.join("」「");
     switch (restriction) {
       case "プレミアム殿堂":
-        errors.push(`「${entry.name}」はプレミアム殿堂のため使用できません`);
+        errors.push(`「${name}」はプレミアム殿堂のため使用できません`);
         break;
       case "殿堂入り":
-        if (entry.count > 1) {
-          errors.push(`「${entry.name}」は殿堂入りのため1枚までです (現在: ${entry.count}枚)`);
+        if (count > 1) {
+          errors.push(`「${name}」は殿堂入りのため1枚までです (現在: ${count}枚)`);
         }
         break;
       case "プレミアム殿堂コンビ":
-        warnings.push(`「${entry.name}」はプレミアム殿堂コンビです。組み合わせを確認してください`);
+        warnings.push(`「${name}」はプレミアム殿堂コンビです。組み合わせを確認してください`);
         break;
     }
   }
 
   return { errors, warnings };
+}
+
+/** デッキの1行のキーで規制を引く。全体名 → ツインパクトの片面 (当たった中で強い方) の順。 */
+function lookup(regMap: Map<string, RegHit>, key: string): RegHit | undefined {
+  const exact = regMap.get(key);
+  if (exact) return exact;
+  let best: RegHit | undefined;
+  for (const side of twinpactSideKeys(key)) {
+    const hit = regMap.get(side);
+    if (hit && (!best || strength(hit.restriction) > strength(best.restriction))) best = hit;
+  }
+  return best;
 }
