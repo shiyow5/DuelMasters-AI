@@ -229,6 +229,11 @@ export type SearchResult = z.infer<typeof SearchResultSchema>;
 
 /** ===== API リクエストスキーマ (apps/api の入力検証用) ===== */
 
+/** POST /api/chat の history 上限 (F-1)。 */
+export const CHAT_HISTORY_MAX_ITEMS = 20;
+export const CHAT_HISTORY_MAX_CONTENT = 32_000;
+export const CHAT_HISTORY_MAX_TOTAL = 64_000;
+
 /** POST /api/chat */
 export const ChatRequestSchema = z.object({
   // 上限が無いと、巨大な本文を投げ続けて Gemini のトークンと DB のストレージを食い潰せる
@@ -240,14 +245,23 @@ export const ChatRequestSchema = z.object({
    *
    * **conversationId がある場合は無視される** (#110)。履歴はサーバ (DB) を正とする。
    * クライアントの履歴を信じると、利用者が文脈を差し替えてモデルを誘導できてしまう。
-   * conversationId が無いとき (bot・未ログイン経路) だけ、この履歴を使う。
+   * ログイン済みなら conversationId が無くても使わない (F-3)。使うのは匿名 (ローカル開発) だけ。
+   *
+   * 上限 (F-1): 無制限だと1リクエストで巨大な文脈を Gemini に送らせ、コストを吊り上げられる。
+   * 件数はサーバ側の HISTORY_LIMIT (20) に揃える。1件は message と同じ 32,000 字、
+   * 合計は 64,000 字 (1件の上限を2件ぶん。20件 × 32,000 字 = 64万字を通さないため)。
    */
   history: z
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string(),
+        content: z.string().max(CHAT_HISTORY_MAX_CONTENT, "history の発言が長すぎます"),
       }),
+    )
+    .max(CHAT_HISTORY_MAX_ITEMS, "history が多すぎます")
+    .refine(
+      (h) => h.reduce((n, m) => n + m.content.length, 0) <= CHAT_HISTORY_MAX_TOTAL,
+      "history が長すぎます",
     )
     .default([]),
   format: z.enum(FORMATS).optional(),

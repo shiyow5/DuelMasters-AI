@@ -13,6 +13,12 @@ import { parseModelEnv } from "@dm-ai/core";
 // 順序が逆のため、共有すると agent のツールループ収束が壊れる)。
 const DEFAULT_CHAT_MODELS = ["gemini-3.1-flash-lite", "gemma-4-31b-it"];
 
+/**
+ * 1回の生成の出力トークン上限 (F-1)。未指定だとモデルの最大値まで出力でき、1回で課金が膨らむ。
+ * チャットの回答は通常これより十分短い。
+ */
+export const MAX_OUTPUT_TOKENS = 2048;
+
 // Cloudflare Workers には process.env が無いため、api のミドルウェアから注入できるようにする。
 let _apiKey: string | undefined;
 let _chatModels: string[] | undefined;
@@ -54,7 +60,13 @@ export function buildChatModel(
 
   // maxRetries を絞る: 既定(6)+ withFallbacks + ツールループの複合で長時間ハングし得るため。
   const bound = models.map((model) =>
-    new ChatGoogleGenerativeAI({ apiKey, model, temperature: 0.3, maxRetries: 2 }).bindTools(tools),
+    new ChatGoogleGenerativeAI({
+      apiKey,
+      model,
+      temperature: 0.3,
+      maxRetries: 2,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+    }).bindTools(tools),
   );
   const [primary, ...rest] = bound;
   const chain = rest.length > 0 ? primary.withFallbacks({ fallbacks: rest }) : primary;

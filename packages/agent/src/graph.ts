@@ -18,6 +18,22 @@ import { SYSTEM_PROMPTS } from "./prompts.js";
 export const MAX_ITERATIONS = 5;
 
 /**
+ * 1回の AIMessage で実際に実行するツール呼び出しの上限 (F-1)。
+ * MAX_ITERATIONS だけでは 1ターンに何十本も並べられ、DB と Gemini の両方が膨らむ。
+ */
+export const MAX_TOOL_CALLS_PER_TURN = 3;
+
+/** 1リクエストで実行するツール呼び出しの総数の上限 (F-1)。達したら finalize で回答させる。 */
+export const MAX_TOOL_CALLS_PER_REQUEST = 8;
+
+/**
+ * 上限超過で実行しなかったツール呼び出しへ返す結果。
+ * **全ての tool_call に ToolMessage を返す必要がある** (対応が欠けると Gemini がエラーにする)。
+ */
+export const TOOL_CALL_LIMIT_MESSAGE =
+  "ツール呼び出しの上限を超えたため、このツールは実行していません。ここまでに得られた情報で回答してください。";
+
+/**
  * RAG context の前置き。条文が一次情報で、裁定 Q&A より優先することを明示する。
  * 公式サイトには改定前の裁定が残っており、現行の総合ルールと結論が逆のものがある。
  */
@@ -181,24 +197,45 @@ async function agentNode(state: AgentStateType): Promise<Partial<AgentStateType>
   return { messages: [result], iterations: state.iterations + 1 };
 }
 
-/** 直前の AIMessage のツール呼び出しを (並列に) 実行し、ToolMessage と citations を返す。 */
+/**
+ * 直前の AIMessage のツール呼び出しを (並列に) 実行し、ToolMessage と citations を返す。
+ *
+ * 実行するのは 1ターン MAX_TOOL_CALLS_PER_TURN 本まで、かつリクエスト全体で
+ * MAX_TOOL_CALLS_PER_REQUEST 本まで (F-1)。超えた分は実行せず、上限超過の ToolMessage を返す。
+ */
 async function toolsNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
   const last = state.messages.at(-1);
   if (!last || !AIMessage.isInstance(last) || !last.tool_calls?.length) return {};
+  const budget = Math.max(
+    0,
+    Math.min(MAX_TOOL_CALLS_PER_TURN, MAX_TOOL_CALLS_PER_REQUEST - state.toolCallsExecuted),
+  );
+  const calls = last.tool_calls.slice(0, budget);
+  const skipped = last.tool_calls.slice(budget);
   const results = await Promise.all(
-    last.tool_calls.map(async (call) => ({
+    calls.map(async (call) => ({
       call,
       result: await runTool(call.name, call.args ?? {}, state.format),
     })),
   );
-  const toolMessages = results.map(
-    ({ call, result }) =>
-      new ToolMessage({
-        content: result.text,
-        tool_call_id: call.id ?? call.name,
-        name: call.name,
-      }),
-  );
+  const toolMessages = [
+    ...results.map(
+      ({ call, result }) =>
+        new ToolMessage({
+          content: result.text,
+          tool_call_id: call.id ?? call.name,
+          name: call.name,
+        }),
+    ),
+    ...skipped.map(
+      (call) =>
+        new ToolMessage({
+          content: TOOL_CALL_LIMIT_MESSAGE,
+          tool_call_id: call.id ?? call.name,
+          name: call.name,
+        }),
+    ),
+  ];
   const newCitations = results.flatMap(({ result }) => result.citations ?? []);
   // 成功/失敗を数える。**呼んだ回数では根拠の有無を測れない** — ツールが全滅しても
   // AIMessage.tool_calls は残るので、呼び出し数だけ見ると「根拠あり」に見えてしまう (#112)。
@@ -215,6 +252,7 @@ async function toolsNode(state: AgentStateType): Promise<Partial<AgentStateType>
     citations: [...state.citations, ...newCitations],
     toolSuccesses: state.toolSuccesses + succeeded,
     toolFailures: [...state.toolFailures, ...failed],
+    toolCallsExecuted: state.toolCallsExecuted + calls.length,
   };
 }
 
@@ -251,6 +289,8 @@ function routeAfterAgent(state: AgentStateType): "tools" | "finalize" | typeof E
   const wantsTools = last && AIMessage.isInstance(last) && (last.tool_calls?.length ?? 0) > 0;
   if (!wantsTools) return END;
   // 上限未満ならツール実行、上限到達なら finalize で強制的にテキスト回答させる。
+  // ツールの総数が上限に達した場合も同じ (F-1。これ以上は1本も実行できないため)。
+  if (state.toolCallsExecuted >= MAX_TOOL_CALLS_PER_REQUEST) return "finalize";
   return state.iterations < MAX_ITERATIONS ? "tools" : "finalize";
 }
 
