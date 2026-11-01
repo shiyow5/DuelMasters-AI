@@ -10,6 +10,7 @@ import { userRouter } from "./routes/user.js";
 import { conversationRouter } from "./routes/conversations.js";
 import { optionalAuth, requireAuthUnlessAnonymous } from "./middleware/auth.js";
 import { rateLimitByIp, rateLimitByUser } from "./middleware/rate-limit.js";
+import { dailyChatQuota } from "./middleware/daily-quota.js";
 import { dbEnv, type Bindings } from "./db.js";
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -58,6 +59,9 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 app.use("/api/*", requireAuthUnlessAnonymous);
 // ユーザー単位のレート制限 (本命)。認証の後に置く必要がある (userId を使うため)。
 app.use("/api/*", rateLimitByUser);
+// ユーザー単位の日次クォータ (F-1)。Gemini を叩く /api/chat (と /api/chat/stream) だけに掛ける。
+// "/api/chat/*" は "/api/chat" 自体にも一致する。
+app.use("/api/chat/*", dailyChatQuota());
 
 // ルーティング
 app.route("/api/chat", chatRouter);
