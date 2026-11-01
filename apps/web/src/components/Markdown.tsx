@@ -4,6 +4,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { safeUrl } from "@/lib/safe-url";
+import { fixCjkEmphasis } from "@/lib/cjk-emphasis";
 
 /**
  * エージェントの回答を Markdown として描画する (#100)。
@@ -111,7 +112,8 @@ export default function Markdown({ children }: { children: string }) {
         components={COMPONENTS}
         urlTransform={safeUrl}
       >
-        {children}
+        {/* 日本語の `**「…」**です` が閉じない問題の前処理 (P-8)。`*` の位置を動かすだけ。 */}
+        {fixCjkEmphasis(children)}
       </ReactMarkdown>
     </div>
   );
