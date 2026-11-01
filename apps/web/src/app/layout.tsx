@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { inter, notoSansJp, materialSymbols } from "./fonts";
+import { inter, materialSymbols } from "./fonts";
 import Sidebar from "@/components/Sidebar";
 import { SidebarProvider } from "@/components/SidebarContext";
 import AuthGate from "@/components/AuthGate";
@@ -16,10 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="ja"
-      className={`dark ${inter.variable} ${notoSansJp.variable} ${materialSymbols.variable}`}
-    >
+    <html lang="ja" className={`dark ${inter.variable} ${materialSymbols.variable}`}>
       <body className="h-screen flex overflow-hidden bg-bg-dark text-text-main antialiased">
         {/* 未ログインならサイドバーごと隠してログイン画面を出す。
             api は全エンドポイントがログイン必須なので、UI を触らせても 401 が並ぶだけ。 */}

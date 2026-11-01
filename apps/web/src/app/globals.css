@@ -35,6 +35,11 @@
   --color-border-highlight: #23363b;
 }
 
+:root {
+  /* @fontsource-variable/noto-sans-jp (fonts.ts で import) が宣言する family 名 */
+  --font-noto-sans-jp: "Noto Sans JP Variable";
+}
+
 body {
   font-family: var(--font-inter), var(--font-noto-sans-jp), sans-serif;
   background-color: var(--color-bg-dark);
