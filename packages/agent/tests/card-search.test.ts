@@ -86,3 +86,29 @@ describe("buildCardSearchArgs", () => {
     expect(buildCardSearchArgs({ type: "なにか" }).ok).toBe(false);
   });
 });
+
+describe("normalizeCardName 引用符・NFKC (#167)", () => {
+  it("曲がった引用符・ASCII 引用符・引用符なしが同じになる", () => {
+    const k = normalizeCardName("轟轟轟ブランド");
+    expect(normalizeCardName("“轟轟轟”ブランド")).toBe(k);
+    expect(normalizeCardName('"轟轟轟"ブランド')).toBe(k);
+    expect(normalizeCardName("＂轟轟轟＂ブランド")).toBe(k);
+  });
+
+  it("deck-engine の regulationNameKey と同じ結果 (同じ式の約束)", async () => {
+    const { regulationNameKey } = await import("@dm-ai/deck-engine/card-name");
+    for (const s of ["“轟轟轟”ブランド", "《ヘブンズ・ゲート》", "接続\tＣＳ－２０", "A ／ B"]) {
+      expect(normalizeCardName(s)).toBe(regulationNameKey(s));
+    }
+  });
+});
+
+describe("search_cards の SQL が共通の文字集合を使う (#167)", () => {
+  it("tools.ts に translate の文字列リテラルが残っていない", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("../src/tools.ts", import.meta.url), "utf8");
+    // 文字集合を SQL に直書きすると TS とズレる。CARD_NAME_STRIP_CHARS をバインドすること。
+    expect(src).not.toMatch(/translate\([^)]*'[^']+'\s*,\s*''\)/);
+    expect(src).toContain("lower(translate(normalize(name, NFKC), ${CARD_NAME_STRIP_CHARS}, ''))");
+  });
+});

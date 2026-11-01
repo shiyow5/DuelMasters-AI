@@ -79,8 +79,56 @@ describe.skipIf(!hasTestDb)("search_cards (統合)", () => {
     expect(r.text).toContain("検索条件");
   });
 
+  it("引用符のゆれでもカード名で引ける (#167: SQL 側も引用符・NFKC を揃えた)", async () => {
+    await sql`INSERT INTO cards (name, civilizations, cost, type, races, text, power, official_id)
+              VALUES ('“轟轟轟”ブランド', ${sql.json(["fire"])}, 6, 'creature', ${sql.json([])}, '', 9000, 'gogogo')`;
+    for (const query of ["轟轟轟ブランド", '"轟轟轟"ブランド', "＂轟轟轟＂ブランド"]) {
+      const r = await runTool("search_cards", { query });
+      expect(r.text).toContain("“轟轟轟”ブランド");
+    }
+  });
+
   it("テキストでも引ける (名前以外)", async () => {
     const r = await runTool("search_cards", { query: "マナブースト" });
     expect(r.text).toContain("青銅の鎧");
+  });
+});
+
+/**
+ * SQL の translate/normalize と TS の normalizeCardName が**実際の Postgres で**同じ結果になるか (#167)。
+ * 単体テスト (packages/core/tests/card-name.test.ts) は SQL を JS で再現したもの。
+ * ここでは本物の `lower(translate(normalize(x, NFKC), CARD_NAME_STRIP_CHARS, ''))` を走らせる。
+ */
+describe.skipIf(!hasTestDb)("カード名正規化: SQL と TS の一致 (統合, #167)", () => {
+  const sql = getTestSql()!;
+  afterAll(async () => {
+    await sql.end();
+  });
+
+  it("CARD_NAME_STRIP_CHARS の全文字と代表的なカード名で SQL == TS", async () => {
+    const { CARD_NAME_STRIP_CHARS } = await import("@dm-ai/core");
+    const { normalizeCardName } = await import("../src/card-search.js");
+    const samples = [
+      ...[...CARD_NAME_STRIP_CHARS].map((c) => `あ${c}い`),
+      "“轟轟轟”ブランド",
+      '"轟轟轟"ブランド',
+      "＂轟轟轟＂ブランド",
+      "‘轟轟轟’ブランド",
+      "《ヘブンズ・ゲート》",
+      "≪ボルシャック･ドラゴン≫",
+      "«ボルシャック»",
+      "接続\tＣＳ－２０",
+      "龍装艦 チェンジザ ／ 六奇怪の四",
+      "ＤＧ",
+    ];
+    const rows = await sql`
+      SELECT s, lower(translate(normalize(s, NFKC), ${CARD_NAME_STRIP_CHARS}, '')) AS k
+      -- text[] リテラルは空白・引用符を含む要素で壊れるので jsonb 経由で渡す (apps/api/src/card.ts と同じ)
+      FROM jsonb_array_elements_text(${sql.json(samples)}::jsonb) AS s
+    `;
+    expect(rows).toHaveLength(samples.length);
+    for (const r of rows) {
+      expect({ s: r.s, k: r.k }).toEqual({ s: r.s, k: normalizeCardName(r.s as string) });
+    }
   });
 });

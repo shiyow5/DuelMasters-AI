@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parseDecklist } from "../src/parser.js";
 import { validateRegulation, checkRestrictions } from "../src/validator.js";
-import { regulationNameKey, mergeEntriesByName } from "../src/card-name.js";
+import { regulationNameKey, mergeEntriesByName, twinpactSideKeys } from "../src/card-name.js";
 
 // DATABASE_URL 無しで実行される前提 (vitest.config.ts で強制)。
 // 殿堂チェックはスキップされ、固定の警告文が返る。
@@ -152,5 +152,117 @@ describe("checkRestrictions 殿堂判定 (B-02/B-03)", () => {
 
   it("規制のないカードは何も出ない", () => {
     expect(check("4 ボルシャック・ドラゴン")).toEqual({ errors: [], warnings: [] });
+  });
+});
+
+describe("checkRestrictions 引用符のゆれ (#167 優先1)", () => {
+  const regs = [{ card_name: "“轟轟轟”ブランド", restriction_type: "プレミアム殿堂" }];
+  const check = (text: string) =>
+    checkRestrictions(mergeEntriesByName(parseDecklist(text).entries), regs);
+
+  it("曲がった引用符・ASCII 引用符・全角引用符・引用符なしが同じキーになる", () => {
+    const key = regulationNameKey("“轟轟轟”ブランド");
+    expect(regulationNameKey('"轟轟轟"ブランド')).toBe(key);
+    expect(regulationNameKey("＂轟轟轟＂ブランド")).toBe(key);
+    expect(regulationNameKey("‘轟轟轟’ブランド")).toBe(key);
+    expect(regulationNameKey("'轟轟轟'ブランド")).toBe(key);
+    expect(regulationNameKey("轟轟轟ブランド")).toBe(key);
+  });
+
+  it.each(["“轟轟轟”ブランド", '"轟轟轟"ブランド', "轟轟轟ブランド", "《“轟轟轟”ブランド》"])(
+    "%s はプレミアム殿堂として当たる",
+    (name) => {
+      expect(check(`1 ${name}`).errors).toEqual([
+        `「${name}」はプレミアム殿堂のため使用できません`,
+      ]);
+    },
+  );
+});
+
+describe("checkRestrictions ツインパクトの片面名 (#167 優先2)", () => {
+  const regs = [
+    { card_name: "龍装艦 チェンジザ / 六奇怪の四 ～土を割る逆瀧～", restriction_type: "殿堂入り" },
+    { card_name: "テスト片面X", restriction_type: "プレミアム殿堂" },
+  ];
+  const check = (text: string) =>
+    checkRestrictions(mergeEntriesByName(parseDecklist(text).entries), regs);
+
+  it("規制が両面・デッキが片面A だけでも当たる", () => {
+    expect(check("2 龍装艦 チェンジザ").errors).toEqual([
+      "「龍装艦 チェンジザ」は殿堂入りのため1枚までです (現在: 2枚)",
+    ]);
+  });
+
+  it("規制が両面・デッキが片面B だけでも当たる", () => {
+    expect(check("2 六奇怪の四 ～土を割る逆瀧～").errors).toHaveLength(1);
+  });
+
+  it.each([
+    "龍装艦 チェンジザ / 六奇怪の四 ～土を割る逆瀧～",
+    "龍装艦 チェンジザ/六奇怪の四 ～土を割る逆瀧～",
+    "龍装艦 チェンジザ／六奇怪の四 ～土を割る逆瀧～",
+    "龍装艦 チェンジザ　／　六奇怪の四 ～土を割る逆瀧～",
+    "《龍装艦チェンジザ / 六奇怪の四～土を割る逆瀧～》",
+  ])("両面表記・区切りのゆれでも当たる: %s", (name) => {
+    expect(check(`2 ${name}`).errors).toEqual([
+      `「${name}」は殿堂入りのため1枚までです (現在: 2枚)`,
+    ]);
+  });
+
+  it("規制が片面だけ・デッキが両面表記でも当たる (逆向き)", () => {
+    expect(check("1 テスト片面X / テスト片面Y").errors).toEqual([
+      "「テスト片面X / テスト片面Y」はプレミアム殿堂のため使用できません",
+    ]);
+  });
+
+  it("両面表記と片面表記を別の行に書いても枚数を合算する", () => {
+    expect(
+      check("1 龍装艦 チェンジザ / 六奇怪の四 ～土を割る逆瀧～\n1 龍装艦チェンジザ").errors,
+    ).toEqual([
+      "「龍装艦 チェンジザ / 六奇怪の四 ～土を割る逆瀧～」「龍装艦チェンジザ」は殿堂入りのため1枚までです (現在: 2枚)",
+    ]);
+  });
+
+  it("殿堂入りの片面1枚はOK", () => {
+    expect(check("1 龍装艦 チェンジザ")).toEqual({ errors: [], warnings: [] });
+  });
+});
+
+describe("checkRestrictions 片面分割で無関係なカードを誤爆しない (#167)", () => {
+  const regs = [
+    { card_name: "ボルシャック / ドラゴン", restriction_type: "プレミアム殿堂" },
+    { card_name: "ドラゴン", restriction_type: "殿堂入り" },
+  ];
+  const check = (text: string) =>
+    checkRestrictions(mergeEntriesByName(parseDecklist(text).entries), regs);
+
+  it("片面名を部分に含むだけの別カードは当たらない (照合は完全一致のまま)", () => {
+    expect(check("4 ボルシャック・ドラゴン")).toEqual({ errors: [], warnings: [] });
+    expect(check("4 ボルシャック・ドラゴン / 別の呪文")).toEqual({ errors: [], warnings: [] });
+    expect(check("4 ボルシャックの書")).toEqual({ errors: [], warnings: [] });
+  });
+
+  it("別の規制の全体名と同じ片面名は、全体名の規制が優先する", () => {
+    // 「ドラゴン」は単体で殿堂入り。ツインパクト側の片面 (プレミアム殿堂) で上書きしない。
+    expect(check("1 ドラゴン")).toEqual({ errors: [], warnings: [] });
+    expect(check("2 ドラゴン").errors).toEqual([
+      "「ドラゴン」は殿堂入りのため1枚までです (現在: 2枚)",
+    ]);
+  });
+
+  it("/ を2つ以上含む名前・片側が空の名前は分けない", () => {
+    const r = [{ card_name: "ア / イ / ウ", restriction_type: "プレミアム殿堂" }];
+    const c = (t: string) => checkRestrictions(mergeEntriesByName(parseDecklist(t).entries), r);
+    expect(c("1 ア")).toEqual({ errors: [], warnings: [] });
+    expect(c("1 イ / ウ")).toEqual({ errors: [], warnings: [] });
+    expect(c("1 ア / イ / ウ").errors).toHaveLength(1);
+  });
+
+  it("twinpactSideKeys はちょうど2面のときだけ分ける", () => {
+    expect(twinpactSideKeys(regulationNameKey("A / B"))).toEqual(["a", "b"]);
+    expect(twinpactSideKeys(regulationNameKey("A／B"))).toEqual(["a", "b"]);
+    expect(twinpactSideKeys(regulationNameKey("AB"))).toEqual([]);
+    expect(twinpactSideKeys(regulationNameKey("A /"))).toEqual([]);
+    expect(twinpactSideKeys(regulationNameKey("A/B/C"))).toEqual([]);
   });
 });
