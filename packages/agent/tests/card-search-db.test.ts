@@ -123,7 +123,8 @@ describe.skipIf(!hasTestDb)("カード名正規化: SQL と TS の一致 (統合
     ];
     const rows = await sql`
       SELECT s, lower(translate(normalize(s, NFKC), ${CARD_NAME_STRIP_CHARS}, '')) AS k
-      FROM unnest(${sql.array(samples)}::text[]) AS s
+      -- text[] リテラルは空白・引用符を含む要素で壊れるので jsonb 経由で渡す (apps/api/src/card.ts と同じ)
+      FROM jsonb_array_elements_text(${sql.json(samples)}::jsonb) AS s
     `;
     expect(rows).toHaveLength(samples.length);
     for (const r of rows) {
