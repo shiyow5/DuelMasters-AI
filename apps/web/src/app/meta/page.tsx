@@ -78,14 +78,16 @@ export default function MetaPage() {
       {/* Header */}
       <Header
         left={
-          <div className="flex items-center gap-4">
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-bg-dark text-[20px]">
                 playing_cards
               </span>
             </div>
-            <h2 className="text-lg font-bold leading-tight tracking-tight text-white">環境分析</h2>
-            <span className="px-2 py-1 rounded bg-primary/20 text-primary text-xs font-bold uppercase tracking-wider border border-primary/30">
+            <h2 className="text-lg font-bold leading-tight tracking-tight text-white truncate min-w-0">
+              環境分析
+            </h2>
+            <span className="px-2 py-1 rounded bg-primary/20 text-primary text-xs font-bold uppercase tracking-wider border border-primary/30 shrink-0">
               Beta
             </span>
           </div>
@@ -96,7 +98,7 @@ export default function MetaPage() {
               <button
                 key={f}
                 onClick={() => setFormat(f)}
-                className={`px-6 h-full rounded text-sm font-bold transition-all duration-200 ${
+                className={`px-4 sm:px-6 h-full rounded text-sm font-bold transition-all duration-200 ${
                   format === f
                     ? "bg-bg-dark text-primary shadow-sm"
                     : "text-text-muted hover:text-white"

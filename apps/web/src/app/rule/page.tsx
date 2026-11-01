@@ -74,9 +74,9 @@ export default function RulePage() {
       {/* Header */}
       <Header
         left={
-          <div className="flex items-center gap-4">
-            <h2 className="text-xl font-bold text-white tracking-tight">AIルール審査員</h2>
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary text-bg-dark uppercase tracking-wider">
+          <div className="flex items-center gap-4 min-w-0">
+            <h2 className="text-xl font-bold text-white tracking-tight truncate">AIルール審査員</h2>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary text-bg-dark uppercase tracking-wider shrink-0">
               Beta
             </span>
           </div>

@@ -188,13 +188,13 @@ export default function DeckPage() {
       {/* Header */}
       <Header
         left={
-          <div>
-            <div className="flex items-center gap-2 text-text-muted text-sm mb-1">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-text-muted text-sm mb-1 max-sm:hidden">
               <span>Decks</span>
               <span className="material-symbols-outlined text-[14px]">chevron_right</span>
               <span className="text-white">デッキビルダー</span>
             </div>
-            <h1 className="text-3xl font-bold text-white">デッキ構築・評価</h1>
+            <h1 className="text-xl sm:text-3xl font-bold text-white truncate">デッキ構築・評価</h1>
           </div>
         }
         right={
@@ -207,7 +207,7 @@ export default function DeckPage() {
                   setScore(null);
                   setValidation(null);
                 }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                   format === f
                     ? "bg-primary/20 text-primary border border-primary/20"
                     : "bg-bg-surface-highlight text-text-muted hover:text-white border border-border-subtle"
