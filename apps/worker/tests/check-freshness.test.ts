@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   evaluateFreshness,
   parseFreshnessArgs,
+  describeRunError,
   jstDate,
   DEFAULT_THRESHOLDS,
   type FreshnessRows,
@@ -136,6 +137,81 @@ describe("parseFreshnessArgs", () => {
     expect(parseFreshnessArgs(["--weekly-max-age=-1"])).toBeNull();
     expect(parseFreshnessArgs(["--weekly-max-age"])).toBeNull();
     expect(parseFreshnessArgs(["--unknown=3"])).toBeNull();
+  });
+});
+
+// 以下の接続情報はすべて架空の値 (本物の project ref ではない)。
+const FAKE_HOST = "aws-0-ap-northeast-1.pooler.supabase.com";
+const FAKE_USER = "postgres.abcdefghijklmnopqrst";
+const FAKE_URL = `postgresql://${FAKE_USER}:fake-p%40ss@${FAKE_HOST}:6543/postgres`;
+
+describe("describeRunError (公開 Issue に出す1行)", () => {
+  it("code と name だけを出し、message は出さない", () => {
+    const err = Object.assign(new Error(`getaddrinfo ENOTFOUND ${FAKE_HOST}`), {
+      code: "ENOTFOUND",
+      hostname: FAKE_HOST,
+    });
+    const s = describeRunError(err);
+    expect(s).toBe("code=ENOTFOUND name=Error");
+    expect(s).not.toContain("supabase");
+  });
+
+  it("英数字と _ 以外を含む code / name は捨てる", () => {
+    expect(describeRunError({ code: `bad ${FAKE_USER}`, name: "PostgresError" })).toBe(
+      "name=PostgresError",
+    );
+    expect(describeRunError({ code: "28P01" })).toBe("code=28P01");
+  });
+
+  it("オブジェクトでなければ「詳細なし」", () => {
+    expect(describeRunError(`connect to ${FAKE_HOST} failed`)).toBe("詳細なし");
+    expect(describeRunError(undefined)).toBe("詳細なし");
+  });
+});
+
+describe("freshness-redact.py (Issue / Step Summary に貼る前の伏せ字)", () => {
+  const script = fileURLToPath(
+    new URL("../../../.github/scripts/freshness-redact.py", import.meta.url),
+  );
+  const redact = (input: string, databaseUrl = FAKE_URL) =>
+    execFileSync("python3", ["-I", script], {
+      input,
+      env: { PATH: process.env.PATH, DATABASE_URL: databaseUrl },
+      encoding: "utf8",
+    });
+
+  it("DATABASE_URL のホスト・ユーザー・パスワードを *** にする", () => {
+    const out = redact(
+      [
+        `error: connect ECONNREFUSED ${FAKE_HOST}:6543`,
+        `password authentication failed for user "${FAKE_USER}"`,
+        "pass=fake-p@ss raw=fake-p%40ss",
+      ].join("\n"),
+    );
+    expect(out).not.toContain(FAKE_HOST);
+    expect(out).not.toContain("abcdefghijklmnopqrst");
+    expect(out).not.toContain("fake-p");
+    expect(out).toContain("ECONNREFUSED");
+  });
+
+  it("DATABASE_URL が無くても、接続文字列・IP・Supabase のホストとユーザーは伏せる", () => {
+    const out = redact(
+      [
+        `url ${FAKE_URL}`,
+        "connect ETIMEDOUT 203.0.113.7:5432",
+        "connect ENETUNREACH (2001:db8::1)",
+        "host db.zyxwvutsrqponmlkjihg.supabase.co",
+        "user postgres.zyxwvutsrqponmlkjihg",
+      ].join("\n"),
+      "",
+    );
+    expect(out).not.toMatch(/supabase|203\.0\.113|2001:db8|zyxwvuts|abcdefgh/);
+    expect(out.split("\n")).toHaveLength(5);
+  });
+
+  it("::error:: / ::warning:: を読みやすくし、鮮度の判定文はそのまま残す", () => {
+    const line = "メタスナップショット / original: 最終日 2026-10-26 は 8日前";
+    expect(redact(`::error::${line}\n::warning::x\n`)).toBe(`error: ${line}\nwarning: x\n`);
   });
 });
 
