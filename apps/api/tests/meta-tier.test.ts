@@ -103,8 +103,14 @@ describe.skipIf(!hasTestDb)("GET /api/meta/tier (統合)", () => {
               ${sql.json([{ archetype: "スナップ8週", usage_rate: 100, count: 1, tier: "S" }])})`;
 
     const res = await makeApp().request("/api/meta/tier?format=original&period=8w");
-    const body = (await res.json()) as { tier_data: Array<{ archetype: string }> };
+    const body = (await res.json()) as {
+      period_start: string;
+      period_end: string;
+      tier_data: Array<{ archetype: string }>;
+    };
     expect(body.tier_data.map((t) => t.archetype)).toEqual(["スナップ8週"]);
+    // 8w のスナップショットでも日付は YYYY-MM-DD の完全一致 (#185)
+    expect([body.period_start, body.period_end]).toEqual([daysAgo(56), today]);
   });
 
   it("4週のスナップショットだけがあるとき、2w/8w はその場集計で期間ごとに件数・期間が変わる (#180)", async () => {
@@ -138,11 +144,8 @@ describe.skipIf(!hasTestDb)("GET /api/meta/tier (統合)", () => {
     expect(w4.tier_data).toEqual([
       { archetype: "スナップ4週", usage_rate: 100, count: 102, tier: "S" },
     ]);
-    // DATE 列は Date として読まれて JSON では時刻つきになるので、日付部分で比べる
-    expect([w4.period_start, w4.period_end].map((d) => String(d).slice(0, 10))).toEqual([
-      daysAgo(29),
-      daysAgo(1),
-    ]);
+    // スナップショット経路でも YYYY-MM-DD の文字列そのもの (時刻つきにしない, #185)
+    expect([w4.period_start, w4.period_end]).toEqual([daysAgo(29), daysAgo(1)]);
 
     // 2w / 8w: その場集計。件数も期間も違う
     expect(w2.tier_data.map((t) => [t.archetype, t.entries])).toEqual([["ウィリデ", 5]]);

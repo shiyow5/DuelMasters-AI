@@ -133,7 +133,12 @@ metaRouter.get("/tier", async (c) => {
     // 期間ボタンが効かない (QA③)。該当が無ければ下のその場集計に落とす。
     // snapshot-meta は period_start = period_end - weeks*7日 で作るので、日数の差で照合する。
     const snapshots = await sql`
-      SELECT tier_data, period_start, period_end, created_at
+      SELECT tier_data,
+             -- DATE をそのまま返すと postgres.js が Date にして JSON で時刻つきになる (#185)。
+             -- その場集計の経路と同じ YYYY-MM-DD にそろえる (DateStyle に左右されない to_char)
+             to_char(period_start, 'YYYY-MM-DD') AS start_date,
+             to_char(period_end, 'YYYY-MM-DD') AS end_date,
+             created_at
       FROM meta_snapshots
       WHERE format = ${format}
         AND period_end >= ${isoDate(periodStart)}
@@ -198,8 +203,8 @@ metaRouter.get("/tier", async (c) => {
     return c.json({
       format,
       period: `${weeks}w`,
-      period_start: snapshots[0].period_start,
-      period_end: snapshots[0].period_end,
+      period_start: snapshots[0].start_date as string,
+      period_end: snapshots[0].end_date as string,
       tier_data: await withMainCards(
         snapshots[0].tier_data as Array<Record<string, unknown> & { archetype: string }>,
       ),
