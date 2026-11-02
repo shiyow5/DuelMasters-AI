@@ -6,7 +6,10 @@ import {
   isWeeklyRankingTitle,
   weeklyRankingFormat,
   categoryPageUrls,
+  tournamentsExceedSkipRate,
+  DEFAULT_TOURNAMENTS_MAX_SKIP_RATE,
 } from "../src/jobs/ingest-tournaments.js";
+import { parseMaxSkipRate } from "../src/jobs/ingest-deneblog.js";
 
 describe("parseCsResultTitle", () => {
   it("タイトルから大会名・日付・フォーマット・順位を取り出す", () => {
@@ -300,5 +303,26 @@ describe("parseEntryList", () => {
   it("HTML エンティティを戻す", () => {
     const html = `<a href="https://supersolenoid.jp/blog-entry-2.html">A&amp;B</a>`;
     expect(parseEntryList(html)[0].title).toBe("A&B");
+  });
+});
+
+describe("tournamentsExceedSkipRate (#195)", () => {
+  it("取得失敗・パース不能の率が閾値を超えたら true、ちょうどは false", () => {
+    expect(tournamentsExceedSkipRate({ rankingParsed: 7, rankingSkipped: 3 }, 0.25)).toBe(true);
+    expect(tournamentsExceedSkipRate({ rankingParsed: 6, rankingSkipped: 2 }, 0.25)).toBe(false);
+    expect(tournamentsExceedSkipRate({ rankingParsed: 9, rankingSkipped: 1 }, 0.25)).toBe(false);
+  });
+
+  it("ランキング記事が1本も無い (分母0) は正常扱い", () => {
+    expect(tournamentsExceedSkipRate({ rankingParsed: 0, rankingSkipped: 0 }, 0.25)).toBe(false);
+  });
+
+  it("既定の閾値は 0.25。--max-skip-rate で上書きでき、不正値は既定に戻る", () => {
+    expect(DEFAULT_TOURNAMENTS_MAX_SKIP_RATE).toBe(0.25);
+    expect(parseMaxSkipRate([], DEFAULT_TOURNAMENTS_MAX_SKIP_RATE)).toBe(0.25);
+    expect(parseMaxSkipRate(["--max-skip-rate=0.5"], DEFAULT_TOURNAMENTS_MAX_SKIP_RATE)).toBe(0.5);
+    expect(parseMaxSkipRate(["--max-skip-rate=abc"], DEFAULT_TOURNAMENTS_MAX_SKIP_RATE)).toBe(0.25);
+    // deneblog 側の既定 (引数なし) は変わらない
+    expect(parseMaxSkipRate([])).toBe(0.1);
   });
 });
