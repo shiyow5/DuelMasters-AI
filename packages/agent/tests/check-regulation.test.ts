@@ -228,6 +228,27 @@ describe.skipIf(!hasTestDb)("殿堂の区分 (統合, #178)", () => {
     ]);
   });
 
+  it("evaluate_deck: parseErrors と restricted_in_deck が同時に出る (#199, PR #182 の競合解消点)", async () => {
+    // 読めない行 (数字だけの行) があっても restricted_in_deck を落とさず、parseErrors と並べて返す。
+    // #165 B-06 (parseErrors) と #178 (c) (restricted_in_deck) が同じ out を組み立てているので、
+    // どちらかのスプレッドで片方が消える退行をここで止める。
+    const r = await runTool("evaluate_deck", {
+      decklist: "1 ボルシャック・ドラゴン\n123\n4 スパイラル・ゲート",
+    });
+    const json = JSON.parse(r.text) as {
+      restricted_in_deck: unknown;
+      parseErrors?: string[];
+      score: unknown;
+      validation: unknown;
+    };
+    expect(json.restricted_in_deck).toEqual([
+      { name: "ボルシャック・ドラゴン", restriction: "殿堂入り", count: 1, limit: "1枚まで" },
+    ]);
+    expect(json.parseErrors).toEqual(['パースできない行: "123"']);
+    expect(json.score).toBeDefined();
+    expect(json.validation).toBeDefined();
+  });
+
   it("evaluate_deck: 規制カードが無ければ「規制カードなし」", async () => {
     const r = await runTool("evaluate_deck", { decklist: "4 スパイラル・ゲート" });
     const json = JSON.parse(r.text) as { restricted_in_deck: unknown };

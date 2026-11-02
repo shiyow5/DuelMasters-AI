@@ -20,6 +20,20 @@ describe("toolSubject", () => {
     expect(toolSubject("get_tier_list", { format: "advance" })).toBe("アドバンス");
   });
 
+  it("殿堂確認はカード名の配列を「・」で繋いで出す (#199)", () => {
+    expect(
+      toolSubject("check_regulation", {
+        card_names: ["ボルメテウス・ホワイト・ドラゴン", "ヘブンズ・ゲート"],
+      }),
+    ).toBe("ボルメテウス・ホワイト・ドラゴン・ヘブンズ・ゲート");
+    // 空要素・文字列以外は落とす。全部落ちたら null。
+    expect(toolSubject("check_regulation", { card_names: ["A", " ", 1, "B"] })).toBe("A・B");
+    expect(toolSubject("check_regulation", { card_names: [] })).toBeNull();
+    expect(toolLabel("check_regulation", { card_names: ["ヘブンズ・ゲート"] })).toBe(
+      "殿堂レギュレーションを確認しています: 「ヘブンズ・ゲート」",
+    );
+  });
+
   it("デッキリストは長いので出さない", () => {
     // decklist は40行のテキスト。進行表示に流し込むと画面が壊れる。
     const decklist = Array.from({ length: 40 }, (_, i) => `4 カード${i}`).join("\n");
