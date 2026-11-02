@@ -1,4 +1,10 @@
-import { DECK_SIZE, MAX_COPIES, type Format, type ValidationResult } from "@dm-ai/core";
+import {
+  DECK_SIZE,
+  MAX_COPIES,
+  ORIGINAL_EXTRA_ZONE_SEVERITY,
+  type Format,
+  type ValidationResult,
+} from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import type { ParsedDeck } from "./parser.js";
 import { mergeEntriesByName, type MergedEntry } from "./card-name.js";
@@ -18,13 +24,24 @@ export async function validateRegulation(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // 枚数チェック
+  // 枚数チェック。**メインデッキだけ**を数える (超次元・GR は totalCards に入っていない。QA②)
   if (deck.totalCards !== DECK_SIZE) {
     errors.push(`デッキは${DECK_SIZE}枚ちょうどである必要があります (現在: ${deck.totalCards}枚)`);
   }
 
-  // カード名は正規化して、同じカードの複数行を合算してから判定する (B-02/B-03)
-  const merged = mergeEntriesByName(deck.entries);
+  // オリジナルで超次元・GR を使っていないか (重大度は ORIGINAL_EXTRA_ZONE_SEVERITY で切り替える)
+  const zoneIssue = checkExtraZones(deck, format);
+  if (zoneIssue) {
+    (zoneIssue.severity === "error" ? errors : warnings).push(zoneIssue.message);
+  }
+
+  // カード名は正規化して、同じカードの複数行を合算してから判定する (B-02/B-03)。
+  // 4枚制限と殿堂は**全ゾーン**に掛かるので、超次元・GR のカードも含める。
+  const merged = mergeEntriesByName([
+    ...deck.entries,
+    ...(deck.zones?.hyperspatial ?? []),
+    ...(deck.zones?.gr ?? []),
+  ]);
 
   // 同名カード4枚制限
   for (const entry of merged.values()) {
@@ -59,6 +76,36 @@ export async function validateRegulation(
     valid: errors.length === 0,
     errors,
     warnings,
+  };
+}
+
+/**
+ * オリジナル形式で超次元・GR ゾーンのカードを使っていれば、その指摘を返す (純粋関数。テスト用に export)。
+ *
+ * オリジナルでは超次元・GR を使えない。重大度は既定で {@link ORIGINAL_EXTRA_ZONE_SEVERITY}
+ * (今は "warning" = 評価を続ける)。アドバンスでは何も返さない。
+ */
+export function checkExtraZones(
+  deck: ParsedDeck,
+  format: Format,
+  severity: "warning" | "error" = ORIGINAL_EXTRA_ZONE_SEVERITY,
+): { severity: "warning" | "error"; message: string } | null {
+  if (format !== "original") return null;
+  const count = (entries: readonly { count: number }[] | undefined) =>
+    (entries ?? []).reduce((sum, e) => sum + e.count, 0);
+  const hyperspatial = count(deck.zones?.hyperspatial);
+  const gr = count(deck.zones?.gr);
+  if (hyperspatial === 0 && gr === 0) return null;
+
+  const parts = [
+    hyperspatial > 0 ? `超次元ゾーン${hyperspatial}枚` : null,
+    gr > 0 ? `GRゾーン${gr}枚` : null,
+  ].filter(Boolean);
+  return {
+    severity,
+    message:
+      `オリジナルでは超次元・GRゾーンを使えません (${parts.join("・")})` +
+      (severity === "warning" ? "。メインデッキだけで評価しています" : ""),
   };
 }
 

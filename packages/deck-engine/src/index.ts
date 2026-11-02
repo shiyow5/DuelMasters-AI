@@ -1,5 +1,11 @@
-export { parseDecklist, type ParsedDeck } from "./parser.js";
-export { validateRegulation } from "./validator.js";
+export {
+  parseDecklist,
+  detectZoneHeading,
+  type ParsedDeck,
+  type DeckZone,
+  type ExtraZones,
+} from "./parser.js";
+export { validateRegulation, checkExtraZones } from "./validator.js";
 export { scoreDeck } from "./scorer.js";
 export {
   inferDeckConcept,

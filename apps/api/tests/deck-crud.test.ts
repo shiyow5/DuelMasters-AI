@@ -67,6 +67,25 @@ describe.skipIf(!hasTestDb)("deck CRUD (統合)", () => {
     expect(typeof (rows[0].scores as Record<string, unknown>).overall).toBe("number");
   });
 
+  it("超次元・GR は zone 付きで保存し、見出し行は保存しない (QA②)", async () => {
+    const res = await post(
+      "/api/deck/save",
+      {
+        title: "zones",
+        format: "advance",
+        decklist: "メインデッキ\n4 A\n超次元ゾーン\n1 H\nGRゾーン\n2 G",
+      },
+      INTERNAL,
+    );
+    expect(res.status).toBe(201);
+    const rows = await sql`SELECT cards FROM decks`;
+    expect(rows[0].cards).toEqual([
+      { count: 4, name: "A" },
+      { count: 1, name: "H", zone: "hyperspatial" },
+      { count: 2, name: "G", zone: "gr" },
+    ]);
+  });
+
   it("decklist パース不能のみは 400", async () => {
     const res = await post(
       "/api/deck/save",

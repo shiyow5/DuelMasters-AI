@@ -1,9 +1,51 @@
 import type { DeckEntry } from "@dm-ai/core";
 
+/** デッキリストの区分。メイン以外は40枚判定に入れない (QA② / #165 B-07) */
+export type DeckZone = "main" | "hyperspatial" | "gr";
+
+/** メイン以外のゾーンのカード */
+export interface ExtraZones {
+  /** 超次元ゾーン */
+  hyperspatial: DeckEntry[];
+  /** GRゾーン */
+  gr: DeckEntry[];
+}
+
 export interface ParsedDeck {
+  /** メインデッキのカード (見出しより前の行と「メインデッキ」見出しの下) */
   entries: DeckEntry[];
+  /** メインデッキの合計枚数。超次元・GR は含まない */
   totalCards: number;
   errors: string[];
+  /**
+   * 超次元・GR ゾーンのカード。parseDecklist は常に入れる。
+   * autoBuild の結果など、ゾーンを持たないデッキから組み立てるときは省略してよい (= どちらも空)。
+   */
+  zones?: ExtraZones;
+}
+
+/**
+ * 区分見出しの行ならそのゾーンを返す。見出しでなければ null。
+ *
+ * デッキサイトからコピーしたリストの書き方を広めに受ける:
+ * `メインデッキ` `【超次元ゾーン】` `■GRゾーン (12枚)` `超GR：12` `ＧＲゾーン` など。
+ * 前後の記号と末尾の枚数表記を落としてから、見出しの語と**完全一致**で判定する
+ * (「超次元ミカド・ホール」のようなカード名を見出しと取り違えないため)。
+ */
+export function detectZoneHeading(line: string): DeckZone | null {
+  const t = line
+    .normalize("NFKC")
+    .replace(/^[\s【\[(<〈《「『■□◆◇●○▼▽▶・*=\-]+/u, "")
+    .replace(/[\s】\])>〉》」』:]+$/u, "")
+    // 末尾の枚数表記: "(40枚)" "40枚" ": 8" "x12"
+    .replace(/[\s(:]*[xX×]?\d+\s*枚?\s*\)?$/u, "")
+    .replace(/[\s】\])>〉》」』:]+$/u, "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+  if (/^(メイン(デッキ)?|デッキ(リスト)?|maindeck|main)$/.test(t)) return "main";
+  if (/^(超次元(ゾーン)?|hyperspatial(zone)?)$/.test(t)) return "hyperspatial";
+  if (/^(超?gr(ゾーン|zone)?)$/.test(t)) return "gr";
+  return null;
 }
 
 /**
@@ -13,6 +55,9 @@ export interface ParsedDeck {
  * - "カード名 x4"
  * - "カード名 ×4"
  * - "4x カード名"
+ *
+ * 区分見出し (`メインデッキ` / `超次元ゾーン` / `GRゾーン` など) は**カードとして数えず**、
+ * 以降の行をそのゾーンに入れる。見出しより前の行はメインデッキ扱い。
  */
 export function parseDecklist(text: string): ParsedDeck {
   const lines = text
@@ -20,21 +65,33 @@ export function parseDecklist(text: string): ParsedDeck {
     .map((l) => l.trim())
     .filter((l) => l.length > 0 && !l.startsWith("#") && !l.startsWith("//"));
 
-  const entries: DeckEntry[] = [];
+  const byZone: Record<DeckZone, DeckEntry[]> = { main: [], hyperspatial: [], gr: [] };
   const errors: string[] = [];
+  let zone: DeckZone = "main";
 
   for (const line of lines) {
+    const heading = detectZoneHeading(line);
+    if (heading) {
+      zone = heading;
+      continue;
+    }
     const parsed = parseLine(line);
     if (parsed) {
-      entries.push(parsed);
+      byZone[zone].push(parsed);
     } else {
       errors.push(`パースできない行: "${line}"`);
     }
   }
 
+  const entries = byZone.main;
   const totalCards = entries.reduce((sum, e) => sum + e.count, 0);
 
-  return { entries, totalCards, errors };
+  return {
+    entries,
+    totalCards,
+    errors,
+    zones: { hyperspatial: byZone.hyperspatial, gr: byZone.gr },
+  };
 }
 
 function parseLine(line: string): DeckEntry | null {
