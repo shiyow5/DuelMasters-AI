@@ -64,13 +64,22 @@ export function aggregateTierData(results: Array<Record<string, unknown>>): Aggr
   const M = rows.filter(isSignificant).length;
 
   // rows は使用率降順なので、有意行に出現順で順位を振れば「上位ほど上の Tier」になる。
+  // 同率 (入賞数が同じ) のグループは先頭メンバーの順位で段を決め、全員に同じ段を付ける (#186)。
+  // そのぶん後続の段が空くことは許容する。
   let rank = 0;
+  let groupRank = 0;
+  let prevEntries: number | null = null;
   return rows.map((r) => {
     let tier: string;
     if (!isSignificant(r)) {
       tier = TIER_BELOW;
     } else {
-      const i = rank++;
+      if (r.entries !== prevEntries) {
+        groupRank = rank;
+        prevEntries = r.entries;
+      }
+      rank++;
+      const i = groupRank;
       tier =
         M <= TIER_PARAMS.count
           ? // 有意が段数以下なら上から連番で埋める (段飛びさせない)。

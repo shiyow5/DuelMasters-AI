@@ -115,6 +115,68 @@ describe("aggregateTierData (相対分類 #132)", () => {
     expect(out[1].usage_rate).toBe(25);
   });
 
+  describe("同率のアーキタイプは同じ段にまとめる (#186)", () => {
+    const tierOf = (out: ReturnType<typeof aggregateTierData>, a: string) =>
+      out.find((e) => e.archetype === a)!.tier;
+
+    it("6/102 の3デッキ同率は先頭メンバーの順位で全員同じ段 (旧実装は Tier2/3 に分かれた)", () => {
+      // 母数 102、有意 10種 (M=10)。同率グループは順位 3〜5。
+      const results = [
+        { deck_archetype: "A", count: 30 },
+        { deck_archetype: "B", count: 20 },
+        { deck_archetype: "C", count: 16 },
+        { deck_archetype: "デスパペット", count: 6 },
+        { deck_archetype: "ドギラダンテ刈", count: 6 },
+        { deck_archetype: "モルト", count: 6 },
+        { deck_archetype: "G", count: 5 },
+        { deck_archetype: "H", count: 5 },
+        { deck_archetype: "I", count: 4 },
+        { deck_archetype: "J", count: 4 },
+      ];
+      const out = aggregateTierData(results);
+      expect(out[0].total_entries).toBe(102);
+      // 先頭メンバーの順位 i=3 → floor(3*5/10)+1 = Tier2
+      for (const a of ["デスパペット", "ドギラダンテ刈", "モルト"]) {
+        expect(tierOf(out, a)).toBe("Tier2");
+      }
+      // 同率の G,H (i=6) と I,J (i=8) もそれぞれ同じ段
+      expect(tierOf(out, "G")).toBe("Tier4");
+      expect(tierOf(out, "H")).toBe("Tier4");
+      expect(tierOf(out, "I")).toBe("Tier5");
+      expect(tierOf(out, "J")).toBe("Tier5");
+    });
+
+    it("2/66 の9デッキ同率は全員 Tier2、後続の Tier3〜5 は空になる", () => {
+      // 母数 66、有意 13種 (M=13)。同率グループは順位 4〜12。
+      const results = [
+        { deck_archetype: "A", count: 20 },
+        { deck_archetype: "B", count: 14 },
+        { deck_archetype: "C", count: 8 },
+        { deck_archetype: "D", count: 6 },
+        ...Array.from({ length: 9 }, (_, k) => ({ deck_archetype: `T${k}`, count: 2 })),
+      ];
+      const out = aggregateTierData(results);
+      expect(out[0].total_entries).toBe(66);
+      for (let k = 0; k < 9; k++) {
+        expect(tierOf(out, `T${k}`)).toBe("Tier2");
+      }
+      const tiers = new Set(out.map((e) => e.tier));
+      for (const t of ["Tier3", "Tier4", "Tier5"]) {
+        expect(tiers.has(t)).toBe(false);
+      }
+    });
+
+    it("有意が段数以下 (連番側) でも同率は同じ段にまとめる", () => {
+      const results = [
+        { deck_archetype: "A", count: 10 },
+        { deck_archetype: "B", count: 6 },
+        { deck_archetype: "C", count: 6 },
+      ];
+      const out = aggregateTierData(results);
+      expect(out.map((e) => e.tier)).toEqual(["Tier1", "Tier2", "Tier2"]);
+    });
+  });
+
   it("空入力は空配列を返す", () => {
     expect(aggregateTierData([])).toEqual([]);
   });
