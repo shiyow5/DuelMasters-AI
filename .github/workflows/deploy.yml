@@ -29,6 +29,7 @@ env:
 
 jobs:
   deploy:
+    environment: production
     name: Deploy ${{ matrix.app }} Worker
     # CI は pull_request でも走る。conclusion == 'success' だけを見ると、未マージの PR コードが
     # workflow_run を発火させ、本番の Cloudflare 認証情報でデプロイされうる (fork の main ブランチ
