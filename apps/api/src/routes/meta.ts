@@ -103,14 +103,24 @@ async function withMainCards<T extends { archetype: string }>(entries: T[]): Pro
   });
 }
 
+/** `/tier` が受け付ける期間 (B-11) */
+const TIER_PERIODS = ["2w", "4w", "8w"] as const;
+
 metaRouter.get("/tier", async (c) => {
   const format = c.req.query("format") ?? "original";
   if (!(FORMATS as readonly string[]).includes(format)) {
     return c.json({ error: `format は ${FORMATS.join(" | ")} のいずれかを指定してください` }, 400);
   }
   const period = c.req.query("period") ?? "4w";
+  // Web が出すのは 2w / 4w / 8w だけ。3w や 100w を黙って通さない (B-11)
+  if (!(TIER_PERIODS as readonly string[]).includes(period)) {
+    return c.json(
+      { error: `period は ${TIER_PERIODS.join(" | ")} のいずれかを指定してください` },
+      400,
+    );
+  }
 
-  const weeks = parseInt(period.replace("w", ""), 10) || 4;
+  const weeks = parseInt(period.replace("w", ""), 10);
   const periodEnd = new Date();
   const periodStart = new Date();
   periodStart.setDate(periodStart.getDate() - weeks * 7);
