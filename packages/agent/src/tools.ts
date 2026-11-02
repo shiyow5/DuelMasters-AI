@@ -5,6 +5,8 @@ import {
   CARD_TYPES,
   CARD_NAME_TRANSLATE_FROM,
   CARD_NAME_TRANSLATE_TO,
+  aggregateTierData,
+  mergeArchetypeCounts,
 } from "@dm-ai/core";
 import { searchRules } from "@dm-ai/rag";
 import {
@@ -209,15 +211,49 @@ export async function runTool(
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - weeks * 7);
         const cutoffStr = cutoff.toISOString().split("T")[0];
+        // 要求された期間と**同じ長さ**のスナップショットだけを使う (API の /api/meta/tier と同じ。QA③)。
+        // 長さを見ないと、cron が作る 4 週ぶんのスナップショットが 2w / 8w にも返ってしまう。
+        // snapshot-meta は period_start = period_end - weeks*7日 で作るので、日数の差で照合する。
         const snapshots = await sql`
           SELECT tier_data, period_start, period_end
           FROM meta_snapshots
-          WHERE format = ${fmt} AND period_end >= ${cutoffStr}
+          WHERE format = ${fmt}
+            AND period_end >= ${cutoffStr}
+            AND (period_end - period_start) = ${weeks * 7}
           ORDER BY period_end DESC
           LIMIT 1
         `;
-        if (snapshots.length === 0) return { text: "ティアデータがまだありません" };
-        return { text: JSON.stringify(snapshots[0].tier_data, null, 2) };
+        if (snapshots.length > 0) return { text: JSON.stringify(snapshots[0].tier_data, null, 2) };
+
+        // 同じ長さのスナップショットが無ければその場で集計する (API と同じ優先度:
+        // 週次ランキング > 個別 CS 記事)。ここで「データなし」と返すと 2w / 8w が常に空になる。
+        const weekly = await sql`
+          SELECT deck_archetype, SUM(entries)::int as count
+          FROM archetype_weekly_stats
+          WHERE format = ${fmt} AND period_end >= ${cutoffStr}
+          GROUP BY deck_archetype
+          ORDER BY count DESC
+        `;
+        const results =
+          weekly.length > 0
+            ? weekly
+            : await sql`
+                SELECT deck_archetype, COUNT(*)::int as count
+                FROM tournament_results
+                WHERE format = ${fmt} AND event_date >= ${cutoffStr}
+                GROUP BY deck_archetype
+                ORDER BY count DESC
+              `;
+        if (results.length === 0) return { text: "ティアデータがまだありません" };
+        const tierData = aggregateTierData(
+          mergeArchetypeCounts(
+            results.map((r) => ({
+              deck_archetype: r.deck_archetype as string,
+              count: r.count as number,
+            })),
+          ),
+        );
+        return { text: JSON.stringify(tierData, null, 2) };
       }
 
       case "suggest_improvements": {
