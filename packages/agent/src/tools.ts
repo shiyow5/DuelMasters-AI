@@ -1,6 +1,11 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { CIVILIZATIONS, CARD_TYPES, CARD_NAME_STRIP_CHARS } from "@dm-ai/core";
+import {
+  CIVILIZATIONS,
+  CARD_TYPES,
+  CARD_NAME_TRANSLATE_FROM,
+  CARD_NAME_TRANSLATE_TO,
+} from "@dm-ai/core";
 import { searchRules } from "@dm-ai/rag";
 import {
   parseDecklist,
@@ -106,16 +111,17 @@ export async function runTool(
         /**
          * **カード名は正規化して突き合わせる。**
          * 《ヘブンズ・ゲート》を「ヘブンズゲート」(中黒なし) で探しても引けるように、
-         * DB 側の name にも同じ正規化 (NFKC → 中黒・空白・囲み・引用符を落とす → 小文字化) をかける。
-         * 落とす文字は TS の normalizeCardName と同じ CARD_NAME_STRIP_CHARS (#167。以前は SQL だけ
-         * NFKC が無く、≪≫«»・タブ等も落としておらず、TS とズレていた)。
+         * DB 側の name にも同じ正規化 (NFKC → 長音・ハイフン類を `ー` に畳み、中黒・空白・囲み・引用符を
+         * 落とす → 小文字化) をかける。文字集合は TS の normalizeCardName と同じ
+         * CARD_NAME_TRANSLATE_FROM / TO (#167。以前は SQL だけ NFKC が無く、≪≫«»・タブ等も落としておらず、
+         * TS とズレていた)。
          * これをやらないと素朴な部分一致が 0件になり、agent がそれを「ツールのエラー」と
          * 誤解して「一時的なエラーが発生している」と誤報する (本番で実際に起きた)。
          */
         const normalized = query ? normalizeCardName(query) : "";
         const nameFrag = query
           ? sql`AND (
-              lower(translate(normalize(name, NFKC), ${CARD_NAME_STRIP_CHARS}, '')) LIKE ${"%" + normalized + "%"}
+              lower(translate(normalize(name, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO})) LIKE ${"%" + normalized + "%"}
               OR text ILIKE ${"%" + query + "%"}
             )`
           : sql``;

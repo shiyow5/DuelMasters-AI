@@ -266,3 +266,52 @@ describe("checkRestrictions 片面分割で無関係なカードを誤爆しな�
     expect(twinpactSideKeys(regulationNameKey("A/B/C"))).toEqual([]);
   });
 });
+
+// ---- #167 PR-C ----
+
+describe("checkRestrictions 長音・ハイフンのゆれ (#167 PR-C)", () => {
+  const regs = [{ card_name: "ヨミジ 丁-二式", restriction_type: "殿堂入り" }];
+  const check = (text: string) =>
+    checkRestrictions(mergeEntriesByName(parseDecklist(text).entries), regs);
+
+  it.each([
+    "ヨミジ 丁ー二式",
+    "ヨミジ 丁－二式",
+    "ヨミジ 丁―二式",
+    "ヨミジ 丁−二式",
+    "ヨミジ丁‐二式",
+  ])("「%s」2枚は殿堂入りのエラー", (name) => {
+    expect(check(`2 ${name}`).errors).toEqual([
+      `「${name}」は殿堂入りのため1枚までです (現在: 2枚)`,
+    ]);
+  });
+
+  it("ハイフンの書き分けで2行に分けても合算してエラー", () => {
+    expect(check("1 ヨミジ 丁-二式\n1 ヨミジ 丁ー二式").errors).toHaveLength(1);
+  });
+});
+
+describe("checkRestrictions 区分の上書き順 (#167 ④)", () => {
+  const banned = { card_name: "重複カード", restriction_type: "プレミアム殿堂" };
+  const limited = { card_name: "重複・カード", restriction_type: "殿堂入り" };
+  const combo = { card_name: "《重複カード》", restriction_type: "プレミアム殿堂コンビ" };
+
+  it.each([
+    ["禁止→殿堂→コンビ", [banned, limited, combo]],
+    ["コンビ→殿堂→禁止", [combo, limited, banned]],
+    ["殿堂→コンビ→禁止", [limited, combo, banned]],
+  ])("同じキーが複数区分にあれば一番厳しい区分 (%s)", (_label, regs) => {
+    const r = checkRestrictions(mergeEntriesByName(parseDecklist("1 重複カード").entries), regs);
+    expect(r.errors).toEqual(["「重複カード」はプレミアム殿堂のため使用できません"]);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("殿堂入りとコンビなら殿堂入り (コンビが後でも上書きしない)", () => {
+    const r = checkRestrictions(mergeEntriesByName(parseDecklist("2 重複カード").entries), [
+      limited,
+      combo,
+    ]);
+    expect(r.errors).toEqual(["「重複カード」は殿堂入りのため1枚までです (現在: 2枚)"]);
+    expect(r.warnings).toEqual([]);
+  });
+});

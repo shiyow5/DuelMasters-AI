@@ -1,15 +1,28 @@
 import { describe, it, expect } from "vitest";
-import { CARD_NAME_STRIP_CHARS, cardNameKey } from "../src/card-name.js";
+import {
+  CARD_NAME_DASH_CHARS,
+  CARD_NAME_STRIP_CHARS,
+  CARD_NAME_TRANSLATE_FROM,
+  CARD_NAME_TRANSLATE_TO,
+  cardNameKey,
+} from "../src/card-name.js";
 
 /**
- * SQL 側の `lower(translate(normalize(x, NFKC), CARD_NAME_STRIP_CHARS, ''))` を JS で再現する。
- * translate(x, from, '') は「from に含まれる文字を消す」。ここでは正規表現を使わず、
- * **SQL に渡す文字列そのもの**を Set にして消すので、TS 側の正規表現とは独立した実装になる。
+ * SQL 側の `lower(translate(normalize(x, NFKC), CARD_NAME_TRANSLATE_FROM, CARD_NAME_TRANSLATE_TO))` を
+ * JS で再現する。Postgres の translate(x, from, to) は「from の i 文字目を to の i 文字目に置き換え、
+ * to に対応する文字が無い from の文字は消す」。ここでは正規表現を使わず、**SQL に渡す文字列そのもの**
+ * から表を作るので、TS 側の正規表現とは独立した実装になる。
  */
 const sqlChars = new Set(CARD_NAME_STRIP_CHARS);
+const fromChars = [...CARD_NAME_TRANSLATE_FROM];
+const toChars = [...CARD_NAME_TRANSLATE_TO];
 function sqlEquivalent(x: string): string {
   return [...x.normalize("NFKC")]
-    .filter((c) => !sqlChars.has(c))
+    .map((c) => {
+      const i = fromChars.indexOf(c);
+      if (i < 0) return c;
+      return i < toChars.length ? toChars[i]! : "";
+    })
     .join("")
     .toLowerCase();
 }
@@ -68,11 +81,51 @@ describe("CARD_NAME_STRIP_CHARS: SQL translate と TS 正規化の文字集合�
     expect(cardNameKey("＂轟轟轟＂ブランド")).toBe("轟轟轟ブランド");
   });
 
-  it("重複がない", () => {
+  it("重複がない (落とす文字と畳む文字も重ならない)", () => {
     expect(new Set(CARD_NAME_STRIP_CHARS).size).toBe([...CARD_NAME_STRIP_CHARS].length);
+    expect(new Set(CARD_NAME_TRANSLATE_FROM).size).toBe(fromChars.length);
   });
 
   it("区切り / は消さない (ツインパクトの片面分割に使う)", () => {
     expect(cardNameKey("A ／ B")).toBe("a/b");
+  });
+});
+
+describe("長音・ハイフン類のゆれ (#167 優先4)", () => {
+  const dashes = ["ー", "ｰ", "-", "－", "‐", "‑", "‒", "–", "—", "―", "−", "﹣", "﹘"];
+
+  it("どの長音・ハイフン・ダッシュ・マイナスでも同じキーになる", () => {
+    for (const d of dashes) {
+      expect(cardNameKey(`ヨミジ 丁${d}二式`)).toBe("ヨミジ丁ー二式");
+      expect(cardNameKey(`ボルシャック・ドラゴン${d}`)).toBe(cardNameKey("ボルシャックドラゴンー"));
+    }
+    expect(cardNameKey("ＣＳ－２０")).toBe(cardNameKey("CS-20"));
+  });
+
+  it("落とさずに1文字へ畳む (長音の有無は別のキーのまま)", () => {
+    expect(cardNameKey("ゲート")).not.toBe(cardNameKey("ゲト"));
+    expect(cardNameKey("ゲ-ト")).toBe(cardNameKey("ゲート"));
+  });
+
+  it("TS で `ー` に畳まれる文字 == SQL で畳む文字 (全コードポイント、NFKC 後)", () => {
+    const foldedByTs = new Set<string>();
+    for (const c of allCodePoints()) {
+      for (const d of c.normalize("NFKC")) {
+        if (d !== "ー" && cardNameKey(`あ${d}い`) === "あーい") foldedByTs.add(d);
+      }
+    }
+    const sqlAfterNfkc = [...CARD_NAME_DASH_CHARS].filter(
+      (c) => c.normalize("NFKC") === c && c !== "ー",
+    );
+    expect([...foldedByTs].sort()).toEqual(sqlAfterNfkc.sort());
+  });
+
+  it("translate の to は畳む文字と同じ数の `ー` (残りの from は消える)", () => {
+    expect(toChars).toEqual([...CARD_NAME_DASH_CHARS].map(() => "ー"));
+  });
+
+  it("波ダッシュ・チルダは畳まない (範囲外)", () => {
+    expect(cardNameKey("あ〜い")).not.toBe("あーい");
+    expect(cardNameKey("あ~い")).not.toBe("あーい");
   });
 });
