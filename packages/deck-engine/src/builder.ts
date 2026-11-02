@@ -5,6 +5,7 @@ import {
   DECK_GUIDELINES,
   type Format,
   type DeckEntry,
+  likeContains,
 } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import { classifyRegulations, applyRegulationToRequired } from "./regulation-rules.js";
@@ -108,15 +109,16 @@ export async function autoBuild(
     weaknesses.push(...warnings);
   }
 
-  // 2. テーマに関連するカードを検索
+  // 2. テーマに関連するカードを検索 (テーマはユーザー入力なので LIKE のメタ文字をエスケープ, #170)
+  const themePattern = likeContains(searchTheme);
   const themeCards = await sql`
     SELECT name, cost, type, tags, civilizations, is_shield_trigger, is_rainbow
     FROM cards
     WHERE (
-      text ILIKE ${"%" + searchTheme + "%"}
-      OR name ILIKE ${"%" + searchTheme + "%"}
+      text ILIKE ${themePattern} ESCAPE '\\'
+      OR name ILIKE ${themePattern} ESCAPE '\\'
       OR EXISTS (
-        SELECT 1 FROM jsonb_array_elements_text(races) r WHERE r ILIKE ${"%" + searchTheme + "%"}
+        SELECT 1 FROM jsonb_array_elements_text(races) r WHERE r ILIKE ${themePattern} ESCAPE '\\'
       )
     )
     ${excludeFrag} ${civFrag} ${costFrag} ${playableFrag}
@@ -471,7 +473,7 @@ export async function suggestReplacements(
           ORDER BY cost ASC, name ASC, official_id ASC LIMIT 5`
       : await sql`
           SELECT name, cost, tags FROM cards
-          WHERE text ILIKE ${"%" + goal + "%"}
+          WHERE text ILIKE ${likeContains(goal)} ESCAPE '\\'
             AND name NOT IN ${sql(notInDeck)}
           ORDER BY cost ASC, name ASC, official_id ASC LIMIT 5`;
     candidatesByGoal.set(

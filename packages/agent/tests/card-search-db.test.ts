@@ -92,6 +92,25 @@ describe.skipIf(!hasTestDb)("search_cards (統合)", () => {
     const r = await runTool("search_cards", { query: "マナブースト" });
     expect(r.text).toContain("青銅の鎧");
   });
+
+  it("query の % と _ をワイルドカードにしない (#170)", async () => {
+    // エスケープしないと「%」の一語で全カードに当たる
+    for (const query of ["%", "_", "%%"]) {
+      const r = await runTool("search_cards", { query });
+      expect(r.text).toContain("0件");
+      expect(r.text).not.toContain("ボルシャック・ドラゴン");
+    }
+  });
+
+  it("% や _ を含む語はリテラルとして部分一致する (#170)", async () => {
+    await sql`INSERT INTO cards (name, civilizations, cost, type, races, text, power, official_id)
+              VALUES ('百パー', ${sql.json(["fire"])}, 2, 'spell', ${sql.json([])}, '攻撃を100%にする', null, 'hyakupa')`;
+    const hit = await runTool("search_cards", { query: "100%" });
+    expect(hit.text).toContain("百パー");
+    // "_" を1文字ワイルドカードにすると「攻撃を100%」に「攻撃_100」が当たってしまう
+    const miss = await runTool("search_cards", { query: "攻撃_100" });
+    expect(miss.text).toContain("0件");
+  });
 });
 
 /**

@@ -5,6 +5,7 @@ import {
   FORMATS,
   IngestUrlRequestSchema,
   aggregateTierData,
+  likeContains,
   mergeArchetypeCounts,
 } from "@dm-ai/core";
 import { extractTextFromHtml } from "@dm-ai/rag";
@@ -248,8 +249,9 @@ metaRouter.get("/archetype/:name", async (c) => {
     // tournament_results は個別 CS 記事の色つき表記 (「白緑ウィリデ」「白青ウィリデ」)。
     // 完全一致だけだと詳細がいつも空になるので、部分一致も拾う。
     // LIKE のメタ文字はユーザー入力なのでエスケープする。
-    const pattern = `%${name.replace(/[\\%_]/g, "\\$&")}%`;
-    const match = sql`(deck_archetype = ${name} OR deck_archetype LIKE ${pattern} ESCAPE '\')`;
+    // ESCAPE は JS ソース上 '\\' と書く。'\' だと cooked で '' になりエスケープが無効になる (#170)
+    const pattern = likeContains(name);
+    const match = sql`(deck_archetype = ${name} OR deck_archetype LIKE ${pattern} ESCAPE '\\')`;
     // ティア表と同じ期間窓で絞る (上のコメント参照)。
     const inPeriod = sql`event_date >= ${isoDate(periodStart)}`;
 
