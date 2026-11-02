@@ -195,6 +195,76 @@ describe("parseWeeklyRanking", () => {
     expect(names).not.toContain("管理人判断で削除・規制及びプロバイダ通報を行う場合がございます。");
     expect(names).toContain("赤単速攻"); // データ節の最後は拾えている
   });
+
+  // #188: 実記事 (blog-entry-48586, advance 2026/10/19～10/25) の本文。
+  // 4位の行だけ「・」が抜けていて、以前はそこでデータ節が終わったと判断し
+  // 合計 21 / 母数 75 で週ごと取り込めなかった。
+  const BODY_MISSING_BULLET = `
+集計期間：2026/10/19～2026/10/25
+母数：75
+入賞数1位 (8件、10.7％)
+・5Cテレポート(全てドギラダンテ刈入り)
+入賞数2位 (7件、9.3％)
+・カリヤドネ(アナカラー5、型不明2)
+入賞数3位 (6件、8.0％)
+・ザゼゼーン/ウィリデ(白緑ウィリデ＆ザゼゼーン型4、白緑ザゼゼーン型2)
+入賞数4位 (5件、6.7％)
+4Cテレポートドギラゴン王道(内ドギラダンテ刈入り4)
+入賞数5位 (4件、5.3％)
+・赤零ジョーカーズ
+・モルト(白青赤緑3、シータ1)
+入賞数7位 (3件、4.0％)
+・ドラグナードギラダンテ刈(全て白青赤緑)
+・ラッキーダーツ(ドロマー2、ドロマーデリート型1)
+・デスパペット(全て青黒)
+・オレガオーラ(黒緑2、黒単1)
+・侵略バイク(赤黒1、赤黒零龍型1、青黒赤緑1)
+入賞数11位 (2件、2.7％)
+・赤青ドギラダンテ刈
+・Q.E.D.(全て青黒赤緑t白ドギラダンテ刈型)
+・デモニオ(全てデアリ)
+・ファイアーバード(全てデイガ)
+・グレイトフルベン(全て白青黒緑)
+・トリーヴァ蒼斬丸
+・アルファディオス(全て白青赤緑)
+・マンジージョーカーズ(赤青万軍投型1、黒緑1)
+母数1のデッキ (13.3％)
+・5Cオボロティガウォックドギラダンテ刈
+・クローシスガロウズドギラダンテ刈
+・トリーヴァゴルギーオージャー
+・型不明テレポート系
+・型不明ドギラゴン王道ドギラダンテ刈
+・白黒ボウダンロウ
+・赤単速攻
+・赤青ジョットガンジョラゴン
+・赤青ジョランド
+・逆アポロ
+今週も取り急ぎデッキタイプの集計を行いました。環境分析にお役立てください。
+上位入賞デッキの詳細が気になる方は
+コメントの投稿
+・誹謗中傷や不謹慎な書き込みはお控えください。`.trim();
+
+  it("順位見出し直後の「・」抜けの行も項目として読み、合計が母数に一致する (#188)", () => {
+    const r = parseWeeklyRanking(BODY_MISSING_BULLET, "advance");
+    expect(r).not.toBeNull();
+    expect(r?.period_start).toBe("2026-10-19");
+    expect(r?.period_end).toBe("2026-10-25");
+    expect(r?.entries).toContainEqual({ deck_archetype: "4Cテレポートドギラゴン王道", entries: 5 });
+    expect(r?.entries).toContainEqual({ deck_archetype: "逆アポロ", entries: 1 });
+    const sum = r?.entries.reduce((acc, e) => acc + e.entries, 0);
+    expect(sum).toBe(75);
+    expect(r?.total_entries).toBe(75);
+    expect(r?.entries).toHaveLength(29);
+  });
+
+  it("項目の後に来る「・」なしの地の文は、見出し直後でなければ項目にしない", () => {
+    const r = parseWeeklyRanking(BODY_MISSING_BULLET, "advance");
+    const names = r?.entries.map((e) => e.deck_archetype) ?? [];
+    expect(names).not.toContain(
+      "今週も取り急ぎデッキタイプの集計を行いました。環境分析にお役立てください。",
+    );
+    expect(names).not.toContain("誹謗中傷や不謹慎な書き込みはお控えください。");
+  });
 });
 
 describe("parseEntryList", () => {

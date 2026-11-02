@@ -237,6 +237,8 @@ export function parseWeeklyRanking(body: string, format: Format): WeeklyRanking 
 
   const entries: WeeklyEntry[] = [];
   let currentCount: number | null = null;
+  // 直前の行が順位見出しだったか。見出しの直後の行は「・」が抜けていても項目として読む。
+  let afterHeading = false;
 
   for (const raw of body.split("\n")) {
     const line = raw.trim();
@@ -245,19 +247,31 @@ export function parseWeeklyRanking(body: string, format: Format): WeeklyRanking 
     const rank = line.match(RANK_HEADING_PATTERN);
     if (rank) {
       currentCount = parseInt(rank[1], 10);
+      afterHeading = true;
       continue;
     }
     if (SINGLETON_HEADING_PATTERN.test(line)) {
       currentCount = 1; // 「母数1のデッキ」節はすべて 1件
+      afterHeading = true;
       continue;
     }
 
     const item = line.match(ARCHETYPE_LINE_PATTERN);
+    const wasAfterHeading = afterHeading;
+    afterHeading = false;
 
     // データ節はここで終わり。記事の下にはコメント欄の注意書きが「・」付きで並んでいるので、
     // 見出しでも項目でもない行 (地の文) が出たら、そこから先は読まない。
     // HTML のコンテナ名に頼るより、ブログのテンプレ変更に強い。
-    if (!item) {
+    // ただし順位見出しの直後の行だけは「・」の付け忘れとみなして項目にする
+    // (#188: advance 2026/10/19～10/25 の記事で4位の行に「・」が無く、合計 21 / 母数 75 で
+    // 週ごと取り込めなかった)。読み違えても下の「合計 = 母数」の自己検証で弾かれる。
+    let rawName: string;
+    if (item) {
+      rawName = item[1];
+    } else if (currentCount !== null && wasAfterHeading) {
+      rawName = line;
+    } else {
       if (currentCount !== null) break;
       continue;
     }
@@ -266,7 +280,7 @@ export function parseWeeklyRanking(body: string, format: Format): WeeklyRanking 
     // 「ウィリデ(白緑42、白青6、赤白2)」→「ウィリデ」。色や型の内訳は捨てる。
     // 個別 CS 記事は「白緑ウィリデ」のような色つきの名前を使うが、ティアの単位は
     // ブログが束ねているアーキタイプ (ウィリデ) のほうなので、そちらに揃える。
-    const name = item[1].replace(/[（(][^）)]*[）)]\s*$/, "").trim();
+    const name = rawName.replace(/[（(][^）)]*[）)]\s*$/, "").trim();
     if (name === "") continue;
     entries.push({ deck_archetype: name, entries: currentCount });
   }
