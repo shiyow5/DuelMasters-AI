@@ -164,3 +164,70 @@ describe("applyRegulationToRequired 誤爆しない (#167)", () => {
     expect(r.isLimited("別面")).toBe(true);
   });
 });
+
+// ---- #167 PR-C: 長音・ハイフンのゆれ / 区分の上書き順 ----
+
+describe("applyRegulationToRequired 長音・ハイフンのゆれ (#167 PR-C)", () => {
+  const reg = classifyRegulations([
+    { card_name: "ヨミジ 丁-二式", restriction_type: "殿堂入り" },
+    { card_name: "テスト・ドラゴン―ゼロ", restriction_type: "プレミアム殿堂" },
+  ]);
+
+  it.each([
+    "ヨミジ 丁-二式",
+    "ヨミジ 丁ー二式",
+    "ヨミジ 丁－二式",
+    "ヨミジ丁―二式",
+    "ヨミジ 丁−二式",
+  ])("「%s」でも殿堂入りとして1枚", (name) => {
+    expect(applyRegulationToRequired([name], reg).adopted).toEqual([{ name, count: 1 }]);
+  });
+
+  it.each([
+    "テスト・ドラゴンーゼロ",
+    "テストドラゴン-ゼロ",
+    "テストドラゴン—ゼロ",
+    "テストドラゴン‐ゼロ",
+  ])("「%s」でもプレミアム殿堂として不採用", (name) => {
+    expect(applyRegulationToRequired([name], reg).adopted).toEqual([]);
+  });
+
+  it("長音を落とした別の名前は同一視しない", () => {
+    expect(applyRegulationToRequired(["ヨミジ 丁二式"], reg).adopted).toEqual([
+      { name: "ヨミジ 丁二式", count: 4 },
+    ]);
+  });
+});
+
+describe("classifyRegulations 区分の上書き順 (#167 ④)", () => {
+  const rows = [
+    { card_name: "重複カード", restriction_type: "プレミアム殿堂" },
+    { card_name: "重複・カード", restriction_type: "殿堂入り" },
+    { card_name: "重複カード", restriction_type: "プレミアム殿堂コンビ" },
+  ];
+
+  it("同じキーが複数区分にあれば、行の順に関係なく一番厳しい区分が残る", () => {
+    const orders = [
+      [0, 1, 2],
+      [0, 2, 1],
+      [1, 0, 2],
+      [1, 2, 0],
+      [2, 0, 1],
+      [2, 1, 0],
+    ];
+    for (const order of orders) {
+      const reg = classifyRegulations(order.map((i) => rows[i]!));
+      expect(reg.isBanned("重複カード")).toBe(true);
+      expect(reg.isLimited("重複カード")).toBe(false);
+    }
+  });
+
+  it("殿堂入りとコンビが重なれば殿堂入り", () => {
+    for (const rs of [
+      [rows[1]!, rows[2]!],
+      [rows[2]!, rows[1]!],
+    ]) {
+      expect(classifyRegulations(rs).isLimited("重複カード")).toBe(true);
+    }
+  });
+});

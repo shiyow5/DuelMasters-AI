@@ -97,7 +97,8 @@ describe.skipIf(!hasTestDb)("search_cards (統合)", () => {
 /**
  * SQL の translate/normalize と TS の normalizeCardName が**実際の Postgres で**同じ結果になるか (#167)。
  * 単体テスト (packages/core/tests/card-name.test.ts) は SQL を JS で再現したもの。
- * ここでは本物の `lower(translate(normalize(x, NFKC), CARD_NAME_STRIP_CHARS, ''))` を走らせる。
+ * ここでは本物の `lower(translate(normalize(x, NFKC), CARD_NAME_TRANSLATE_FROM, CARD_NAME_TRANSLATE_TO))`
+ * を走らせる。
  */
 describe.skipIf(!hasTestDb)("カード名正規化: SQL と TS の一致 (統合, #167)", () => {
   const sql = getTestSql()!;
@@ -105,11 +106,20 @@ describe.skipIf(!hasTestDb)("カード名正規化: SQL と TS の一致 (統合
     await sql.end();
   });
 
-  it("CARD_NAME_STRIP_CHARS の全文字と代表的なカード名で SQL == TS", async () => {
-    const { CARD_NAME_STRIP_CHARS } = await import("@dm-ai/core");
+  it("落とす文字・長音に畳む文字の全文字と代表的なカード名で SQL == TS", async () => {
+    const {
+      CARD_NAME_STRIP_CHARS,
+      CARD_NAME_DASH_CHARS,
+      CARD_NAME_TRANSLATE_FROM,
+      CARD_NAME_TRANSLATE_TO,
+    } = await import("@dm-ai/core");
     const { normalizeCardName } = await import("../src/card-search.js");
     const samples = [
       ...[...CARD_NAME_STRIP_CHARS].map((c) => `あ${c}い`),
+      ...[...CARD_NAME_DASH_CHARS].map((c) => `あ${c}い`),
+      "ヨミジ 丁-二式",
+      "ヨミジ 丁―二式",
+      "ボルシャック・ドラゴン−",
       "“轟轟轟”ブランド",
       '"轟轟轟"ブランド',
       "＂轟轟轟＂ブランド",
@@ -122,7 +132,7 @@ describe.skipIf(!hasTestDb)("カード名正規化: SQL と TS の一致 (統合
       "ＤＧ",
     ];
     const rows = await sql`
-      SELECT s, lower(translate(normalize(s, NFKC), ${CARD_NAME_STRIP_CHARS}, '')) AS k
+      SELECT s, lower(translate(normalize(s, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO})) AS k
       -- text[] リテラルは空白・引用符を含む要素で壊れるので jsonb 経由で渡す (apps/api/src/card.ts と同じ)
       FROM jsonb_array_elements_text(${sql.json(samples)}::jsonb) AS s
     `;

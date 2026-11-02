@@ -40,15 +40,20 @@ export type RegulationIndex = ReadonlyMap<string, RegHit>;
  * 照合ロジックを2か所に書くとまたずれるので、ここ1か所にまとめている。
  *
  * - 全体名: {@link regulationNameKey} のキーで登録する。**全体名での登録が常に優先**。
+ *   同じキーが複数の行 (複数の区分) にあるときは、**行の順に関係なく強い区分を採る**
+ *   (プレミアム殿堂 > 殿堂入り > プレミアム殿堂コンビ。#167 ④。以前は後の行が上書きしていた)。
  * - ツインパクトの片面: {@link twinpactSideKeys} で `a` `b` も登録する。
  *   片面キーが別の規制の全体名と同じなら上書きしない。片面同士がぶつかったら強い規制を採る。
  */
 export function buildRegulationIndex(regulations: readonly RegulationRow[]): RegulationIndex {
   const index = new Map<string, RegHit>();
-  // 1) 全体名。完全一致はいつも片面より優先する。
+  // 1) 全体名。完全一致はいつも片面より優先する。同じキーが重なったら強い区分 (同じ強さなら先の行)。
   for (const reg of regulations) {
     const key = regulationNameKey(reg.card_name);
-    index.set(key, { id: key, restriction: reg.restriction_type });
+    const prev = index.get(key);
+    if (!prev || strength(reg.restriction_type) > strength(prev.restriction)) {
+      index.set(key, { id: key, restriction: reg.restriction_type });
+    }
   }
   const fullKeys = new Set(index.keys());
   // 2) ツインパクトの片面。全体名を上書きしない。片面同士の衝突は強い方。
