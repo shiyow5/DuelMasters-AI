@@ -108,8 +108,10 @@ describe.skipIf(!hasTestDb)("GET /api/meta/tier (統合)", () => {
   });
 
   it("4週のスナップショットだけがあるとき、2w/8w はその場集計で期間ごとに件数・期間が変わる (#180)", async () => {
+    // 終わりを昨日にして、応答の期間がスナップショットの範囲 (今日ではない) になることも見る。
+    // 長さはちょうど 28 日 (snapshot-meta と同じ作り方)
     await sql`INSERT INTO meta_snapshots (format, period_start, period_end, tier_data)
-      VALUES ('original', ${daysAgo(28)}, ${daysAgo(1)},
+      VALUES ('original', ${daysAgo(29)}, ${daysAgo(1)},
               ${sql.json([{ archetype: "スナップ4週", usage_rate: 100, count: 102, tier: "S" }])})`;
     // 同じアーキタイプが時期をずらして出ている。期間が長いほど件数が増える
     await sql`INSERT INTO archetype_weekly_stats
@@ -138,7 +140,7 @@ describe.skipIf(!hasTestDb)("GET /api/meta/tier (統合)", () => {
     ]);
     // DATE 列は Date として読まれて JSON では時刻つきになるので、日付部分で比べる
     expect([w4.period_start, w4.period_end].map((d) => String(d).slice(0, 10))).toEqual([
-      daysAgo(28),
+      daysAgo(29),
       daysAgo(1),
     ]);
 
