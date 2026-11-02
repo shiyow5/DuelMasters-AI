@@ -1,4 +1,5 @@
 import type { Citation } from "./types";
+import { safeUrl } from "./safe-url";
 
 /**
  * 出典ラベル。`packages/agent/src/graph.ts` の sourceLabel と同じ分類に揃える。
@@ -43,4 +44,14 @@ export function dedupeCitations(citations: Citation[]): Citation[] {
     out.push(c);
   }
   return out;
+}
+
+/**
+ * 「出典を開く」リンクの href。出せないときは空文字。
+ *
+ * 出典 URL は RAG のメタデータ由来で、Markdown 本文と同じく信頼できない入力として扱う。
+ * scheme は Markdown のリンクと同じ許可制 (`safeUrl`) で通し、`javascript:` などは落とす。
+ */
+export function citationHref(c: Citation): string {
+  return typeof c.url === "string" ? safeUrl(c.url) : "";
 }
