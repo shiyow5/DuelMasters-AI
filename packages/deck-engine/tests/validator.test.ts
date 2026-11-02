@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseDecklist } from "../src/parser.js";
-import { validateRegulation, checkRestrictions } from "../src/validator.js";
+import { validateRegulation, checkRestrictions, checkExtraZones } from "../src/validator.js";
 import { regulationNameKey, mergeEntriesByName, twinpactSideKeys } from "../src/card-name.js";
 
 // DATABASE_URL 無しで実行される前提 (vitest.config.ts で強制)。
@@ -313,5 +313,70 @@ describe("checkRestrictions 区分の上書き順 (#167 ④)", () => {
     ]);
     expect(r.errors).toEqual(["「重複カード」は殿堂入りのため1枚までです (現在: 2枚)"]);
     expect(r.warnings).toEqual([]);
+  });
+});
+
+describe("ゾーン (超次元・GR) と40枚判定 (QA② / #165 B-07)", () => {
+  const ZONE_WARNING =
+    "オリジナルでは超次元・GRゾーンを使えません (超次元ゾーン8枚・GRゾーン12枚)。メインデッキだけで評価しています";
+  const withZones = (main: string) =>
+    [
+      "メインデッキ",
+      main,
+      "超次元ゾーン",
+      "4 超次元A",
+      "4 超次元B",
+      "GRゾーン",
+      "2 GR1\n2 GR2\n2 GR3\n2 GR4\n2 GR5\n2 GR6",
+    ].join("\n");
+
+  it("見出し行は枚数に入らない (メインデッキ + 40枚 は valid)", async () => {
+    const deck = parseDecklist("メインデッキ\n" + list(40));
+    expect(deck.totalCards).toBe(40);
+    expect(await validateRegulation(deck, "advance")).toEqual({
+      valid: true,
+      errors: [],
+      warnings: [DB_SKIP_WARNING],
+    });
+  });
+
+  it("メイン40枚判定は超次元/GR を含まない (40+8+12 は枚数違反にならない)", async () => {
+    const res = await validateRegulation(parseDecklist(withZones(list(40))), "advance");
+    expect(res).toEqual({ valid: true, errors: [], warnings: [DB_SKIP_WARNING] });
+  });
+
+  it("超次元/GR を足してもメインが39枚なら枚数エラー (現在: 39枚)", async () => {
+    const res = await validateRegulation(parseDecklist(withZones(list(39))), "advance");
+    expect(res.errors).toEqual(["デッキは40枚ちょうどである必要があります (現在: 39枚)"]);
+  });
+
+  it("オリジナルで超次元/GR 入りは警告のみで valid のまま", async () => {
+    const res = await validateRegulation(parseDecklist(withZones(list(40))), "original");
+    expect(res).toEqual({ valid: true, errors: [], warnings: [ZONE_WARNING, DB_SKIP_WARNING] });
+  });
+
+  it("4枚制限は超次元/GR のカードにも掛かる", async () => {
+    const deck = parseDecklist(list(40) + "\n超次元ゾーン\n5 超次元A");
+    const res = await validateRegulation(deck, "advance");
+    expect(res.errors).toEqual(["「超次元A」は最大4枚までです (現在: 5枚)"]);
+  });
+
+  it("重大度を error にすると同じ指摘がエラーになる (格上げの切り替え口)", () => {
+    const deck = parseDecklist(withZones(list(40)));
+    expect(checkExtraZones(deck, "original")).toEqual({
+      severity: "warning",
+      message: ZONE_WARNING,
+    });
+    expect(checkExtraZones(deck, "original", "error")).toEqual({
+      severity: "error",
+      message: "オリジナルでは超次元・GRゾーンを使えません (超次元ゾーン8枚・GRゾーン12枚)",
+    });
+  });
+
+  it("アドバンス・ゾーン無しのデッキでは何も返さない", () => {
+    expect(checkExtraZones(parseDecklist(withZones(list(40))), "advance")).toBeNull();
+    expect(checkExtraZones(parseDecklist(list(40)), "original")).toBeNull();
+    // autoBuild の結果のように zones を持たないデッキ
+    expect(checkExtraZones({ entries: [], totalCards: 0, errors: [] }, "original")).toBeNull();
   });
 });

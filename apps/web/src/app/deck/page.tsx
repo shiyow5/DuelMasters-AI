@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiPost, apiGet, apiDelete } from "@/lib/api";
 import { scoreGrade } from "@/lib/format";
+import { savedCardsToDecklist, type SavedDeckCard } from "@/lib/deck-text";
 import { supabase } from "@/lib/supabase";
 import type { DeckScore, ValidationResult, SavedDeckSummary } from "@/lib/types";
 import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";
@@ -129,16 +130,18 @@ export default function DeckPage() {
     setPageError("");
     try {
       const deck = await apiGet<{
-        cards: Array<{ name: string; count: number }>;
+        // 超次元・GR の行は zone 付きで保存される (メインは zone 無し)。QA②
+        cards: SavedDeckCard[];
         format: "original" | "advance";
         // 保存時に計算・保存済みのスコア (#133)。GET /:id が返すので、
         // 読み込んだら再評価せずに即表示する (以前は捨てて「評価する」を押し直させていた)。
         scores: DeckScore | null;
       }>(`/api/deck/${id}`);
-      setDecklist(deck.cards.map((c) => `${c.count} ${c.name}`).join("\n"));
+      setDecklist(savedCardsToDecklist(deck.cards));
       setFormat(deck.format);
       setScore(deck.scores ?? null);
-      setDeckEntries(deck.cards);
+      // グリッドは評価時と同じくメインデッキだけ
+      setDeckEntries(deck.cards.filter((c) => !c.zone));
       // 殿堂チェック (validation) は保存していないので復元しない。スコアだけ即表示する。
       setValidation(null);
       setBuildResult("");
@@ -473,6 +476,18 @@ export default function DeckPage() {
               </div>
             ) : score ? (
               <div className="space-y-4">
+                {/*
+                  レギュレーションの警告 (valid のまま評価を続けたもの。例: オリジナルに超次元・GR。QA②)。
+                  以前は違反 (valid=false) のときしか出しておらず、評価が通ると警告が見えなかった。
+                */}
+                {validation?.warnings.map((w, i) => (
+                  <div
+                    key={`v${i}`}
+                    className="p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm text-text-muted"
+                  >
+                    {w}
+                  </div>
+                ))}
                 {score.warnings.map((w, i) => (
                   <div
                     key={i}
