@@ -120,4 +120,27 @@ describe("search_cards の SQL が共通の文字集合を使う (#167)", () => 
       "lower(translate(normalize(name, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO}))",
     );
   });
+
+  it("公式の規制カード127件 (表記ゆれ込み) で deck-engine の regulationNameKey と同じ結果 (#167)", async () => {
+    const { regulationNameKey } = await import("@dm-ai/deck-engine/card-name");
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const fixture = join(
+      import.meta.dirname,
+      "../../deck-engine/tests/fixtures/official-regulations-2026-11-03.json",
+    );
+    const rows = JSON.parse(readFileSync(fixture, "utf8")) as Array<{ card_name: string }>;
+    expect(rows).toHaveLength(127);
+    for (const { card_name: n } of rows) {
+      for (const s of [
+        n,
+        n.replace(/[・･]/g, ""),
+        `《${n}》`,
+        n.replace(/ー/g, "－"),
+        n.normalize("NFKD"),
+      ]) {
+        expect(normalizeCardName(s)).toBe(regulationNameKey(s));
+      }
+    }
+  });
 });
