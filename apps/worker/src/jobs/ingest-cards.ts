@@ -236,17 +236,27 @@ export async function crawlCards(deps: CrawlDeps, opts: CardsOptions = {}): Prom
   let stop: CrawlStop = "max-pages";
 
   pageLoop: for (let page = startPage; page <= lastAllowed; page++) {
-    let ids: string[];
-    try {
-      ids = await deps.fetchListIds(page);
-    } catch (err) {
-      warn(`ページ ${page} 一覧取得失敗: ${(err as Error).message}`);
-      stop = "list-error";
-      break;
+    let fresh: string[] = [];
+    // 最終ページの先は空 (または同じ id の繰り返し) が返る。ただし途中のページが
+    // 一時的に空を返すこともあり、それを終端とみなすと以降の id を全部「消えた」と
+    // 誤検出する (#202)。空なら同じページを1回だけ取り直し、それでも空なら終端とする。
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        warn(`ページ ${page} が空だったので取り直します`);
+        await deps.sleep(DELAY_MS);
+      }
+      let ids: string[];
+      try {
+        ids = await deps.fetchListIds(page);
+      } catch (err) {
+        warn(`ページ ${page} 一覧取得失敗: ${(err as Error).message}`);
+        stop = "list-error";
+        break pageLoop;
+      }
+      fresh = ids.filter((id) => !seen.has(id));
+      if (fresh.length > 0) break;
     }
-    const fresh = ids.filter((id) => !seen.has(id));
     if (fresh.length === 0) {
-      // 最終ページの先は空 (または同じ id の繰り返し) が返る
       stop = "end";
       break;
     }

@@ -93,8 +93,15 @@ describe("selectNewIds", () => {
 });
 
 /** 1ページ2枚のフェイク一覧。pages[i] が i+1 ページ目。範囲外は空 (公式の終端と同じ) */
-function fakeDeps(pages: string[][], known: string[], failPage?: number) {
+function fakeDeps(
+  pages: string[][],
+  known: string[],
+  failPage?: number,
+  /** このページは最初の n 回だけ空を返す (一時的な空応答の再現) */
+  flakyEmpty?: { page: number; times: number },
+) {
   const listCalls: number[] = [];
+  let flakyLeft = flakyEmpty?.times ?? 0;
   const detailCalls: string[] = [];
   const upserted: string[] = [];
   const warns: string[] = [];
@@ -102,6 +109,10 @@ function fakeDeps(pages: string[][], known: string[], failPage?: number) {
     async fetchListIds(page) {
       listCalls.push(page);
       if (page === failPage) throw new Error("HTTP 500");
+      if (flakyEmpty && page === flakyEmpty.page && flakyLeft > 0) {
+        flakyLeft--;
+        return [];
+      }
       return pages[page - 1] ?? [];
     },
     async fetchDetail(id) {
@@ -157,7 +168,8 @@ describe("crawlCards (diff)", () => {
     const f = fakeDeps(pages, [...known, "gone1"]);
     const r = await crawlCards(f.deps, { stopAfterEmptyPages: 100 });
     expect(r.stop).toBe("end");
-    expect(f.listCalls).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    // 終端の空ページは取り直すので2回 (#202)
+    expect(f.listCalls).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 8]);
     expect(f.detailCalls).toEqual(["n1", "n2", "n3"]);
     expect(r.removedIds).toEqual(["gone1"]);
     expect(f.warns.some((w) => w.includes("gone1") && w.includes("削除はしない"))).toBe(true);
@@ -195,7 +207,8 @@ describe("crawlCards (ページ範囲)", () => {
   it("full: 範囲の途中で一覧が終われば end で止まる。2ページ目以降からの開始では消えた id を判定しない", async () => {
     const f = fakeDeps(pages, ["zz"]);
     const r = await crawlCards(f.deps, { mode: "full", startPage: 4, maxPages: 80 });
-    expect(f.listCalls).toEqual([4, 5, 6]);
+    // 終端の空ページは取り直すので2回 (#202)
+    expect(f.listCalls).toEqual([4, 5, 6, 6]);
     expect(r.stop).toBe("end");
     expect(r.pages).toBe(2);
     expect(r.removedIds).toBeNull();
@@ -226,5 +239,46 @@ describe("crawlCards (ページ範囲)", () => {
     expect(r2.stop).toBe("list-error");
     expect(r2.pages).toBe(2);
     expect(r2.removedIds).toBeNull();
+  });
+});
+
+describe("crawlCards (途中ページの空応答, #202)", () => {
+  const pages = [
+    ["a1", "a2"],
+    ["b1", "b2"],
+    ["c1", "c2"],
+    ["d1", "d2"],
+  ];
+  const known = ["a1", "a2", "b1", "b2", "c1", "c2", "d1", "d2", "old"];
+
+  it("途中のページが1回だけ空を返しても、取り直して最後まで読み、消えた id を誤検出しない", async () => {
+    const f = fakeDeps(pages, known, undefined, { page: 2, times: 1 });
+    const r = await crawlCards(f.deps, { mode: "list" });
+    expect(r.stop).toBe("end");
+    expect(r.pages).toBe(4);
+    expect(r.removedIds).toEqual(["old"]);
+    expect(f.listCalls).toEqual([1, 2, 2, 3, 4, 5, 5]);
+  });
+
+  it("本当の最終ページの後は、取り直しても空なので従来どおり終端として消えた id を出す", async () => {
+    const f = fakeDeps(pages, known);
+    const r = await crawlCards(f.deps, { mode: "list" });
+    expect(r.stop).toBe("end");
+    expect(r.lastPage).toBe(4);
+    expect(r.removedIds).toEqual(["old"]);
+  });
+
+  it("取り直しで一覧取得に失敗したら list-error (消えた id は判定しない)", async () => {
+    const f = fakeDeps(pages, known, undefined, { page: 2, times: 1 });
+    // 2ページ目: 1回目は空、2回目は例外
+    const orig = f.deps.fetchListIds;
+    let calls = 0;
+    f.deps.fetchListIds = async (page) => {
+      if (page === 2 && ++calls === 2) throw new Error("HTTP 503");
+      return orig(page);
+    };
+    const r = await crawlCards(f.deps, { mode: "list" });
+    expect(r.stop).toBe("list-error");
+    expect(r.removedIds).toBeNull();
   });
 });
