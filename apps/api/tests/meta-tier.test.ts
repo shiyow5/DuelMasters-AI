@@ -11,6 +11,13 @@ function makeApp() {
 
 const today = new Date().toISOString().split("T")[0];
 
+/** route と同じ計算 (ローカル日付で n 日戻して ISO 日付にする) */
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().split("T")[0];
+}
+
 describe.skipIf(!hasTestDb)("GET /api/meta/tier (統合)", () => {
   const sql = getTestSql()!;
   beforeAll(() => enableAppDb());
@@ -47,6 +54,57 @@ describe.skipIf(!hasTestDb)("GET /api/meta/tier (統合)", () => {
     const res = await makeApp().request("/api/meta/tier?format=original");
     const body = (await res.json()) as { tier_data: Array<{ archetype: string }> };
     expect(body.tier_data.map((t) => t.archetype)).toEqual(["アグロ"]);
+  });
+
+  it("期間 (2w/4w/8w) ごとに別の集計を返す (同じ長さのスナップショットだけを使う)", async () => {
+    // cron が作るのは 4 週ぶんのスナップショットだけ (ingest-cron.yml の snapshot:meta ... 4)。
+    // 期間の長さを見ずに最新を返すと、2w/8w でもこの 4 週ぶんが返ってしまう (QA③)。
+    await sql`INSERT INTO meta_snapshots (format, period_start, period_end, tier_data)
+      VALUES ('original', ${daysAgo(28)}, ${today},
+              ${sql.json([{ archetype: "スナップ4週", usage_rate: 100, count: 1, tier: "S" }])})`;
+    // 週次ランキング: 直近 2 週・2〜4 週前・4〜8 週前に 1 件ずつ
+    await sql`INSERT INTO archetype_weekly_stats
+      (format, period_start, period_end, deck_archetype, entries, total_entries)
+      VALUES ('original', ${daysAgo(9)}, ${daysAgo(3)}, '直近', 10, 10),
+             ('original', ${daysAgo(26)}, ${daysAgo(20)}, '中間', 10, 10),
+             ('original', ${daysAgo(51)}, ${daysAgo(45)}, '古い', 10, 10)`;
+
+    const archetypesOf = async (period: string) => {
+      const res = await makeApp().request(`/api/meta/tier?format=original&period=${period}`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        period: string;
+        period_start: string;
+        tier_data: Array<{ archetype: string }>;
+      };
+      return { ...body, names: body.tier_data.map((t) => t.archetype).sort() };
+    };
+
+    const w2 = await archetypesOf("2w");
+    const w4 = await archetypesOf("4w");
+    const w8 = await archetypesOf("8w");
+
+    // 4w は同じ長さのスナップショットがあるのでそれを使う
+    expect(w4.names).toEqual(["スナップ4週"]);
+    // 2w / 8w は同じ長さのスナップショットが無いので、その場集計に落ちる
+    expect(w2.names).toEqual(["直近"]);
+    expect(w8.names).toEqual(["中間", "古い", "直近"].sort());
+    expect(w2.period).toBe("2w");
+    expect(w8.period).toBe("8w");
+    expect(w2.period_start).toBe(daysAgo(14));
+    expect(w8.period_start).toBe(daysAgo(56));
+  });
+
+  it("同じ長さのスナップショットがあれば、その期間でも使う (8w)", async () => {
+    await sql`INSERT INTO meta_snapshots (format, period_start, period_end, tier_data)
+      VALUES ('original', ${daysAgo(28)}, ${today},
+              ${sql.json([{ archetype: "スナップ4週", usage_rate: 100, count: 1, tier: "S" }])}),
+             ('original', ${daysAgo(56)}, ${today},
+              ${sql.json([{ archetype: "スナップ8週", usage_rate: 100, count: 1, tier: "S" }])})`;
+
+    const res = await makeApp().request("/api/meta/tier?format=original&period=8w");
+    const body = (await res.json()) as { tier_data: Array<{ archetype: string }> };
+    expect(body.tier_data.map((t) => t.archetype)).toEqual(["スナップ8週"]);
   });
 
   it("データが無ければ空のティア表を返す", async () => {

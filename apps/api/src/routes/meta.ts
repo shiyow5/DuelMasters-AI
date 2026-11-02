@@ -118,12 +118,16 @@ metaRouter.get("/tier", async (c) => {
   try {
     const sql = getSql();
 
-    // スナップショットから最新を取得
+    // 要求された期間と**同じ長さ**のスナップショットのうち最新を取る。
+    // 長さを見ないと、cron が作る 4 週ぶんのスナップショットが 2w / 8w にも返ってしまい、
+    // 期間ボタンが効かない (QA③)。該当が無ければ下のその場集計に落とす。
+    // snapshot-meta は period_start = period_end - weeks*7日 で作るので、日数の差で照合する。
     const snapshots = await sql`
       SELECT tier_data, period_start, period_end, created_at
       FROM meta_snapshots
       WHERE format = ${format}
         AND period_end >= ${isoDate(periodStart)}
+        AND (period_end - period_start) = ${weeks * 7}
       ORDER BY period_end DESC
       LIMIT 1
     `;
