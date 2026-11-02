@@ -1,0 +1,112 @@
+name: DB readonly check (#186 判定用)
+
+# 本番 DB から3つの値を **読むだけ** の workflow。#186 (8w=4w 問題) がバグか正常かの判定に使う (Issue #200)。
+#
+# - 手動実行 (workflow_dispatch) のみ。push / schedule では動かない。入力は受けない。
+# - 流す SQL は下の READONLY_SQL 1本に固定。任意の SQL は流せない。
+# - 書き込み不可: BEGIN READ ONLY の中で読み、最後は ROLLBACK。
+#   さらにトランザクション内で SHOW transaction_read_only が on であることを確かめてから値を読む。
+#   (PGOPTIONS の -c は Supabase の接続プーラーで弾かれることがあるため、トランザクション側で縛る)
+#
+# 接続情報をログに出さないための決まり (migrate-010.yml と同じ):
+# - set -x を使わない。DATABASE_URL を echo しない。
+# - ホスト・ユーザー・パスワード・ポート付きホストは ::add-mask:: で伏せる (Secret 全体は GitHub が自動で伏せる)。
+# - psql の stderr はファイルに落とし、ERROR/FATAL 等の行だけをホストや IP を伏せて出す。
+#
+# 判定が済んだらこの workflow は役目を終える (削除してよい)。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-readonly-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: read 3 values (read-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 接続情報を伏せる
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Secret DATABASE_URL が無い"
+            exit 1
+          fi
+          # 各部分を ::add-mask:: する。値そのものは表示されない (コマンド行は runner が消費する)。
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit, unquote
+          u = urlsplit(os.environ["DATABASE_URL"])
+          vals = {u.hostname, u.username, u.password, u.netloc}
+          if u.password:
+              vals.add(unquote(u.password))
+          if u.username:
+              vals.add(unquote(u.username))
+          if u.hostname and u.port:
+              vals.add(f"{u.hostname}:{u.port}")
+          for v in vals:
+              if v and len(v) >= 3:
+                  print(f"::add-mask::{v}")
+          PY
+
+      - name: 3つの値を読む (BEGIN READ ONLY → ROLLBACK)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PGCONNECT_TIMEOUT: "20"
+        run: |
+          set -euo pipefail
+          err="$RUNNER_TEMP/psql.err"
+          # 失敗時: ERROR/FATAL/DETAIL/HINT の行だけ、ホスト・IP を伏せて出す。
+          show_err() {
+            grep -E '(ERROR|FATAL|DETAIL|HINT):' "$err" \
+              | sed -E 's/"[^"]*"/"***"/g; s/\([0-9a-fA-F.:]+\)/(***)/g; s/[0-9]{1,3}(\.[0-9]{1,3}){3}/***/g' \
+              | head -n 20 || true
+          }
+
+          # 1行目: transaction_read_only (on のはず) / 2行目: cards|untagged|oldest_week
+          if ! out=$(psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At 2> "$err" <<'SQL'
+          BEGIN READ ONLY;
+          SET LOCAL statement_timeout = '60s';
+          SHOW transaction_read_only;
+          SELECT (SELECT count(*) FROM cards) AS cards, (SELECT count(*) FROM cards WHERE tags_updated_at IS NULL) AS untagged, (SELECT MIN(period_start) FROM archetype_weekly_stats) AS oldest_week;
+          ROLLBACK;
+          SQL
+          ); then
+            echo "::error::DB への問い合わせに失敗 (接続情報は出さない)"
+            show_err
+            exit 1
+          fi
+
+          ro=$(printf '%s\n' "$out" | sed -n '1p')
+          row=$(printf '%s\n' "$out" | sed -n '2p')
+          if [ "$ro" != "on" ]; then
+            echo "::error::read-only トランザクションになっていない (transaction_read_only=$ro)"
+            exit 1
+          fi
+          IFS='|' read -r cards untagged oldest_week <<< "$row"
+          if ! [[ "$cards" =~ ^[0-9]+$ && "$untagged" =~ ^[0-9]+$ ]]; then
+            echo "::error::想定外の結果"
+            exit 1
+          fi
+
+          echo "transaction_read_only=$ro"
+          echo "cards=$cards"
+          echo "untagged=$untagged"
+          echo "oldest_week=${oldest_week:-NULL}"
+          {
+            echo "### DB readonly check"
+            echo ""
+            echo "| key | value |"
+            echo "|---|---|"
+            echo "| transaction_read_only | $ro |"
+            echo "| cards | $cards |"
+            echo "| untagged | $untagged |"
+            echo "| oldest_week | ${oldest_week:-NULL} |"
+          } >> "$GITHUB_STEP_SUMMARY"
