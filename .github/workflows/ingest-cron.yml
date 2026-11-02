@@ -6,7 +6,12 @@ name: Ingest (cron)
 # ジョブごとに更新頻度も所要時間も違うので、まとめて1本にせず種別ごとに分ける。
 # - regulations (殿堂): 改定は不定期だが軽い。毎日。
 # - rules (総合ルール PDF): 改訂は年数回。週1で十分。URL とバージョンは自動発見する。
-# - cards: 新弾のたび。週1。全件で時間がかかる。
+# - cards: 新弾のたび。週1は**差分** (DB に無い id だけ詳細を取る。新しい順の一覧で、
+#   新規の無いページが3ページ続いたら終える)。数分〜十数分。
+# - cards-full-N: 全件の取り直し (テキスト修正・エラッタの反映)。月1回。1枚約1.13秒 × 2万枚超で
+#   1ジョブには収まらないので、ページ N から80ページずつに分けて直列に流す (各 約75分)。
+# - cards-check: 一覧だけを最後まで読み、公式から消えた id を**ログに出すだけ** (削除はしない)。月1回。
+# - faq: 取り込む URL が決まっていないので cron と all には入れない。手動で faq_urls を渡したときだけ走る。
 # - rulings (裁定 Q&A): 3000件超・重複排除つき。週1。
 # - tournaments (大会結果): 取込元の週次ランキングが翌月曜の夜に出る。火曜朝に週1。
 # - deneblog (CS入賞デッキレシピ画像): 記事は毎日出るが一覧は新着順。火曜朝に週1で足りる。
@@ -25,17 +30,42 @@ on:
     # 月曜 04:00 JST の枠に相乗りさせると、その週のランキングが出る前に走ってしまい、
     # メタが常に1週遅れる。公開後に確実に回るよう翌朝へずらす。
     - cron: "0 21 * * 1"
+    # 毎月2日 07:30 JST (22:30 UTC 1日) — カード全件の取り直し (cards-full-*) と消えた id の点検
+    # 6ジョブ × 約75分 ≒ 7時間半。他の cron が終わった後に始まり、翌 03:00 JST の殿堂より前に終わる時刻にする。
+    # (concurrency の待ちは1本だけなので、待っている間に別の cron が来ると先に待っていた方が取り消される)
+    - cron: "30 22 1 * *"
   workflow_dispatch:
     inputs:
       job:
         # all は cron で回している取込をまとめて実行する。
         # tags は増分 (tags_updated_at IS NULL のカードのみ) なので、all に含めても安全 (#120)。
         # ただし**初回は全カードに LLM を当てる**ので時間と課金がかかる。
-        description: "実行するジョブ (all = 全取込。tags は未試行カードのみ)"
+        # faq と cards-full は all に含めない (faq は URL 必須、cards-full は約7時間半かかる)。
+        # cards-full は cards-full-1〜401 と cards-check をまとめて実行する。
+        description: "実行するジョブ (all = 全取込。faq / cards-full は含まない。tags は未試行カードのみ)"
         type: choice
         options:
-          [regulations, rules, cards, rulings, faq, tournaments, deneblog, tags, snapshot, all]
+          [
+            regulations,
+            rules,
+            cards,
+            cards-full,
+            rulings,
+            faq,
+            tournaments,
+            deneblog,
+            tags,
+            snapshot,
+            all,
+          ]
         default: regulations
+      faq_urls:
+        # job=faq のときだけ使う。空なら faq はスキップする (notice のみ、失敗にしない)。
+        # ruling 指定では渡さない: rulings ジョブの掃除 (qa_id NOT IN keep) で消されるか二重に入るため。
+        description: "faq で取り込む URL (空白区切り。job=faq のときだけ使う)"
+        type: string
+        required: false
+        default: ""
 
 concurrency:
   # 取込は同じ本番 DB を書き換えるので、cron と手動実行を含めて全体を直列化する。
@@ -57,8 +87,9 @@ jobs:
     # rulings と cards だけ長い。
     # - rulings: 現行 (約3,955件) + 過去 (約3,246件) の 7,200件超を1本で取り込むため
     #   (一覧396ページ + 詳細7,200ページ + 埋め込み)。
-    # - cards: 初回の全件取り込みが 90分で打ち切られた (22:38Z〜00:09Z) ため 180分にする。
-    #   それでも切れる場合は cards ジョブの分割を検討する。
+    # - cards: 初回の全件取り込みが 90分で打ち切られた (22:38Z〜00:09Z) ため 180分にした (#174)。
+    #   今は差分なので数分〜十数分で終わるが、DB に無いカードが多い週の余裕として 180分のまま残す。
+    #   全件の取り直しは cards-full-* に分けた (各80ページ ≒ 75分。90分枠)。
     # 他のジョブまで延ばすと、ハングしたときに気づくのが遅れるので 90分のまま。
     timeout-minutes: ${{ matrix.job == 'rulings' && 240 || matrix.job == 'cards' && 180 || 90 }}
     strategy:
@@ -68,7 +99,27 @@ jobs:
         # 並び順がそのまま実行順になる (max-parallel: 1)。
         # snapshot は tournaments が入れたデータを集計するので、必ず後ろに置く。
         # tags は cards の後ろに置く (その週の新規カードを同じ実行内でタグ付けするため)。
-        job: [regulations, rules, cards, rulings, faq, tournaments, deneblog, tags, snapshot]
+        # cards-full-N の N は開始ページ (80ページずつ)。最後の 401 だけは一覧の最後まで読む
+        # (2026-11 時点で一覧は479ページ。新弾で増えても取りこぼさないため)。
+        job:
+          [
+            regulations,
+            rules,
+            cards,
+            cards-full-1,
+            cards-full-81,
+            cards-full-161,
+            cards-full-241,
+            cards-full-321,
+            cards-full-401,
+            cards-check,
+            rulings,
+            faq,
+            tournaments,
+            deneblog,
+            tags,
+            snapshot,
+          ]
     steps:
       - name: 実行対象か判定
         id: scope
@@ -76,14 +127,18 @@ jobs:
           SCHEDULE: ${{ github.event.schedule }}
           INPUT_JOB: ${{ github.event.inputs.job }}
           JOB: ${{ matrix.job }}
+          FAQ_URLS: ${{ github.event.inputs.faq_urls }}
         run: |
           run=false
           if [ -n "$INPUT_JOB" ]; then
             # 手動実行: 指定ジョブ。all は cron で回している取込をまとめて実行する。
             if [ "$INPUT_JOB" = "$JOB" ]; then
               run=true
+            elif [ "$INPUT_JOB" = "cards-full" ]; then
+              case "$JOB" in cards-full-* | cards-check) run=true ;; esac
             elif [ "$INPUT_JOB" = "all" ]; then
-              case "$JOB" in regulations | rules | cards | rulings | faq | tournaments | deneblog | tags | snapshot) run=true ;; esac
+              # faq は URL 必須なので入れない。cards-full は長すぎるので月次の cron と手動の cards-full で回す。
+              case "$JOB" in regulations | rules | cards | rulings | tournaments | deneblog | tags | snapshot) run=true ;; esac
             fi
           elif [ "$SCHEDULE" = "0 18 * * *" ]; then
             # 毎日: 殿堂のみ
@@ -92,10 +147,20 @@ jobs:
             # 毎週月曜 04:00 JST: 重いもの。
             # tags は cards の後に走り、**その週の新規カードだけ**をタグ付けする (#120)。
             # tags_updated_at が NULL のものだけを対象にするので、既存カードを再課金しない。
-            case "$JOB" in rules | cards | rulings | faq | tags) run=true ;; esac
+            # faq は取り込む URL が決まっていないので入れない (入れると毎週 failure になっていた)。
+            case "$JOB" in rules | cards | rulings | tags) run=true ;; esac
           elif [ "$SCHEDULE" = "0 21 * * 1" ]; then
             # 毎週火曜 06:00 JST: 大会結果 → メタ集計 (matrix の並び順どおり直列に走る)
             case "$JOB" in tournaments | deneblog | snapshot) run=true ;; esac
+          elif [ "$SCHEDULE" = "30 22 1 * *" ]; then
+            # 毎月: カード全件の取り直しと点検。tags は翌週の週次 cron が新規分を拾う。
+            case "$JOB" in cards-full-* | cards-check) run=true ;; esac
+          fi
+          # faq は URL が無ければ失敗にせずスキップする (セットアップ前に判定する)
+          if [ "$run" = "true" ] && [ "$JOB" = "faq" ] && [ -z "${FAQ_URLS//[[:space:]]/}" ]; then
+            echo "::notice::faq は URL 未指定のためスキップ"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
           if [ "$run" != "true" ]; then echo "::notice::$JOB は今回の対象外"; fi
@@ -129,9 +194,28 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           JOB: ${{ matrix.job }}
+          # 入力値は env 経由で渡す (run: に直接展開するとシェルインジェクションになる)
+          FAQ_URLS: ${{ github.event.inputs.faq_urls }}
         run: |
-          # snapshot だけ script 名と引数が違う (メタ集計はフォーマットと期間を取る)。
+          # snapshot / faq / cards-* は script 名や引数が違う。
           case "$JOB" in
+            faq)
+              # URL が空のときは「実行対象か判定」でスキップ済み。空白区切りの URL を別々の引数として渡す (クォートしない)
+              # set -f: URL の ? や * をファイル名として展開させない
+              set -f
+              # shellcheck disable=SC2086
+              pnpm --filter @dm-ai/worker ingest:faq faq $FAQ_URLS
+              ;;
+            cards-full-401)
+              # 最後の区間は一覧の最後まで読む (ページ数の増加に追従するため)
+              pnpm --filter @dm-ai/worker ingest:cards --full --start-page 401
+              ;;
+            cards-full-*)
+              pnpm --filter @dm-ai/worker ingest:cards --full --start-page "${JOB#cards-full-}" --max-pages 80
+              ;;
+            cards-check)
+              pnpm --filter @dm-ai/worker ingest:cards --list-only
+              ;;
             snapshot)
               pnpm --filter @dm-ai/worker snapshot:meta original 4
               pnpm --filter @dm-ai/worker snapshot:meta advance 4
