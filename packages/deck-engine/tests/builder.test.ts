@@ -196,3 +196,123 @@ describe.skipIf(!hasTestDb)("autoBuild 必須カードの重複行 (統合)", ()
     expect(r.weaknesses.some((w) => w.includes("攻撃役が不足"))).toBe(true);
   });
 });
+
+/**
+ * #167 PR-B: autoBuild の殿堂判定 (classifyRegulations / takeCard / copyLimit / トリガー補充) が
+ * 完全一致ではなく正規化キー + ツインパクト片面で効くこと。
+ *
+ * プールは小さく、どのカードも上限まで入る (40枚に届かない) ようにしてある。
+ * なので「プレミアム殿堂は0枚」「殿堂入りは1枚」「規制外は4枚」をそのまま確かめられる。
+ */
+describe.skipIf(!hasTestDb)("autoBuild 殿堂判定の表記ゆれ・ツインパクト片面 (#167 統合)", () => {
+  const sql = getTestSql()!;
+  beforeAll(() => enableAppDb());
+  afterAll(async () => {
+    await sql.end();
+  });
+
+  async function seed(cardNames: string[], regs: Array<[string, string]>): Promise<void> {
+    await truncateAll(sql);
+    for (const name of cardNames) {
+      await sql`INSERT INTO cards (name, civilizations, cost, type, text, is_shield_trigger)
+        VALUES (${name}, '["fire"]', 2, 'creature', 'テスト効果', true)`;
+    }
+    for (const [cardName, restriction] of regs) {
+      await sql`INSERT INTO regulations (format, restriction_type, card_name, effective_from)
+        VALUES ('original', ${restriction}, ${cardName}, '2024-01-01')`;
+    }
+  }
+  const countOf = (r: { entries: Array<{ name: string; count: number }> }, name: string) =>
+    r.entries.filter((e) => e.name === name).reduce((s, e) => s + e.count, 0);
+
+  describe("ゆれ・片面", () => {
+    beforeEach(() =>
+      seed(
+        [
+          "ボルシャック･ドラゴン", // 規制は「ボルシャック・ドラゴン」(中黒の全角/半角)
+          "ガイアールカイザー", // 規制は「ガイアール・カイザー」(中黒なし)
+          '"轟轟轟"ブランド', // 規制は「“轟轟轟”ブランド」(ASCII 引用符)
+          "＂天災＂デドダム", // 規制は「“天災”デドダム」(全角引用符)
+          "音精　ラフルル", // 規制は「音精 ラフルル」(全角空白)
+          "龍装艦チェンジザ", // 規制は両面、カードは片面
+          "テスト片面X / テスト片面Y", // 規制は片面、カードは両面 (逆向き)
+          "通常札",
+        ],
+        [
+          ["ボルシャック・ドラゴン", "プレミアム殿堂"],
+          ["ガイアール・カイザー", "プレミアム殿堂"],
+          ["“轟轟轟”ブランド", "プレミアム殿堂"],
+          ["“天災”デドダム", "殿堂入り"],
+          ["音精 ラフルル", "殿堂入り"],
+          ["龍装艦 チェンジザ / 六奇怪の四 ～土を割る逆瀧～", "殿堂入り"],
+          ["テスト片面X", "プレミアム殿堂"],
+        ],
+      ),
+    );
+
+    it("中黒・引用符のゆれでもプレミアム殿堂は入らない", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "ボルシャック･ドラゴン")).toBe(0);
+      expect(countOf(r, "ガイアールカイザー")).toBe(0);
+      expect(countOf(r, '"轟轟轟"ブランド')).toBe(0);
+    });
+
+    it("引用符・空白のゆれでも殿堂入りは1枚だけ", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "＂天災＂デドダム")).toBe(1);
+      expect(countOf(r, "音精　ラフルル")).toBe(1);
+    });
+
+    it("規制が両面・カードが片面でも殿堂入りは1枚だけ", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "龍装艦チェンジザ")).toBe(1);
+    });
+
+    it("規制が片面・カードが両面でもプレミアム殿堂は入らない (逆向き)", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "テスト片面X / テスト片面Y")).toBe(0);
+    });
+
+    it("規制外のカードは上限まで入る", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "通常札")).toBe(4);
+    });
+
+    it("requiredCards の表記ゆれ・片面でも殿堂制約が効く", async () => {
+      const r = await autoBuild("テスト", "original", {
+        requiredCards: ["ボルシャックドラゴン", "テスト片面X / 別面", "六奇怪の四～土を割る逆瀧～"],
+      });
+      expect(countOf(r, "ボルシャックドラゴン")).toBe(0);
+      expect(countOf(r, "テスト片面X / 別面")).toBe(0);
+      expect(countOf(r, "六奇怪の四～土を割る逆瀧～")).toBe(1);
+      expect(
+        r.weaknesses.filter((w) => w.includes("プレミアム殿堂のため採用できません")),
+      ).toHaveLength(2);
+    });
+  });
+
+  describe("誤爆しない", () => {
+    beforeEach(() =>
+      seed(
+        ["ボルシャックの書", "ボルシャック・ドラゴン / 別の呪文", "ドラゴン", "ボルシャック"],
+        [
+          ["ボルシャック / ドラゴン", "プレミアム殿堂"],
+          ["ドラゴン", "殿堂入り"],
+        ],
+      ),
+    );
+
+    it("片面名を部分に含むだけの別カードは制約しない", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "ボルシャックの書")).toBe(4);
+      expect(countOf(r, "ボルシャック・ドラゴン / 別の呪文")).toBe(4);
+    });
+
+    it("全体名の規制が片面より優先する (「ドラゴン」は殿堂入りで1枚、禁止にはならない)", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "ドラゴン")).toBe(1);
+      // 全体名に無い片面「ボルシャック」はツインパクトの規制 (プレミアム殿堂) が効く
+      expect(countOf(r, "ボルシャック")).toBe(0);
+    });
+  });
+});

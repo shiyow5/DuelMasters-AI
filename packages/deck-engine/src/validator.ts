@@ -1,18 +1,12 @@
 import { DECK_SIZE, MAX_COPIES, type Format, type ValidationResult } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import type { ParsedDeck } from "./parser.js";
+import { mergeEntriesByName, type MergedEntry } from "./card-name.js";
 import {
-  mergeEntriesByName,
-  regulationNameKey,
-  twinpactSideKeys,
-  type MergedEntry,
-} from "./card-name.js";
-
-/** regulations テーブルの1行 (照合に使う列だけ) */
-export interface RegulationRow {
-  card_name: string;
-  restriction_type: string;
-}
+  buildRegulationIndex,
+  lookupRegulationByKey,
+  type RegulationRow,
+} from "./regulation-index.js";
 
 /**
  * デッキのレギュレーション準拠チェック
@@ -69,27 +63,6 @@ export async function validateRegulation(
 }
 
 /**
- * 規制の強さ。片面名のキーが2つの規制にぶつかったときは強いほうを採る
- * (弱いほうを採ると、すり抜けの穴を新しく作ることになる)。
- */
-const RESTRICTION_STRENGTH: Record<string, number> = {
-  プレミアム殿堂: 3,
-  殿堂入り: 2,
-  プレミアム殿堂コンビ: 1,
-};
-
-function strength(restriction: string): number {
-  return RESTRICTION_STRENGTH[restriction] ?? 0;
-}
-
-/** 照合で当たった規制1件 */
-interface RegHit {
-  /** 規制の全体名のキー (同じ規制に当たったデッキの行を合算するための ID) */
-  id: string;
-  restriction: string;
-}
-
-/**
  * 殿堂・プレミアム殿堂の判定 (DB に触らない純粋関数。テスト用に export)。
  *
  * `merged` は {@link mergeEntriesByName} で正規化キーごとに合算済みのデッキ。
@@ -112,29 +85,13 @@ export function checkRestrictions(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const regMap = new Map<string, RegHit>();
-  // 1) 全体名。完全一致はいつも片面より優先する。
-  for (const reg of regulations) {
-    const key = regulationNameKey(reg.card_name);
-    regMap.set(key, { id: key, restriction: reg.restriction_type });
-  }
-  const fullKeys = new Set(regMap.keys());
-  // 2) ツインパクトの片面。全体名を上書きしない。片面同士の衝突は強い方。
-  for (const reg of regulations) {
-    const id = regulationNameKey(reg.card_name);
-    for (const side of twinpactSideKeys(id)) {
-      if (fullKeys.has(side)) continue;
-      const prev = regMap.get(side);
-      if (!prev || strength(reg.restriction_type) > strength(prev.restriction)) {
-        regMap.set(side, { id, restriction: reg.restriction_type });
-      }
-    }
-  }
+  // 照合は regulation-index に一本化している (autoBuild と同じ索引を使う)
+  const regMap = buildRegulationIndex(regulations);
 
   // 同じ規制に当たった行をまとめる (並びは最初に当たった順)
   const hits = new Map<string, { restriction: string; names: string[]; count: number }>();
   for (const [key, entry] of merged) {
-    const hit = lookup(regMap, key);
+    const hit = lookupRegulationByKey(regMap, key);
     if (!hit) continue;
     const agg = hits.get(hit.id);
     if (agg) {
@@ -163,16 +120,4 @@ export function checkRestrictions(
   }
 
   return { errors, warnings };
-}
-
-/** デッキの1行のキーで規制を引く。全体名 → ツインパクトの片面 (当たった中で強い方) の順。 */
-function lookup(regMap: Map<string, RegHit>, key: string): RegHit | undefined {
-  const exact = regMap.get(key);
-  if (exact) return exact;
-  let best: RegHit | undefined;
-  for (const side of twinpactSideKeys(key)) {
-    const hit = regMap.get(side);
-    if (hit && (!best || strength(hit.restriction) > strength(best.restriction))) best = hit;
-  }
-  return best;
 }
