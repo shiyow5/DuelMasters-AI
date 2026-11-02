@@ -103,24 +103,34 @@ async function withMainCards<T extends { archetype: string }>(entries: T[]): Pro
   });
 }
 
-/** `/tier` が受け付ける期間 (B-11) */
+/** `/tier` と `/archetype/:name` が受け付ける期間 (B-11, #184) */
 const TIER_PERIODS = ["2w", "4w", "8w"] as const;
+
+/** period が不正なときの 400 応答の本文 */
+const PERIOD_ERROR = `period は ${TIER_PERIODS.join(" | ")} のいずれかを指定してください`;
+
+/**
+ * クエリの period を週数にする。未指定は 4w。
+ * Web が出すのは 2w / 4w / 8w だけなので、3w や 100w・"abc" などは黙って通さず null を返す
+ * (呼び出し側で 400 にする)。`/tier` と `/archetype/:name` で同じ判定を使う (#184)。
+ */
+function parsePeriodWeeks(raw: string | undefined): number | null {
+  const period = raw ?? "4w";
+  if (!(TIER_PERIODS as readonly string[]).includes(period)) return null;
+  return parseInt(period.slice(0, -1), 10);
+}
 
 metaRouter.get("/tier", async (c) => {
   const format = c.req.query("format") ?? "original";
   if (!(FORMATS as readonly string[]).includes(format)) {
     return c.json({ error: `format は ${FORMATS.join(" | ")} のいずれかを指定してください` }, 400);
   }
-  const period = c.req.query("period") ?? "4w";
   // Web が出すのは 2w / 4w / 8w だけ。3w や 100w を黙って通さない (B-11)
-  if (!(TIER_PERIODS as readonly string[]).includes(period)) {
-    return c.json(
-      { error: `period は ${TIER_PERIODS.join(" | ")} のいずれかを指定してください` },
-      400,
-    );
+  const weeks = parsePeriodWeeks(c.req.query("period"));
+  if (weeks === null) {
+    return c.json({ error: PERIOD_ERROR }, 400);
   }
 
-  const weeks = parseInt(period.replace("w", ""), 10);
   const periodEnd = new Date();
   const periodStart = new Date();
   periodStart.setDate(periodStart.getDate() - weeks * 7);
@@ -236,8 +246,11 @@ metaRouter.get("/archetype/:name", async (c) => {
    * 見ないと、詳細の優勝/Top4/記録数と直近結果だけが**全期間**になり、開いたカードと
    * 数字が矛盾する (2週間で5件のデッキを開くと「記録数25」と出る)。
    */
-  const period = c.req.query("period") ?? "4w";
-  const weeks = parseInt(period.replace("w", ""), 10) || 4;
+  // `/tier` と同じ判定。3w / 100w / "abc" などを別の窓で黙って集計しない (#184)
+  const weeks = parsePeriodWeeks(c.req.query("period"));
+  if (weeks === null) {
+    return c.json({ error: PERIOD_ERROR }, 400);
+  }
   const periodStart = new Date();
   periodStart.setDate(periodStart.getDate() - weeks * 7);
 
@@ -274,7 +287,8 @@ metaRouter.get("/archetype/:name", async (c) => {
     return c.json({
       archetype: name,
       format,
-      period,
+      // 受け取った文字列ではなく `/tier` と同じ `${weeks}w` で返す (#184)
+      period: `${weeks}w`,
       stats: stats[0],
       recent_results: results,
     });
@@ -283,6 +297,7 @@ metaRouter.get("/archetype/:name", async (c) => {
     return c.json({
       archetype: name,
       format,
+      period: `${weeks}w`,
       stats: { total_entries: 0, wins: 0, top4: 0, top8: 0 },
       recent_results: [],
     });

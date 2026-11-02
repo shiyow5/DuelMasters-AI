@@ -214,3 +214,28 @@ describe("GET /api/meta/tier の period 検証 (B-11)", () => {
     expect(body.error).toContain("2w | 4w | 8w");
   });
 });
+
+describe("GET /api/meta/archetype/:name の period 検証 (#184)", () => {
+  // /tier と同じ判定。検証は DB に触る前に行うので、DB なしでも走る
+  it.each(["3w", "100w", "0w", "abc", "4", ""])("period=%j は 400", async (period) => {
+    const res = await makeApp().request(
+      `/api/meta/archetype/ウィリデ?format=original&period=${encodeURIComponent(period)}`,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("2w | 4w | 8w");
+  });
+
+  it.each([
+    ["2w", "2w"],
+    ["4w", "4w"],
+    ["8w", "8w"],
+    [null, "4w"],
+  ])("period=%j は通り、応答の period は %j", async (period, expected) => {
+    const qs = period === null ? "" : `&period=${period}`;
+    const res = await makeApp().request(`/api/meta/archetype/ウィリデ?format=original${qs}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { period: string };
+    expect(body.period).toBe(expected);
+  });
+});
