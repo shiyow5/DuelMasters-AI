@@ -268,11 +268,15 @@ metaRouter.get("/archetype/:name", async (c) => {
     // ティア表と同じ期間窓で絞る (上のコメント参照)。
     const inPeriod = sql`event_date >= ${isoDate(periodStart)}`;
 
+    // event_date は DATE。postgres.js は DATE を JS の Date にするので、そのまま返すと
+    // c.json で時刻つき ("2026-10-04T00:00:00.000Z") になる。/tier と同じく to_char で
+    // YYYY-MM-DD にそろえる (#197, #185 と同じ事情)。並びは列そのもので決める。
     const results = await sql`
-      SELECT event_name, event_date, placement, participants, source_url, deck_archetype
+      SELECT event_name, to_char(event_date, 'YYYY-MM-DD') AS event_date,
+             placement, participants, source_url, deck_archetype
       FROM tournament_results
       WHERE ${match} AND format = ${format} AND ${inPeriod}
-      ORDER BY event_date DESC
+      ORDER BY tournament_results.event_date DESC
       LIMIT 20
     `;
 
