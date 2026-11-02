@@ -216,6 +216,25 @@ export function parseFreshnessArgs(argv: string[]): FreshnessThresholds | null {
   return thresholds;
 }
 
+/**
+ * 実行時エラーを、公開してよい要点 (code と name) だけの1行にする。
+ *
+ * このログの末尾は公開 Issue と Step Summary に貼られる (freshness.yml)。
+ * postgres.js の接続エラーは message や本体にホスト名・DB ユーザー名を含みうるので、
+ * message も err 本体も出さない。code / name は英数字と `_` だけの短い値に限って出す。
+ */
+export function describeRunError(err: unknown): string {
+  const pick = (v: unknown) => (typeof v === "string" && /^[A-Za-z0-9_]{1,40}$/.test(v) ? v : null);
+  const e = (typeof err === "object" && err !== null ? err : {}) as {
+    code?: unknown;
+    name?: unknown;
+  };
+  const code = pick(e.code);
+  const name = pick(e.name);
+  const parts = [code && `code=${code}`, name && `name=${name}`].filter(Boolean);
+  return parts.length > 0 ? parts.join(" ") : "詳細なし";
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const thresholds = parseFreshnessArgs(process.argv.slice(2));
   if (!thresholds) {
@@ -230,7 +249,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exit(r.ok ? 0 : 1);
     })
     .catch(async (err) => {
-      console.error("::error::鮮度チェックを実行できませんでした:", err);
+      // err 本体・message は出さない (接続情報を含みうる。describeRunError 参照)。
+      console.error(
+        `::error::鮮度チェックを実行できませんでした (${describeRunError(err)})。接続情報を含みうるので詳細は出していません`,
+      );
       await closeDb().catch(() => undefined);
       process.exit(1);
     });

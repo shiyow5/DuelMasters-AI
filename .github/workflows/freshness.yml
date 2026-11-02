@@ -71,6 +71,31 @@ jobs:
       - name: Build workspace packages
         run: pnpm build
 
+      # 接続エラーにホスト名・DB ユーザー名 (Supabase の project ref) が出ても、run のログで伏せる。
+      # GitHub が自動で伏せるのは Secret の値全体だけなので、部分ごとに ::add-mask:: する (migrate-010 と同じ)。
+      # 値そのものは表示されない (コマンド行は runner が消費する)。set -x は使わない。
+      - name: Mask DB connection parts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit, unquote
+          url = os.environ.get("DATABASE_URL", "")
+          if url:
+              u = urlsplit(url)
+              vals = {u.hostname, u.username, u.password, u.netloc}
+              if u.password:
+                  vals.add(unquote(u.password))
+              if u.username:
+                  vals.add(unquote(u.username))
+              if u.hostname and u.port:
+                  vals.add(f"{u.hostname}:{u.port}")
+              for v in vals:
+                  if v and len(v) >= 3:
+                      print(f"::add-mask::{v}")
+          PY
+
       - name: check freshness
         env:
           # 既存の取込用 Secret を読み取りにだけ使う (SELECT だけ。read only トランザクション)。
@@ -87,22 +112,27 @@ jobs:
             "--events-max-age=$EVENTS_MAX_AGE" 2>&1 | tee freshness.log
 
       # 失敗しても出力を Issue 本文に渡すため、always で拾う。
+      # 公開 Issue と Step Summary に貼る前に、接続情報 (ホスト・ユーザー・IP 等) を *** にする。
+      # ::add-mask:: はログにしか効かないので、貼る文面そのものを freshness-redact.py で置き換える。
+      # ::error:: などのワークフローコマンドも、Issue 本文で読みにくいので同じスクリプトで外す。
       - name: Collect report
         id: report
         if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           touch freshness.log
+          python3 .github/scripts/freshness-redact.py <freshness.log >freshness.safe.log
           delim="EOF_$(openssl rand -hex 8)"
           {
             echo "report<<$delim"
-            # ::error:: などのワークフローコマンドは Issue 本文では読みにくいので外す
-            sed -E 's/^::(error|warning)::/\1: /' freshness.log | tail -n 50
+            tail -n 50 freshness.safe.log
             echo "$delim"
           } >>"$GITHUB_OUTPUT"
           {
             echo '### 鮮度チェック'
             echo '```'
-            sed -E 's/^::(error|warning)::/\1: /' freshness.log
+            cat freshness.safe.log
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
 
