@@ -1,0 +1,167 @@
+name: Tier period check (#180 受入確認用)
+
+# 本番 DB に対して `GET /api/meta/tier?period=2w|4w|8w` と同じ選び方を **読むだけ** で3回流し、
+# 期間ごとの経路・件数・period_start/period_end を出す workflow (Issue #180 の受入確認)。
+# 本番 API はログイン必須のため、API を叩く代わりに meta.ts の /tier と同じ条件で DB を読む。
+#
+# 再現している選び方 (apps/api/src/routes/meta.ts の /tier, format は既定の original):
+#   today = UTC の今日 (Worker の new Date() → isoDate と同じ), start = today - weeks*7日
+#   1) meta_snapshots: format='original' AND period_end >= start AND (period_end - period_start) = weeks*7
+#      ORDER BY period_end DESC LIMIT 1 → 返す期間はスナップショットの period_start/period_end
+#   2) 1 が無ければ archetype_weekly_stats: period_end >= start で deck_archetype ごとに SUM(entries)
+#   3) 2 も無ければ tournament_results: event_date >= start で deck_archetype ごとに COUNT(*)
+#      2/3 の返す期間は start / today
+#   件数: snapshot は tier_data の要素数、2/3 は deck_archetype の種類数 (表記ゆれを畳む前) と入賞数の合計。
+#
+# - 手動実行 (workflow_dispatch) のみ。push / schedule では動かない。入力は受けない。
+# - 流す SQL は下の1本に固定。任意の SQL は流せない。
+# - 書き込み不可: BEGIN READ ONLY の中で読み、最後は ROLLBACK。
+#   トランザクション内で SHOW transaction_read_only が on であることを確かめてから結果を使う。
+#
+# 接続情報をログに出さないための決まり (db-readonly-check / migrate-010.yml と同じ):
+# - set -x を使わない。DATABASE_URL を echo しない。
+# - ホスト・ユーザー・パスワード・ポート付きホストは ::add-mask:: で伏せる。
+# - psql の stderr はファイルに落とし、ERROR/FATAL 等の行だけをホストや IP を伏せて出す。
+#
+# #180 の確認が済んだらこの workflow は削除する (#203 と同様)。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tier-period-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: tier 2w/4w/8w (read-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 接続情報を伏せる
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Secret DATABASE_URL が無い"
+            exit 1
+          fi
+          # 各部分を ::add-mask:: する。値そのものは表示されない (コマンド行は runner が消費する)。
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit, unquote
+          u = urlsplit(os.environ["DATABASE_URL"])
+          vals = {u.hostname, u.username, u.password, u.netloc}
+          if u.password:
+              vals.add(unquote(u.password))
+          if u.username:
+              vals.add(unquote(u.username))
+          if u.hostname and u.port:
+              vals.add(f"{u.hostname}:{u.port}")
+          for v in vals:
+              if v and len(v) >= 3:
+                  print(f"::add-mask::{v}")
+          PY
+
+      - name: 2w/4w/8w を読む (BEGIN READ ONLY → ROLLBACK)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PGCONNECT_TIMEOUT: "20"
+        run: |
+          set -euo pipefail
+          err="$RUNNER_TEMP/psql.err"
+          show_err() {
+            grep -E '(ERROR|FATAL|DETAIL|HINT):' "$err" \
+              | sed -E 's/"[^"]*"/"***"/g; s/\([0-9a-fA-F.:]+\)/(***)/g; s/[0-9]{1,3}(\.[0-9]{1,3}){3}/***/g' \
+              | head -n 20 || true
+          }
+
+          # 1行目: transaction_read_only (on のはず)
+          # 2-4行目: period|source|period_start|period_end|archetypes|entries (2w, 4w, 8w の順)
+          if ! out=$(psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At 2> "$err" <<'SQL'
+          BEGIN READ ONLY;
+          SET LOCAL statement_timeout = '60s';
+          SHOW transaction_read_only;
+          WITH p AS (
+            SELECT w AS weeks,
+                   (now() AT TIME ZONE 'UTC')::date AS today,
+                   (now() AT TIME ZONE 'UTC')::date - w * 7 AS start
+            FROM unnest(ARRAY[2, 4, 8]) AS w
+          ),
+          snap AS (
+            SELECT p.weeks, s.period_start, s.period_end, jsonb_array_length(s.tier_data) AS n
+            FROM p
+            CROSS JOIN LATERAL (
+              SELECT period_start, period_end, tier_data
+              FROM meta_snapshots
+              WHERE format = 'original'
+                AND period_end >= p.start
+                AND (period_end - period_start) = p.weeks * 7
+              ORDER BY period_end DESC
+              LIMIT 1
+            ) s
+          ),
+          weekly AS (
+            SELECT p.weeks, count(DISTINCT a.deck_archetype) AS n, COALESCE(sum(a.entries), 0) AS e
+            FROM p
+            JOIN archetype_weekly_stats a
+              ON a.format = 'original' AND a.period_end >= p.start
+            GROUP BY p.weeks
+          ),
+          tr AS (
+            SELECT p.weeks, count(DISTINCT t.deck_archetype) AS n, count(*) AS e
+            FROM p
+            JOIN tournament_results t
+              ON t.format = 'original' AND t.event_date >= p.start
+            GROUP BY p.weeks
+          )
+          SELECT p.weeks || 'w',
+                 CASE WHEN snap.weeks IS NOT NULL THEN 'snapshot'
+                      WHEN weekly.weeks IS NOT NULL THEN 'weekly'
+                      WHEN tr.weeks IS NOT NULL THEN 'tournament_results'
+                      ELSE 'empty' END,
+                 to_char(COALESCE(snap.period_start, p.start), 'YYYY-MM-DD'),
+                 to_char(COALESCE(snap.period_end, p.today), 'YYYY-MM-DD'),
+                 COALESCE(snap.n, weekly.n, tr.n, 0),
+                 CASE WHEN snap.weeks IS NOT NULL THEN '-'
+                      ELSE COALESCE(weekly.e, tr.e, 0)::text END
+          FROM p
+          LEFT JOIN snap USING (weeks)
+          LEFT JOIN weekly USING (weeks)
+          LEFT JOIN tr USING (weeks)
+          ORDER BY p.weeks;
+          ROLLBACK;
+          SQL
+          ); then
+            echo "::error::DB への問い合わせに失敗 (接続情報は出さない)"
+            show_err
+            exit 1
+          fi
+
+          ro=$(printf '%s\n' "$out" | sed -n '1p')
+          if [ "$ro" != "on" ]; then
+            echo "::error::read-only トランザクションになっていない (transaction_read_only=$ro)"
+            exit 1
+          fi
+          rows=$(printf '%s\n' "$out" | sed -n '2,4p')
+          if [ "$(printf '%s\n' "$rows" | grep -cE '^[248]w\|[a-z_]+\|[0-9]{4}-[0-9]{2}-[0-9]{2}\|[0-9]{4}-[0-9]{2}-[0-9]{2}\|[0-9]+\|([0-9]+|-)$')" != "3" ]; then
+            echo "::error::想定外の結果"
+            exit 1
+          fi
+
+          echo "transaction_read_only=$ro"
+          {
+            echo "### Tier period check (#180)"
+            echo ""
+            echo "transaction_read_only: $ro / format: original"
+            echo ""
+            echo "| period | source | period_start | period_end | archetypes | entries |"
+            echo "|---|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          while IFS='|' read -r period source pstart pend n e; do
+            echo "period=$period source=$source period_start=$pstart period_end=$pend archetypes=$n entries=$e"
+            echo "| $period | $source | $pstart | $pend | $n | $e |" >> "$GITHUB_STEP_SUMMARY"
+          done <<< "$rows"
