@@ -173,7 +173,12 @@ export async function runTool(
           scoreDeck(deck),
           validateRegulation(deck, fmt),
         ]);
-        return { text: JSON.stringify({ score, validation }, null, 2) };
+        // 読み取れなかった行があるときだけ添える (#165 B-06)。無いときは従来どおりの出力
+        const out =
+          deck.errors.length > 0
+            ? { score, validation, parseErrors: deck.errors }
+            : { score, validation };
+        return { text: JSON.stringify(out, null, 2) };
       }
 
       case "build_deck": {

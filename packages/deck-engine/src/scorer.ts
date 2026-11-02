@@ -145,6 +145,21 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
     }
   }
 
+  /**
+   * DB にない (名前で引けなかった) カード (#165 B-06)。これらはスコアに入っていないので、警告で名前を出す。
+   * 以前は黙って外しており、打ち間違いや DB にないカードがあっても画面では分からなかった。
+   * 1枚も引けなかったとき (DB 未接続を含む) は下の「参考値」の警告で知らせ、ここには並べない
+   * (DB が落ちているだけなのに全カードを「DBにない」と言わないため)。
+   */
+  const unresolvedCards = noCardInfo
+    ? []
+    : [...new Set(deck.entries.map((e) => e.name).filter((n) => !cardInfoMap.has(n)))];
+  if (unresolvedCards.length > 0) {
+    warnings.push(
+      `カードDBで見つからないカードが${unresolvedCards.length}種類あり、スコアに入っていません: ${unresolvedCards.join("、")}`,
+    );
+  }
+
   if (noCardInfo) {
     // **黙って低いスコアを返さない。** 指標が全部 0 なのは「悪いデッキ」だからではない。
     warnings.push("カード情報を取得できなかったため、この評価は参考値です");

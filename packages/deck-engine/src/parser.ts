@@ -55,6 +55,8 @@ export function detectZoneHeading(line: string): DeckZone | null {
  * - "カード名 x4"
  * - "カード名 ×4"
  * - "4x カード名"
+ * - "4枚 カード名" / "カード名 4枚" / "カード名 x4枚" (#165 B-05)
+ * - 枚数は全角数字でもよい ("４ カード名" "カード名 ×４")。区切りは x X × ✕ ｘ Ｘ * ＊
  *
  * 区分見出し (`メインデッキ` / `超次元ゾーン` / `GRゾーン` など) は**カードとして数えず**、
  * 以降の行をそのゾーンに入れる。見出しより前の行はメインデッキ扱い。
@@ -94,23 +96,41 @@ export function parseDecklist(text: string): ParsedDeck {
   };
 }
 
+/**
+ * 枚数の数字。全角数字も受ける (#165 B-05)。
+ * カード名は DB と完全一致で引くので NFKC はかけず、枚数の部分だけを読み替える。
+ */
+const COUNT = "([0-9０-９]+)";
+/** 枚数の区切り記号: x X × ✕ と全角の ｘ Ｘ ＊ * */
+const SEP = "[xX×✕ｘＸ*＊]";
+
+/** 全角数字を含む枚数の文字列を数値にする */
+function toCount(digits: string): number {
+  return parseInt(digits.normalize("NFKC"), 10);
+}
+
+// パターン1: "4 カード名" "4x カード名" "4枚 カード名" "４ カード名"
+const PATTERN_COUNT_FIRST = new RegExp(`^${COUNT}\\s*枚?\\s*${SEP}?\\s+(.+)$`, "u");
+// パターン2: "カード名 x4" "カード名 ×４" "カード名 x4枚"
+const PATTERN_COUNT_LAST = new RegExp(`^(.+?)\\s*${SEP}\\s*${COUNT}\\s*枚?$`, "u");
+// パターン3: "カード名 4枚" (区切り記号なし。「枚」があるときだけ。数字で終わるカード名を壊さない)
+const PATTERN_COUNT_MAI = new RegExp(`^(.+?)\\s*${COUNT}\\s*枚$`, "u");
+
 function parseLine(line: string): DeckEntry | null {
-  // パターン1: "4 カード名" or "4x カード名"
-  const pattern1 = /^(\d+)\s*[xX×]?\s+(.+)$/;
-  const match1 = line.match(pattern1);
+  const match1 = line.match(PATTERN_COUNT_FIRST);
   if (match1) {
-    return { count: parseInt(match1[1], 10), name: match1[2].trim() };
+    return { count: toCount(match1[1]), name: match1[2].trim() };
   }
 
-  // パターン2: "カード名 x4" or "カード名 ×4"
-  const pattern2 = /^(.+?)\s*[xX×]\s*(\d+)$/;
-  const match2 = line.match(pattern2);
-  if (match2) {
-    return { count: parseInt(match2[2], 10), name: match2[1].trim() };
+  for (const pattern of [PATTERN_COUNT_LAST, PATTERN_COUNT_MAI]) {
+    const m = line.match(pattern);
+    if (m) {
+      return { count: toCount(m[2]), name: m[1].trim() };
+    }
   }
 
-  // パターン3: "カード名" (数量なし = 1枚)
-  if (line.length > 0 && !/^\d+$/.test(line)) {
+  // パターン4: "カード名" (数量なし = 1枚)。数字だけの行はカードではない
+  if (line.length > 0 && !/^[0-9０-９]+$/.test(line)) {
     return { count: 1, name: line };
   }
 
