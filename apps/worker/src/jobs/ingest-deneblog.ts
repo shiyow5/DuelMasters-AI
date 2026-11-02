@@ -339,14 +339,17 @@ export function exceedsSkipRate(
  * `--max-skip-rate=0.25` を読む。無い・不正 (数値でない・負・1 超) なら既定値に戻す。
  * 取込オプションではなく CLI の終了判定にだけ使うので、parseDeneblogArgs とは分けている。
  */
-export function parseMaxSkipRate(argv: string[]): number {
+export function parseMaxSkipRate(
+  argv: string[],
+  defaultRate: number = DEFAULT_MAX_SKIP_RATE,
+): number {
   const arg = argv.find((a) => a.startsWith("--max-skip-rate="));
-  if (!arg) return DEFAULT_MAX_SKIP_RATE;
+  if (!arg) return defaultRate;
   const raw = arg.slice("--max-skip-rate=".length).trim();
   // Number("") は 0 になるので空文字は明示的に弾く
-  if (raw === "") return DEFAULT_MAX_SKIP_RATE;
+  if (raw === "") return defaultRate;
   const rate = Number(raw);
-  if (!Number.isFinite(rate) || rate < 0 || rate > 1) return DEFAULT_MAX_SKIP_RATE;
+  if (!Number.isFinite(rate) || rate < 0 || rate > 1) return defaultRate;
   return rate;
 }
 
