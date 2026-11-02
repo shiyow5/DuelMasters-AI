@@ -201,6 +201,23 @@ describe.skipIf(!hasTestDb)("GET /api/meta/archetype/:name (統合)", () => {
     const body = (await res.json()) as { stats: { total_entries: number } };
     expect(body.stats.total_entries).toBe(0);
   });
+
+  it("% を含む名前でも部分一致で拾う (ESCAPE が効いている, #170)", async () => {
+    // 以前は JS ソースの `ESCAPE '\'` が cooked で `ESCAPE ''` になりエスケープ無効だった。
+    // そのとき "\%" は「バックスラッシュ + 任意長」になり、"100%" の部分一致が 0件になる
+    await sql`INSERT INTO tournament_results (event_name, event_date, format, deck_archetype, placement)
+      VALUES ('CS1', ${today}, 'original', '赤単100%ビート', 1),
+             ('CS2', ${today}, 'original', '赤単100ビート', 1)`;
+    const res = await makeApp().request(
+      `/api/meta/archetype/${encodeURIComponent("100%")}?format=original`,
+    );
+    const body = (await res.json()) as {
+      stats: { total_entries: number };
+      recent_results: Array<{ deck_archetype: string }>;
+    };
+    expect(body.stats.total_entries).toBe(1);
+    expect(body.recent_results.map((r) => r.deck_archetype)).toEqual(["赤単100%ビート"]);
+  });
 });
 
 describe("GET /api/meta/tier の period 検証 (B-11)", () => {

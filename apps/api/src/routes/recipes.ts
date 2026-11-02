@@ -8,6 +8,7 @@
  */
 import { Hono } from "hono";
 import { getSql } from "@dm-ai/db";
+import { likeContains } from "@dm-ai/core";
 
 const recipesRouter = new Hono();
 
@@ -37,14 +38,6 @@ function intParam(raw: string | undefined, fallback: number, min: number, max: n
   return Math.min(n, max);
 }
 
-/**
- * ILIKE のワイルドカードを無効化する。
- * エスケープしないと「%」の一語で全件が返り、検索が無検索になる。
- */
-function escapeLike(s: string): string {
-  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
-}
-
 /** GET /api/recipes?q=&limit=&offset= — 新着順のデッキレシピ一覧 */
 recipesRouter.get("/", async (c) => {
   const sql = getSql();
@@ -54,9 +47,12 @@ recipesRouter.get("/", async (c) => {
   const q = (c.req.query("q") ?? "").trim().slice(0, MAX_QUERY_LENGTH);
 
   // デッキ名と大会名のどちらでも引けるようにする (「ウィリデ」でも「妖精CS」でも)
-  const pattern = `%${escapeLike(q)}%`;
+  // ILIKE のワイルドカードは無効化する。しないと「%」の一語で全件が返る (#170 で共通化)
+  const pattern = likeContains(q);
   const filter =
-    q === "" ? sql`TRUE` : sql`(deck_name ILIKE ${pattern} OR event_name ILIKE ${pattern})`;
+    q === ""
+      ? sql`TRUE`
+      : sql`(deck_name ILIKE ${pattern} ESCAPE '\\' OR event_name ILIKE ${pattern} ESCAPE '\\')`;
 
   try {
     const rows = await sql`

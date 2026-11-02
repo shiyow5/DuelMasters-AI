@@ -6,6 +6,7 @@ import {
   CARD_NAME_TRANSLATE_FROM,
   CARD_NAME_TRANSLATE_TO,
   aggregateTierData,
+  likeContains,
   mergeArchetypeCounts,
 } from "@dm-ai/core";
 import { searchRules } from "@dm-ai/rag";
@@ -188,7 +189,7 @@ async function findCardNamesLike(names: readonly string[]): Promise<string[] | n
       if (key === "") continue;
       const rows = await sql`
         SELECT name FROM cards
-        WHERE lower(translate(normalize(name, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO})) LIKE ${"%" + key + "%"}
+        WHERE lower(translate(normalize(name, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO})) LIKE ${likeContains(key)} ESCAPE '\\'
         ORDER BY (lower(translate(normalize(name, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO})) = ${key}) DESC,
                  length(name), name
         LIMIT 20
@@ -246,8 +247,8 @@ export async function runTool(
         const normalized = query ? normalizeCardName(query) : "";
         const nameFrag = query
           ? sql`AND (
-              lower(translate(normalize(name, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO})) LIKE ${"%" + normalized + "%"}
-              OR text ILIKE ${"%" + query + "%"}
+              lower(translate(normalize(name, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO})) LIKE ${likeContains(normalized)} ESCAPE '\\'
+              OR text ILIKE ${likeContains(query)} ESCAPE '\\'
             )`
           : sql``;
         const civFrag = civilization
