@@ -107,6 +107,48 @@ describe.skipIf(!hasTestDb)("GET /api/meta/tier (統合)", () => {
     expect(body.tier_data.map((t) => t.archetype)).toEqual(["スナップ8週"]);
   });
 
+  it("4週のスナップショットだけがあるとき、2w/8w はその場集計で期間ごとに件数・期間が変わる (#180)", async () => {
+    await sql`INSERT INTO meta_snapshots (format, period_start, period_end, tier_data)
+      VALUES ('original', ${daysAgo(28)}, ${daysAgo(1)},
+              ${sql.json([{ archetype: "スナップ4週", usage_rate: 100, count: 102, tier: "S" }])})`;
+    // 同じアーキタイプが時期をずらして出ている。期間が長いほど件数が増える
+    await sql`INSERT INTO archetype_weekly_stats
+      (format, period_start, period_end, deck_archetype, entries, total_entries)
+      VALUES ('original', ${daysAgo(9)}, ${daysAgo(3)}, 'ウィリデ', 5, 5),
+             ('original', ${daysAgo(51)}, ${daysAgo(45)}, 'ウィリデ', 7, 7)`;
+
+    type Body = {
+      period: string;
+      period_start: string;
+      period_end: string;
+      tier_data: Array<{ archetype: string; entries?: number }>;
+    };
+    const get = async (period: string) => {
+      const res = await makeApp().request(`/api/meta/tier?format=original&period=${period}`);
+      expect(res.status).toBe(200);
+      return (await res.json()) as Body;
+    };
+    const w2 = await get("2w");
+    const w4 = await get("4w");
+    const w8 = await get("8w");
+
+    // 4w: スナップショットそのもの (期間もスナップショットの範囲)
+    expect(w4.tier_data).toEqual([
+      { archetype: "スナップ4週", usage_rate: 100, count: 102, tier: "S" },
+    ]);
+    // DATE 列は Date として読まれて JSON では時刻つきになるので、日付部分で比べる
+    expect([w4.period_start, w4.period_end].map((d) => String(d).slice(0, 10))).toEqual([
+      daysAgo(28),
+      daysAgo(1),
+    ]);
+
+    // 2w / 8w: その場集計。件数も期間も違う
+    expect(w2.tier_data.map((t) => [t.archetype, t.entries])).toEqual([["ウィリデ", 5]]);
+    expect(w8.tier_data.map((t) => [t.archetype, t.entries])).toEqual([["ウィリデ", 12]]);
+    expect([w2.period_start, w2.period_end]).toEqual([daysAgo(14), today]);
+    expect([w8.period_start, w8.period_end]).toEqual([daysAgo(56), today]);
+  });
+
   it("データが無ければ空のティア表を返す", async () => {
     const res = await makeApp().request("/api/meta/tier?format=original");
     const body = (await res.json()) as { tier_data: unknown[] };
@@ -153,5 +195,17 @@ describe.skipIf(!hasTestDb)("GET /api/meta/archetype/:name (統合)", () => {
     const res = await makeApp().request("/api/meta/archetype/%?format=original");
     const body = (await res.json()) as { stats: { total_entries: number } };
     expect(body.stats.total_entries).toBe(0);
+  });
+});
+
+describe("GET /api/meta/tier の period 検証 (B-11)", () => {
+  // 検証は DB に触る前に行うので、DB なしでも走る
+  it.each(["3w", "100w", "0w", "abc", "4", ""])("period=%j は 400", async (period) => {
+    const res = await makeApp().request(
+      `/api/meta/tier?format=original&period=${encodeURIComponent(period)}`,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("2w | 4w | 8w");
   });
 });
