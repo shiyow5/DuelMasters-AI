@@ -10,6 +10,7 @@
 export const TOOL_LABELS: Record<string, string> = {
   search_rules: "ルールを検索しています",
   search_cards: "カードを検索しています",
+  check_regulation: "殿堂レギュレーションを確認しています",
   evaluate_deck: "デッキを評価しています",
   build_deck: "デッキを構築しています",
   get_tier_list: "環境データを確認しています",
@@ -88,6 +89,7 @@ export function toolLabel(name: string, args: Record<string, unknown> = {}): str
 const TOOL_NOUNS: Record<string, string> = {
   search_rules: "ルール検索",
   search_cards: "カード検索",
+  check_regulation: "殿堂の確認",
   evaluate_deck: "デッキ評価",
   build_deck: "デッキ構築",
   get_tier_list: "環境データの取得",
