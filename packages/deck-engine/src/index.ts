@@ -29,3 +29,20 @@ export {
   applyRegulationToRequired,
   type RegulationSets,
 } from "./regulation-rules.js";
+export {
+  buildRegulationIndex,
+  lookupRegulation,
+  type RegulationIndex,
+  type RegulationRow,
+} from "./regulation-index.js";
+export {
+  loadRegulations,
+  checkRegulationNames,
+  listRestrictedInDeck,
+  regulationTagForCard,
+  restrictionLimitLabel,
+  UNRESTRICTED,
+  type RegulationsLoad,
+  type RegulationCheck,
+  type RestrictedInDeck,
+} from "./regulation-check.js";
