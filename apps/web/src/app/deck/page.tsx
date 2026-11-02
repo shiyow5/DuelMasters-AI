@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiPost, apiGet, apiDelete } from "@/lib/api";
 import { scoreGrade } from "@/lib/format";
-import { savedCardsToDecklist, type SavedDeckCard } from "@/lib/deck-text";
+import { countMainCards, savedCardsToDecklist, type SavedDeckCard } from "@/lib/deck-text";
 import { supabase } from "@/lib/supabase";
 import type { DeckScore, ValidationResult, SavedDeckSummary } from "@/lib/types";
 import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";
@@ -24,6 +24,7 @@ export default function DeckPage() {
   const [format, setFormat] = useState<"original" | "advance">("original");
   const [score, setScore] = useState<DeckScore | null>(null);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [buildResult, setBuildResult] = useState<string>("");
   // デッキが持つカード (評価/読込/自動構築のたびにサーバのパース結果で更新する)。
   // カード画像グリッド (#129) の入力。
@@ -144,6 +145,7 @@ export default function DeckPage() {
       setDeckEntries(deck.cards.filter((c) => !c.zone));
       // 殿堂チェック (validation) は保存していないので復元しない。スコアだけ即表示する。
       setValidation(null);
+      setParseErrors([]);
       setBuildResult("");
     } catch (err) {
       setPageError(`読み込みに失敗しました: ${err instanceof Error ? err.message : "不明"}`);
@@ -168,6 +170,7 @@ export default function DeckPage() {
     setPageError("");
     setScore(null);
     setValidation(null);
+    setParseErrors([]);
     // 連続評価で同じ文面でも読み上げ直されるよう、いったん空にする
     setAnnounce("");
     // 評価開始時に前回のカードグリッドも消す。ここで消さないと、評価が失敗したとき
@@ -175,12 +178,13 @@ export default function DeckPage() {
     setDeckEntries([]);
     try {
       const res = await apiPost<{
-        parsed: { entries: Array<{ name: string; count: number }> };
+        parsed: { entries: Array<{ name: string; count: number }>; errors: string[] };
         score: DeckScore;
         validation: ValidationResult;
       }>("/api/deck/evaluate", { decklist, format });
       setScore(res.score);
       setValidation(res.validation);
+      setParseErrors(res.parsed.errors);
       setDeckEntries(res.parsed.entries);
       // 成功時のみ。失敗 (catch) では結果へ移動しない
       setEvalSeq((n) => n + 1);
@@ -226,11 +230,25 @@ export default function DeckPage() {
     ? Object.values(score.civilizationBalance).reduce((a, b) => a + b, 0)
     : 0;
 
-  // 入力中デッキリストの合計枚数 (各行の先頭数値を合算)
-  const parsedCount = decklist.split("\n").reduce((s, l) => {
-    const m = l.trim().match(/^(\d+)/);
-    return s + (m ? parseInt(m[1], 10) : 0);
-  }, 0);
+  // 入力中デッキリストのメインデッキの枚数 (見出しと超次元・GR は数えない。#179)
+  const parsedCount = countMainCards(decklist);
+
+  // 読み取れなかった行 (#165 B-06)。以前は API が返していても画面に出していなかった
+  const parseErrorBox =
+    parseErrors.length > 0 ? (
+      <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
+        <h4 className="text-sm font-medium text-warning mb-2">
+          読み取れなかった行 (評価に入っていません)
+        </h4>
+        <ul className="space-y-1">
+          {parseErrors.map((e, i) => (
+            <li key={i} className="text-sm text-text-muted">
+              {e}
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -255,6 +273,7 @@ export default function DeckPage() {
                   setFormat(f);
                   setScore(null);
                   setValidation(null);
+                  setParseErrors([]);
                 }}
                 className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                   format === f
@@ -451,6 +470,7 @@ export default function DeckPage() {
               </pre>
             ) : validation && !validation.valid ? (
               <div className="space-y-3">
+                {parseErrorBox}
                 <div className="rounded-xl border border-danger/30 bg-danger/10 p-4">
                   <h4 className="text-sm font-medium text-danger mb-2">レギュレーション違反</h4>
                   <ul className="space-y-1">
@@ -476,6 +496,7 @@ export default function DeckPage() {
               </div>
             ) : score ? (
               <div className="space-y-4">
+                {parseErrorBox}
                 {/*
                   レギュレーションの警告 (valid のまま評価を続けたもの。例: オリジナルに超次元・GR。QA②)。
                   以前は違反 (valid=false) のときしか出しておらず、評価が通ると警告が見えなかった。
