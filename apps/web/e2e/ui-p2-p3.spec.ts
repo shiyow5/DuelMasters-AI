@@ -45,7 +45,7 @@ test.describe("P-2 ヘッダ: 640px 未満は 2 段で見出しを 1 行に保�
     await page.setViewportSize({ width: 768, height: 800 });
     await page.goto("/deck");
     const heading = (await page.getByRole("heading", { name: "デッキ構築・評価" }).boundingBox())!;
-    const original = (await page.getByRole("button", { name: "Original" }).boundingBox())!;
+    const original = (await page.getByRole("button", { name: "オリジナル" }).boundingBox())!;
     // 2 段なら操作群は見出しより下に来る
     expect(original.y).toBeLessThan(heading.y + heading.height);
     expect(original.x).toBeGreaterThan(heading.x + heading.width);
