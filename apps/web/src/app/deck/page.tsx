@@ -281,7 +281,7 @@ export default function DeckPage() {
                     : "bg-bg-surface-highlight text-text-muted hover:text-white border border-border-subtle"
                 }`}
               >
-                {f === "original" ? "Original" : "Advance"}
+                {f === "original" ? "オリジナル" : "アドバンス"}
               </button>
             ))}
           </div>
@@ -308,7 +308,7 @@ export default function DeckPage() {
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">
-                Deck List
+                デッキ内容
               </h3>
               <span
                 className={`text-xs px-2 py-0.5 rounded ${
@@ -343,7 +343,7 @@ export default function DeckPage() {
                   className="flex-1 py-2 bg-gradient-to-r from-primary to-primary-dark hover:opacity-90 text-bg-dark rounded-lg text-sm font-bold transition-opacity shadow-lg shadow-primary/10 flex justify-center items-center gap-2 disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-[18px]">auto_fix_high</span>
-                  Auto Build
+                  自動構築
                 </button>
               </div>
             </form>
@@ -351,7 +351,7 @@ export default function DeckPage() {
 
           {/* Theme Input for Auto Build */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-text-muted mb-3">Auto Build テーマ</h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-3">自動構築テーマ</h3>
             <input
               type="text"
               value={theme}
@@ -367,7 +367,7 @@ export default function DeckPage() {
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
                 <span className="material-symbols-outlined text-6xl text-primary">lightbulb</span>
               </div>
-              <h3 className="text-sm font-semibold text-white mb-2 relative z-10">AI Suggestion</h3>
+              <h3 className="text-sm font-semibold text-white mb-2 relative z-10">AI提案</h3>
               <p className="text-xs text-text-muted leading-relaxed relative z-10">
                 {score.suggestions[0]}
               </p>
@@ -392,7 +392,7 @@ export default function DeckPage() {
                         className="flex flex-col items-start min-w-0 flex-1 text-left"
                       >
                         <span className="text-xs text-white truncate w-full">{d.title}</span>
-                        <span className="text-[10px] text-text-muted">
+                        <span className="text-xs text-text-muted">
                           {d.format} · {d.overall ?? "--"}点
                         </span>
                       </button>
@@ -546,7 +546,7 @@ export default function DeckPage() {
           {/* Overall Score */}
           <div className="bg-gradient-to-br from-bg-surface to-bg-surface-highlight border border-border-highlight rounded-xl p-5 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
-            <h3 className="text-sm font-semibold text-text-muted mb-4">Deck Power Score</h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-4">デッキ評価スコア</h3>
             <div className="flex items-end gap-3">
               <span className="text-5xl font-bold text-white tracking-tighter">
                 {score ? scoreGrade(score.overall) : "--"}
@@ -555,7 +555,7 @@ export default function DeckPage() {
                 <div className="text-xs text-primary font-bold uppercase tracking-wider">
                   {score ? `${score.overall}/100` : "未評価"}
                 </div>
-                <div className="text-[10px] text-text-muted">
+                <div className="text-xs text-text-muted">
                   初動率: {score ? `${Math.round(score.openingHandRate * 100)}%` : "--"}
                 </div>
               </div>
@@ -564,7 +564,7 @@ export default function DeckPage() {
 
           {/* Mana Curve */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-text-muted mb-6">Mana Curve</h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-6">マナカーブ</h3>
             <div className="h-32 flex items-end justify-between gap-2 px-1">
               {[
                 {
@@ -592,7 +592,7 @@ export default function DeckPage() {
                       }}
                     />
                   </div>
-                  <span className="text-[10px] text-text-muted font-medium">
+                  <span className="text-xs text-text-muted font-medium">
                     {bar.label} ({bar.value})
                   </span>
                 </div>
@@ -602,7 +602,7 @@ export default function DeckPage() {
 
           {/* Civilization Ratio */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-text-muted mb-4">Civilization Ratio</h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-4">文明比率</h3>
             {score ? (
               <div className="flex items-center gap-4">
                 {/* Donut placeholder */}
@@ -639,7 +639,7 @@ export default function DeckPage() {
                     <span className="text-xs font-bold text-white">
                       {Object.keys(score.civilizationBalance).length}
                     </span>
-                    <span className="text-[8px] text-text-muted">Civs</span>
+                    <span className="text-xs text-text-muted">文明</span>
                   </div>
                 </div>
                 <div className="flex flex-col gap-2 w-full">
@@ -666,7 +666,7 @@ export default function DeckPage() {
           {/* Shield Triggers */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
             <div className="flex justify-between items-center mb-2">
-              <h3 className="text-sm font-semibold text-text-muted">Shield Triggers</h3>
+              <h3 className="text-sm font-semibold text-text-muted">シールドトリガー</h3>
               <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                 {score?.triggerCount ?? 0} Cards
               </span>
@@ -680,11 +680,11 @@ export default function DeckPage() {
                   }}
                 />
               </div>
-              <div className="flex justify-between text-[10px] text-text-muted font-medium">
+              <div className="flex justify-between text-xs text-text-muted font-medium">
                 <span>0</span>
-                <span>Low</span>
-                <span className="text-warning">Avg (8)</span>
-                <span>High</span>
+                <span>低</span>
+                <span className="text-warning">平均 (8)</span>
+                <span>高</span>
                 <span>20</span>
               </div>
             </div>
