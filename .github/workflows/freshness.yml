@@ -54,7 +54,7 @@ jobs:
       report: ${{ steps.report.outputs.report }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -149,7 +149,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout (scripts only)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           sparse-checkout: .github/scripts
 
