@@ -63,6 +63,8 @@ export interface ValidationResult {
   valid: boolean;
   errors: string[];
   warnings: string[];
+  /** 殿堂チェックを実施したか (#164)。`false` = 未確認 (DB 不通 / 規制データ0件)。未指定は実施済み扱い */
+  restrictionChecked?: boolean;
 }
 
 export interface TierEntry {

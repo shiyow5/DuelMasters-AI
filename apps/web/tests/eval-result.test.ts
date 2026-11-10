@@ -99,6 +99,34 @@ describe("EvalSummaryStrip", () => {
     expect(html).not.toContain(">OK</dd>");
   });
 
+  it("殿堂チェックが未実施 (restrictionChecked=false) なら OK ではなく「未確認」と出す (#164)", () => {
+    const html = render(score(), {
+      valid: true,
+      errors: [],
+      warnings: ["スキップ"],
+      restrictionChecked: false,
+    });
+    expect(html).toContain(">未確認</dd>");
+    expect(html).not.toContain(">OK</dd>");
+  });
+
+  it("restrictionChecked=true / 未指定は従来どおり OK", () => {
+    expect(render(score(), { ...valid, restrictionChecked: true })).toContain(">OK</dd>");
+    expect(render(score(), valid)).toContain(">OK</dd>");
+  });
+
+  it("未実施かつエラーありならエラー件数を優先する", () => {
+    const html = render(score(), { ...invalid, restrictionChecked: false });
+    expect(html).toContain("エラー2件");
+    expect(html).not.toContain("未確認");
+  });
+
+  it("未実施はアナウンスにも出す (#164)", () => {
+    expect(evalAnnouncement(score({ overall: 55 }), { ...valid, restrictionChecked: false })).toBe(
+      "評価完了。ランクC、55点、殿堂チェックは未確認",
+    );
+  });
+
   it("チェック結果が無ければ殿堂チェック欄を出さない", () => {
     expect(render(score(), null)).not.toContain("殿堂チェック");
   });

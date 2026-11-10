@@ -108,8 +108,16 @@ export function deckCheckEmbed(validation: ValidationResult): Embed {
     fields.push({ name: "警告", value: truncate(validation.warnings.join("\n"), 1024) });
   }
   return {
-    title: validation.valid ? "殿堂チェック: OK" : "殿堂チェック: NG",
-    color: validation.valid ? EMBED_COLORS.success : EMBED_COLORS.danger,
+    title: !validation.valid
+      ? "殿堂チェック: NG"
+      : validation.restrictionChecked === false
+        ? "殿堂チェック: 未確認"
+        : "殿堂チェック: OK",
+    color: !validation.valid
+      ? EMBED_COLORS.danger
+      : validation.restrictionChecked === false
+        ? EMBED_COLORS.warning
+        : EMBED_COLORS.success,
     ...(fields.length > 0 ? { fields } : {}),
   };
 }

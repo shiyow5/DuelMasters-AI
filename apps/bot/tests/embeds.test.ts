@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { tierEmbed, type TierEntry } from "../src/interactions/embeds.js";
+import { deckCheckEmbed, tierEmbed, type TierEntry } from "../src/interactions/embeds.js";
 
 /**
  * ティア表 embed (#132)。
@@ -54,5 +54,22 @@ describe("tierEmbed (#132)", () => {
   it("データが空なら fields を持たない", () => {
     const embed = tierEmbed("original", []);
     expect(embed.fields).toBeUndefined();
+  });
+});
+
+describe("deckCheckEmbed 未確認 (#164)", () => {
+  it("restrictionChecked=false かつ valid は「未確認」(OK と出さない)", () => {
+    const e = deckCheckEmbed({
+      valid: true,
+      errors: [],
+      warnings: ["スキップ"],
+      restrictionChecked: false,
+    });
+    expect(e.title).toBe("殿堂チェック: 未確認");
+  });
+  it("実施済みの valid は OK", () => {
+    expect(
+      deckCheckEmbed({ valid: true, errors: [], warnings: [], restrictionChecked: true }).title,
+    ).toBe("殿堂チェック: OK");
   });
 });
