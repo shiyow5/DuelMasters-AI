@@ -155,9 +155,9 @@ describe.skipIf(!hasTestDb)("GET /api/meta/tier (統合)", () => {
   });
 
   it("期間内に何も無ければ、同じ長さの最新スナップショットを stale 付きで返す (#163)", async () => {
-    // 期間終端が 3 週前 (14 日より古い) の 4 週スナップショット。期間内の集計は空
+    // 期間終端が 5 週前 (14 日より古い) の 4 週スナップショット。期間内の集計は空
     await sql`INSERT INTO meta_snapshots (format, period_start, period_end, tier_data)
-      VALUES ('original', ${daysAgo(49)}, ${daysAgo(21)},
+      VALUES ('original', ${daysAgo(63)}, ${daysAgo(35)},
               ${sql.json([{ archetype: "古いスナップ", usage_rate: 100, count: 3, tier: "S" }])})`;
 
     const get = async (period: string) => {
@@ -177,7 +177,7 @@ describe.skipIf(!hasTestDb)("GET /api/meta/tier (統合)", () => {
     expect(w4.tier_data.map((t) => t.archetype)).toEqual(["古いスナップ"]);
     expect(w4.fallback).toBe(true);
     expect(w4.stale).toBe(true);
-    expect([w4.period_start, w4.period_end]).toEqual([daysAgo(49), daysAgo(21)]);
+    expect([w4.period_start, w4.period_end]).toEqual([daysAgo(63), daysAgo(35)]);
     expect(typeof w4.snapshot_created_at).toBe("string");
 
     // 2w は同じ長さのスナップショットが無いので、フォールバックもしない (期間長の照合を維持)
