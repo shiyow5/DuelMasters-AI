@@ -27,13 +27,13 @@ export const CIV_COLORS: Record<string, { bg: string; text: string; dot: string 
   },
 };
 
-/** 文明の英語表示ラベル */
+/** 文明の表示ラベル */
 export const CIV_LABELS: Record<string, string> = {
-  fire: "Fire",
-  water: "Water",
-  nature: "Nature",
-  light: "Light",
-  darkness: "Darkness",
+  fire: "火",
+  water: "水",
+  nature: "自然",
+  light: "光",
+  darkness: "闇",
 };
 
 /** 文明ごとの16進カラー (SVG 描画用。CIV_COLORS の dot と同色) */
