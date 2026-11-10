@@ -12,8 +12,31 @@ updates:
     schedule:
       interval: weekly
     groups:
-      npm-all:
+      # minor/patch は 1 本の PR に集約する。major はどのグループにも入れず、
+      # package 単位の個別 PR にする（vitest 系のみ版を揃える必要があるため 1 グループ）。
+      npm-minor-patch:
         update-types:
-          - "major"
           - "minor"
           - "patch"
+      vitest-major:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+        update-types:
+          - "major"
+    ignore:
+      # drizzle は従来どおり自動更新の対象外（方針変更なし）。
+      - dependency-name: "drizzle-orm"
+      - dependency-name: "drizzle-kit"
+      # wrangler は api/web で 4.159.0 に完全固定している(#225)。Dependabot が
+      # 4.159.0 -> 4.158.0 のダウングレードを提案した原因は特定できないため、手動管理にする。
+      - dependency-name: "wrangler"
+      # CI/デプロイの Node は 22。@types/node は runtime に合わせる(現在 ^20)ため、
+      # major の引き上げ(26)は Node 版を上げるときに手動で行う。
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
+      # TypeScript 7 は大規模な移行を伴うため、自動 PR にせず手動で検証してから上げる。
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
