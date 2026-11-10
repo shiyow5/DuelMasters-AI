@@ -1,0 +1,9 @@
+# gitleaks 誤検知の除外（2026-11-10 篝 確認済み）。値は書かない・fingerprint のみ。
+# START.md: ドキュメント用プレースホルダ（省略記号付き/連番ID）。wrangler.jsonc: DISCORD_PUBLIC_KEY は公開鍵で秘密ではない。
+8cd6c1a34f154abd07e483cdc3513ad0631633ae:apps/bot/wrangler.jsonc:discord-api-token:11
+b1dc3bd46be6ad61004f8d04c65eb80bc6fee539:START.md:generic-api-key:235
+082dde9872fcb8bff187df3a27425b75cb855c27:START.md:discord-client-id:227
+082dde9872fcb8bff187df3a27425b75cb855c27:START.md:discord-client-id:228
+082dde9872fcb8bff187df3a27425b75cb855c27:START.md:generic-api-key:217
+082dde9872fcb8bff187df3a27425b75cb855c27:START.md:generic-api-key:221
+082dde9872fcb8bff187df3a27425b75cb855c27:START.md:generic-api-key:222
