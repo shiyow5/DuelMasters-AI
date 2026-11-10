@@ -170,9 +170,15 @@ async function handleDeck(interaction: ChatInputCommandInteraction, sub: string)
     }>("/api/deck/evaluate", { decklist: list, format }, internalHeaders(interaction.user.id));
 
     const v = res.validation;
+    // DB 不通・regulations 0件などで殿堂判定をスキップした場合は「OK」にせず「未確認」を出す (B-04)
+    const unverified = v.valid && v.restrictionChecked === false;
     const embed = new EmbedBuilder()
-      .setTitle(v.valid ? "殿堂チェック: OK" : "殿堂チェック: NG")
-      .setColor(v.valid ? EMBED_COLORS.success : EMBED_COLORS.danger);
+      .setTitle(
+        !v.valid ? "殿堂チェック: NG" : unverified ? "殿堂チェック: 未確認" : "殿堂チェック: OK",
+      )
+      .setColor(
+        !v.valid ? EMBED_COLORS.danger : unverified ? EMBED_COLORS.warning : EMBED_COLORS.success,
+      );
 
     if (v.errors.length > 0) {
       embed.addFields({ name: "エラー", value: v.errors.join("\n") });
