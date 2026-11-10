@@ -154,6 +154,50 @@ describe.skipIf(!hasTestDb)("GET /api/meta/tier (統合)", () => {
     expect([w8.period_start, w8.period_end]).toEqual([daysAgo(56), today]);
   });
 
+  it("期間内に何も無ければ、同じ長さの最新スナップショットを stale 付きで返す (#163)", async () => {
+    // 期間終端が 3 週前 (14 日より古い) の 4 週スナップショット。期間内の集計は空
+    await sql`INSERT INTO meta_snapshots (format, period_start, period_end, tier_data)
+      VALUES ('original', ${daysAgo(49)}, ${daysAgo(21)},
+              ${sql.json([{ archetype: "古いスナップ", usage_rate: 100, count: 3, tier: "S" }])})`;
+
+    const get = async (period: string) => {
+      const res = await makeApp().request(`/api/meta/tier?format=original&period=${period}`);
+      expect(res.status).toBe(200);
+      return (await res.json()) as {
+        period_start: string;
+        period_end: string;
+        tier_data: Array<{ archetype: string }>;
+        fallback: boolean;
+        stale: boolean;
+        snapshot_created_at: string | null;
+      };
+    };
+
+    const w4 = await get("4w");
+    expect(w4.tier_data.map((t) => t.archetype)).toEqual(["古いスナップ"]);
+    expect(w4.fallback).toBe(true);
+    expect(w4.stale).toBe(true);
+    expect([w4.period_start, w4.period_end]).toEqual([daysAgo(49), daysAgo(21)]);
+    expect(typeof w4.snapshot_created_at).toBe("string");
+
+    // 2w は同じ長さのスナップショットが無いので、フォールバックもしない (期間長の照合を維持)
+    const w2 = await get("2w");
+    expect(w2.tier_data).toEqual([]);
+    expect(w2.fallback).toBe(false);
+  });
+
+  it("新しいスナップショットへのフォールバックは stale=false", async () => {
+    await sql`INSERT INTO meta_snapshots (format, period_start, period_end, tier_data)
+      VALUES ('original', ${daysAgo(29)}, ${daysAgo(1)},
+              ${sql.json([{ archetype: "新しいスナップ", usage_rate: 100, count: 1, tier: "S" }])})`;
+
+    const res = await makeApp().request("/api/meta/tier?format=original&period=4w");
+    const body = (await res.json()) as { fallback: boolean; stale: boolean };
+    // 期間内 (終端 1 日前) なのでフォールバックではなく通常のスナップショット
+    expect(body.fallback).toBe(false);
+    expect(body.stale).toBe(false);
+  });
+
   it("データが無ければ空のティア表を返す", async () => {
     const res = await makeApp().request("/api/meta/tier?format=original");
     const body = (await res.json()) as { tier_data: unknown[] };
