@@ -14,6 +14,6 @@ updates:
     groups:
       npm-all:
         update-types:
-          - "version-update:semver-major"
-          - "version-update:semver-minor"
-          - "version-update:semver-patch"
+          - "major"
+          - "minor"
+          - "patch"
