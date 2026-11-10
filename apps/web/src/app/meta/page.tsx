@@ -93,12 +93,12 @@ export default function MetaPage() {
           </div>
         }
         right={
-          <div className="flex h-10 items-center justify-center rounded-lg bg-bg-card p-1">
+          <div className="flex h-[52px] items-center justify-center rounded-lg bg-bg-card p-1">
             {(["original", "advance"] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => setFormat(f)}
-                className={`px-4 sm:px-6 h-full rounded text-sm font-bold transition-all duration-200 ${
+                className={`px-4 sm:px-6 h-11 rounded text-sm font-bold transition-all duration-200 ${
                   format === f
                     ? "bg-bg-dark text-primary shadow-sm"
                     : "text-text-muted hover:text-white"
@@ -133,7 +133,7 @@ export default function MetaPage() {
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
-                className={`flex h-9 items-center justify-center gap-x-2 rounded-lg px-4 transition-colors ${
+                className={`flex h-11 items-center justify-center gap-x-2 rounded-lg px-4 transition-colors ${
                   period === p
                     ? "bg-primary/20 text-primary border border-primary/30"
                     : "bg-bg-card hover:bg-bg-card-hover text-white"
@@ -152,15 +152,25 @@ export default function MetaPage() {
             )}
           </div>
 
-          {/* 鮮度: 最終更新日は常に出す。古いときは警告を出す (#163, B-01/B-09) */}
+          {/* 鮮度 (#230): 「最終更新」はスナップショット作成日だけ。空データ(null)では出さない。
+              警告は別の言い方 (「◯日までのデータ」) にして、日付を2種類並べない。 */}
           {data && (
             <div className="flex flex-col gap-2">
-              <p className="text-sm text-text-dim">
-                最終更新: {(data.snapshot_created_at ?? data.period_end).slice(0, 10)}
-              </p>
+              {data.snapshot_created_at && (
+                <p className="text-sm text-text-dim">
+                  最終更新: {data.snapshot_created_at.slice(0, 10)}
+                </p>
+              )}
               {data.stale && (
-                <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-primary">
-                  データが古い可能性があります（最終更新 {data.period_end} 時点の集計）
+                <div
+                  role="status"
+                  className="flex items-start gap-2 rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-200"
+                >
+                  <span aria-hidden="true">⚠</span>
+                  <span>
+                    データが古い可能性があります。この集計は {data.period_end} までのデータです。
+                    期間を変えるか、更新をお待ちください。
+                  </span>
                 </div>
               )}
             </div>
