@@ -17,13 +17,13 @@
   },
   "dependencies": {
     "@dm-ai/core": "workspace:*",
-    "@supabase/supabase-js": "^2.49.0",
-    "drizzle-orm": "^0.38.0",
-    "postgres": "^3.4.0"
+    "@supabase/supabase-js": "^2.119.0",
+    "drizzle-orm": "^0.45.4",
+    "postgres": "^4.1.0"
   },
   "devDependencies": {
-    "@types/node": "^20",
-    "drizzle-kit": "^0.30.0",
-    "typescript": "^5.7.0"
+    "@types/node": "^26",
+    "drizzle-kit": "^0.31.11",
+    "typescript": "^7.0.2"
   }
 }

@@ -20,7 +20,7 @@
     "@dm-ai/db": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^20",
-    "typescript": "^5.7.0"
+    "@types/node": "^26",
+    "typescript": "^7.0.2"
   }
 }

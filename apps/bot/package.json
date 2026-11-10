@@ -17,12 +17,12 @@
   "dependencies": {
     "@dm-ai/core": "workspace:*",
     "discord-interactions": "^4.1.0",
-    "discord.js": "^14.17.0"
+    "discord.js": "^14.28.1"
   },
   "devDependencies": {
-    "@types/node": "^20",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
-    "wrangler": "^4.0.0"
+    "@types/node": "^26",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.158.0"
   }
 }
