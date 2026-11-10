@@ -25,11 +25,11 @@ updates:
         update-types:
           - "major"
     ignore:
-      # drizzle は従来どおり自動更新の対象外（方針変更なし）。
+      # drizzle は自動更新の対象外にする（現行 main には記述が無く、ここで明示した）。
       - dependency-name: "drizzle-orm"
       - dependency-name: "drizzle-kit"
-      # wrangler は api/web で 4.159.0 に完全固定している(#225)。Dependabot が
-      # 4.159.0 -> 4.158.0 のダウングレードを提案した原因は特定できないため、手動管理にする。
+      # wrangler は api/web で 4.159.0 に完全固定している(#225)。#234 が 4.158.0 へのダウングレードを
+      # 提案した原因は不明で、非互換の証拠も無いため、理由が判明するまで手動管理にする。
       - dependency-name: "wrangler"
       # CI/デプロイの Node は 22。@types/node は runtime に合わせる(現在 ^20)ため、
       # major の引き上げ(26)は Node 版を上げるときに手動で行う。
