@@ -74,7 +74,7 @@ jobs:
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASS }}
           POSTGRES_DB: dm_ai
         ports:
           - 5432:5432
@@ -84,7 +84,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dm_ai
+      TEST_DATABASE_URL: postgresql://postgres:${{ secrets.TEST_DB_PASS }}@localhost:5432/dm_ai
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,7 +113,7 @@ jobs:
       # 必ず忘れる (007 で実際に忘れ、CI の DB 統合テストが全滅しかけた)。
       - name: Apply DB schema (infra/sql/*.sql を番号順に全て)
         env:
-          PGPASSWORD: postgres
+          PGPASSWORD: ${{ secrets.TEST_DB_PASS }}
         run: |
           for f in $(ls infra/sql/*.sql | sort); do
             echo "Applying $f"
