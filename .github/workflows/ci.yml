@@ -74,7 +74,7 @@ jobs:
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASS }}
           POSTGRES_DB: dm_ai
         ports:
           - 5432:5432
