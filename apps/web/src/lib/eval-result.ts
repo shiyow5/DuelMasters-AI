@@ -29,6 +29,11 @@ export function validationErrorCount(validation: ValidationResult | null): numbe
   return validation.errors.length;
 }
 
+/** 殿堂チェックが未実施 (DB 不通 / 規制データ0件) か。`false` のときだけ true (#164) */
+export function restrictionUnchecked(validation: ValidationResult | null): boolean {
+  return validation?.restrictionChecked === false;
+}
+
 /**
  * スクリーンリーダー向けの完了アナウンス文 (デスクトップ幅用)。
  * デスクトップではフォーカスを動かさないので、代わりに role="status" でこれを読ませる。
@@ -37,6 +42,7 @@ export function evalAnnouncement(score: DeckScore, validation: ValidationResult 
   const errors = validationErrorCount(validation);
   return (
     `評価完了。ランク${scoreGrade(score.overall)}、${score.overall}点` +
-    (errors > 0 ? `、殿堂チェックのエラー${errors}件` : "")
+    (errors > 0 ? `、殿堂チェックのエラー${errors}件` : "") +
+    (restrictionUnchecked(validation) ? "、殿堂チェックは未確認" : "")
   );
 }

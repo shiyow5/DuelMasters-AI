@@ -1,6 +1,6 @@
 import type { Ref } from "react";
 import { scoreGrade } from "@/lib/format";
-import { validationErrorCount } from "@/lib/eval-result";
+import { restrictionUnchecked, validationErrorCount } from "@/lib/eval-result";
 import type { DeckScore, ValidationResult } from "@/lib/types";
 
 /**
@@ -24,6 +24,7 @@ export default function EvalSummaryStrip({
   ref?: Ref<HTMLElement>;
 }) {
   const errors = validationErrorCount(validation);
+  const unchecked = restrictionUnchecked(validation);
   return (
     <section
       ref={ref}
@@ -55,8 +56,12 @@ export default function EvalSummaryStrip({
         {validation && (
           <div className="flex items-baseline gap-1">
             <dt>殿堂チェック</dt>
-            <dd className={`font-bold ${errors > 0 ? "text-red-400" : "text-white"}`}>
-              {errors > 0 ? `エラー${errors}件` : "OK"}
+            <dd
+              className={`font-bold ${
+                errors > 0 ? "text-red-400" : unchecked ? "text-warning" : "text-white"
+              }`}
+            >
+              {errors > 0 ? `エラー${errors}件` : unchecked ? "未確認" : "OK"}
             </dd>
           </div>
         )}

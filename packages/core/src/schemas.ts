@@ -205,6 +205,12 @@ export const ValidationResultSchema = z.object({
   valid: z.boolean(),
   errors: z.array(z.string()),
   warnings: z.array(z.string()),
+  /**
+   * 殿堂チェックを実際に実施したか (#164)。
+   * DB に接続できない / regulations が0件のときは false (= 未確認。「OK」ではない)。
+   * optional: 古い API 応答との後方互換。**未指定は実施済み扱い**、`false` だけを未確認と読む。
+   */
+  restrictionChecked: z.boolean().optional(),
 });
 export type ValidationResult = z.infer<typeof ValidationResultSchema>;
 

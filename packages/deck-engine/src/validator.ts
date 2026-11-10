@@ -65,7 +65,13 @@ export async function validateRegulation(
     }));
   } catch {
     warnings.push("殿堂データベースに接続できないため、殿堂チェックをスキップしました");
-    return { valid: errors.length === 0, errors, warnings };
+    return { valid: errors.length === 0, errors, warnings, restrictionChecked: false };
+  }
+
+  // 規制データが0件だと何も当たらず「問題なし」に見える。未確認として扱う (#164)
+  if (regulations.length === 0) {
+    warnings.push("殿堂データが登録されていないため、殿堂チェックができませんでした (未確認)");
+    return { valid: errors.length === 0, errors, warnings, restrictionChecked: false };
   }
 
   const result = checkRestrictions(merged, regulations);
@@ -76,6 +82,7 @@ export async function validateRegulation(
     valid: errors.length === 0,
     errors,
     warnings,
+    restrictionChecked: true,
   };
 }
 

@@ -27,6 +27,7 @@ describe("validateRegulation 特性テスト (DB無し)", () => {
       valid: true,
       errors: [],
       warnings: [DB_SKIP_WARNING],
+      restrictionChecked: false,
     });
   });
 
@@ -36,6 +37,7 @@ describe("validateRegulation 特性テスト (DB無し)", () => {
       valid: false,
       errors: ["デッキは40枚ちょうどである必要があります (現在: 39枚)"],
       warnings: [DB_SKIP_WARNING],
+      restrictionChecked: false,
     });
   });
 
@@ -45,6 +47,7 @@ describe("validateRegulation 特性テスト (DB無し)", () => {
       valid: false,
       errors: ["「過剰カード」は最大4枚までです (現在: 5枚)"],
       warnings: [DB_SKIP_WARNING],
+      restrictionChecked: false,
     });
   });
 });
@@ -337,12 +340,18 @@ describe("ゾーン (超次元・GR) と40枚判定 (QA② / #165 B-07)", () => 
       valid: true,
       errors: [],
       warnings: [DB_SKIP_WARNING],
+      restrictionChecked: false,
     });
   });
 
   it("メイン40枚判定は超次元/GR を含まない (40+8+12 は枚数違反にならない)", async () => {
     const res = await validateRegulation(parseDecklist(withZones(list(40))), "advance");
-    expect(res).toEqual({ valid: true, errors: [], warnings: [DB_SKIP_WARNING] });
+    expect(res).toEqual({
+      valid: true,
+      errors: [],
+      warnings: [DB_SKIP_WARNING],
+      restrictionChecked: false,
+    });
   });
 
   it("超次元/GR を足してもメインが39枚なら枚数エラー (現在: 39枚)", async () => {
@@ -352,7 +361,12 @@ describe("ゾーン (超次元・GR) と40枚判定 (QA② / #165 B-07)", () => 
 
   it("オリジナルで超次元/GR 入りは警告のみで valid のまま", async () => {
     const res = await validateRegulation(parseDecklist(withZones(list(40))), "original");
-    expect(res).toEqual({ valid: true, errors: [], warnings: [ZONE_WARNING, DB_SKIP_WARNING] });
+    expect(res).toEqual({
+      valid: true,
+      errors: [],
+      warnings: [ZONE_WARNING, DB_SKIP_WARNING],
+      restrictionChecked: false,
+    });
   });
 
   it("4枚制限は超次元/GR のカードにも掛かる", async () => {
