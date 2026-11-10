@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiGet } from "@/lib/api";
 import { nameToHue } from "@/lib/format";
 import type { TierEntry, TierData } from "@/lib/types";
@@ -56,11 +56,7 @@ export default function MetaPage() {
   // 詳細を開いているデッキ (クリックで開く)。tier は TierEntry 自身が持っている。
   const [selected, setSelected] = useState<TierEntry | null>(null);
 
-  useEffect(() => {
-    fetchTierData();
-  }, [format, period]);
-
-  async function fetchTierData() {
+  const fetchTierData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -71,7 +67,13 @@ export default function MetaPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [format, period]);
+
+  useEffect(() => {
+    // 外部 (API) との同期。format/period が変わるたびに取得し直す。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchTierData();
+  }, [fetchTierData]);
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
