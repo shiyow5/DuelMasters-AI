@@ -104,6 +104,16 @@ async function withMainCards<T extends { archetype: string }>(entries: T[]): Pro
   });
 }
 
+/** スナップショットの期間終端がこの日数より前なら「古い」と注記する (#163) */
+const STALE_AFTER_DAYS = 14;
+
+/** period_end (YYYY-MM-DD) が STALE_AFTER_DAYS より前か。文字列の辞書順比較で足りる形式 */
+function isStaleDate(endDate: string): boolean {
+  const threshold = new Date();
+  threshold.setDate(threshold.getDate() - STALE_AFTER_DAYS);
+  return endDate < isoDate(threshold);
+}
+
 /** `/tier` と `/archetype/:name` が受け付ける期間 (B-11, #184) */
 const TIER_PERIODS = ["2w", "4w", "8w"] as const;
 
@@ -183,12 +193,45 @@ metaRouter.get("/tier", async (c) => {
             `;
 
       if (results.length === 0) {
+        // 期間内に何も無いときは、同じ長さの最新スナップショットを古い注記つきで返す (#163)。
+        // 期間を変えても「データなし」だけになるのを避ける。期間長は照合したまま (QA③)。
+        const latest = await sql`
+          SELECT tier_data,
+                 to_char(period_start, 'YYYY-MM-DD') AS start_date,
+                 to_char(period_end, 'YYYY-MM-DD') AS end_date,
+                 created_at
+          FROM meta_snapshots
+          WHERE format = ${format}
+            AND (period_end - period_start) = ${weeks * 7}
+          ORDER BY period_end DESC
+          LIMIT 1
+        `;
+
+        if (latest.length === 0) {
+          return c.json({
+            format,
+            period: `${weeks}w`,
+            period_start: isoDate(periodStart),
+            period_end: isoDate(periodEnd),
+            tier_data: [],
+            fallback: false,
+            stale: false,
+            snapshot_created_at: null,
+          });
+        }
+
+        const endDate = latest[0].end_date as string;
         return c.json({
           format,
           period: `${weeks}w`,
-          period_start: isoDate(periodStart),
-          period_end: isoDate(periodEnd),
-          tier_data: [],
+          period_start: latest[0].start_date as string,
+          period_end: endDate,
+          tier_data: await withMainCards(
+            latest[0].tier_data as Array<Record<string, unknown> & { archetype: string }>,
+          ),
+          fallback: true,
+          stale: isStaleDate(endDate),
+          snapshot_created_at: new Date(latest[0].created_at as string | Date).toISOString(),
         });
       }
 
@@ -208,17 +251,24 @@ metaRouter.get("/tier", async (c) => {
         period_start: isoDate(periodStart),
         period_end: isoDate(periodEnd),
         tier_data: await withMainCards(tierData),
+        fallback: false,
+        stale: false,
+        snapshot_created_at: null,
       });
     }
 
+    const snapshotEnd = snapshots[0].end_date as string;
     return c.json({
       format,
       period: `${weeks}w`,
       period_start: snapshots[0].start_date as string,
-      period_end: snapshots[0].end_date as string,
+      period_end: snapshotEnd,
       tier_data: await withMainCards(
         snapshots[0].tier_data as Array<Record<string, unknown> & { archetype: string }>,
       ),
+      fallback: false,
+      stale: isStaleDate(snapshotEnd),
+      snapshot_created_at: new Date(snapshots[0].created_at as string | Date).toISOString(),
     });
   } catch (err) {
     console.error("[api/meta] tier 取得に失敗 (フォールバック応答を返します):", err);
@@ -229,6 +279,9 @@ metaRouter.get("/tier", async (c) => {
       period_start: isoDate(periodStart),
       period_end: isoDate(periodEnd),
       tier_data: [],
+      fallback: false,
+      stale: false,
+      snapshot_created_at: null,
     });
   }
 });

@@ -152,6 +152,20 @@ export default function MetaPage() {
             )}
           </div>
 
+          {/* 鮮度: 最終更新日は常に出す。古いときは警告を出す (#163, B-01/B-09) */}
+          {data && (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-text-dim">
+                最終更新: {(data.snapshot_created_at ?? data.period_end).slice(0, 10)}
+              </p>
+              {data.stale && (
+                <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-primary">
+                  データが古い可能性があります（最終更新 {data.period_end} 時点の集計）
+                </div>
+              )}
+            </div>
+          )}
+
           {loading && <div className="py-12 text-center text-text-muted">読み込み中...</div>}
 
           {error && <ErrorDisplay message={error} variant="error" />}
@@ -233,10 +247,8 @@ export default function MetaPage() {
               <span className="material-symbols-outlined text-5xl text-text-dim mb-4 block">
                 monitoring
               </span>
-              <p className="text-text-muted">この期間のデータはまだありません</p>
-              <p className="mt-2 text-sm text-text-dim">
-                大会結果を登録するとティアリストが生成されます
-              </p>
+              <p className="text-text-muted">この期間のデータはありません</p>
+              <p className="mt-2 text-sm text-text-dim">期間を変えてお試しください</p>
             </div>
           )}
 

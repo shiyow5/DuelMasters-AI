@@ -91,6 +91,12 @@ export interface TierData {
   period_start: string;
   period_end: string;
   tier_data: TierEntry[];
+  /** 期間内にデータが無く、同じ長さの最新スナップショットを返したとき true (#163) */
+  fallback?: boolean;
+  /** 返したデータの期間終端が古い (既定 14 日より前) とき true (#163) */
+  stale?: boolean;
+  /** 返したスナップショットの作成時刻 (ISO8601)。その場集計なら null (#163) */
+  snapshot_created_at?: string | null;
 }
 
 export interface SavedDeckSummary {
