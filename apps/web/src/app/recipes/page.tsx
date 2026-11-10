@@ -68,6 +68,8 @@ export default function RecipesPage() {
   }, [page, search]);
 
   useEffect(() => {
+    // 外部 (API/認証) との同期。取得結果を state に反映する既存の挙動を維持する。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 

@@ -53,6 +53,8 @@ export default function ChatHistory({ onNavigate }: { onNavigate?: () => void })
   }, []);
 
   useEffect(() => {
+    // 外部 (API/認証) との同期。取得結果を state に反映する既存の挙動を維持する。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
     window.addEventListener(CONVERSATIONS_CHANGED, refresh);
     return () => window.removeEventListener(CONVERSATIONS_CHANGED, refresh);

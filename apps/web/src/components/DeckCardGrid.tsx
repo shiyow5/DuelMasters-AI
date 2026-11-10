@@ -28,6 +28,8 @@ export default function DeckCardGrid({ entries }: { entries: DeckEntry[] }) {
   useEffect(() => {
     const names = [...new Set(entries.map((e) => e.name))];
     if (names.length === 0) {
+      // 空デッキ時は取得せず画像キャッシュを空にする (既存挙動)。
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setImages({});
       return;
     }
