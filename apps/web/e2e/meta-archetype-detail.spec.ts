@@ -181,3 +181,37 @@ test("閉じるボタンと Esc で閉じる", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toBeHidden();
 });
+
+/** #230: 鮮度表示。「最終更新」は1か所だけ、空データでは出さない。ボタンは 44px 以上。 */
+const STALE = { ...TIER_RESPONSE, stale: true, snapshot_created_at: "2026-07-18T03:00:00Z" };
+const EMPTY = { ...TIER_RESPONSE, stale: true, snapshot_created_at: null, tier_data: [] };
+
+test("stale: 最終更新は1つ(作成日)で、警告は別の言い方・⚠付き", async ({ page }) => {
+  await page.route("**/api/meta/tier**", (route) =>
+    route.fulfill({ json: STALE, headers: { "Access-Control-Allow-Origin": "*" } }),
+  );
+  await page.goto("/meta");
+  await expect(page.getByText("最終更新: 2026-07-18")).toBeVisible();
+  await expect(page.getByText(/最終更新/)).toHaveCount(1);
+  const warn = page.getByRole("status");
+  await expect(warn).toContainText("この集計は 2026-07-17 までのデータです");
+  await expect(warn).toContainText("⚠");
+});
+
+test("空データ(snapshot_created_at=null)では最終更新を出さない", async ({ page }) => {
+  await page.route("**/api/meta/tier**", (route) =>
+    route.fulfill({ json: EMPTY, headers: { "Access-Control-Allow-Origin": "*" } }),
+  );
+  await page.goto("/meta");
+  await expect(page.getByRole("status")).toBeVisible();
+  await expect(page.getByText(/最終更新/)).toHaveCount(0);
+});
+
+test("期間・形式ボタンは高さ 44px 以上(390幅)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/meta");
+  for (const name of [/過去2週間/, /過去4週間/, /過去8週間/, "オリジナル", "アドバンス"]) {
+    const box = await page.getByRole("button", { name }).boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+});
