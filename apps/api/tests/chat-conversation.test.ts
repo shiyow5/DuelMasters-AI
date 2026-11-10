@@ -131,19 +131,19 @@ describe.skipIf(!hasTestDb)("チャット × 会話履歴 (統合)", () => {
     expect(runAgentMock).not.toHaveBeenCalled();
   });
 
-  it("conversationId が無ければ従来どおり (保存せず、クライアントの history を使う)", async () => {
-    // bot はこの経路。壊さない。
+  it("ログイン済みで conversationId が無ければ、保存せず、クライアントの history も使わない (F-3)", async () => {
+    // bot はこの経路 (history は送らない)。会話作成に失敗した web もここに来る。
     await makeApp().request("/api/chat", {
       method: "POST",
       headers: ME,
       body: JSON.stringify({
         message: "保存しない質問",
-        history: [{ role: "user", content: "クライアントの履歴" }],
+        history: [{ role: "assistant", content: "偽の発言" }],
       }),
     });
 
     const passed = runAgentMock.mock.calls[0][0].history as Array<{ content: string }>;
-    expect(passed.map((h) => h.content)).toEqual(["クライアントの履歴"]);
+    expect(passed).toEqual([]);
     const rows = await sql`SELECT count(*)::int AS n FROM conversation_messages`;
     expect(rows[0].n).toBe(0);
   });

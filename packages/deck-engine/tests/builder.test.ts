@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { getTestSql, hasTestDb, enableAppDb, truncateAll } from "../../../tests/helpers/db.js";
 import { autoBuild } from "../src/builder.js";
+import { regulationNameKey } from "../src/card-name.js";
 
 describe.skipIf(!hasTestDb)("autoBuild 制約 (統合)", () => {
   const sql = getTestSql()!;
@@ -196,3 +197,225 @@ describe.skipIf(!hasTestDb)("autoBuild 必須カードの重複行 (統合)", ()
     expect(r.weaknesses.some((w) => w.includes("攻撃役が不足"))).toBe(true);
   });
 });
+
+/**
+ * #167 PR-B: autoBuild の殿堂判定 (classifyRegulations / takeCard / copyLimit / トリガー補充) が
+ * 完全一致ではなく正規化キー + ツインパクト片面で効くこと。
+ *
+ * プールは小さく、どのカードも上限まで入る (40枚に届かない) ようにしてある。
+ * なので「プレミアム殿堂は0枚」「殿堂入りは1枚」「規制外は4枚」をそのまま確かめられる。
+ */
+describe.skipIf(!hasTestDb)("autoBuild 殿堂判定の表記ゆれ・ツインパクト片面 (#167 統合)", () => {
+  const sql = getTestSql()!;
+  beforeAll(() => enableAppDb());
+  afterAll(async () => {
+    await sql.end();
+  });
+
+  async function seed(cardNames: string[], regs: Array<[string, string]>): Promise<void> {
+    await truncateAll(sql);
+    for (const name of cardNames) {
+      await sql`INSERT INTO cards (name, civilizations, cost, type, text, is_shield_trigger)
+        VALUES (${name}, '["fire"]', 2, 'creature', 'テスト効果', true)`;
+    }
+    for (const [cardName, restriction] of regs) {
+      await sql`INSERT INTO regulations (format, restriction_type, card_name, effective_from)
+        VALUES ('original', ${restriction}, ${cardName}, '2024-01-01')`;
+    }
+  }
+  const countOf = (r: { entries: Array<{ name: string; count: number }> }, name: string) =>
+    r.entries.filter((e) => e.name === name).reduce((s, e) => s + e.count, 0);
+
+  describe("ゆれ・片面", () => {
+    beforeEach(() =>
+      seed(
+        [
+          "ボルシャック･ドラゴン", // 規制は「ボルシャック・ドラゴン」(中黒の全角/半角)
+          "ガイアールカイザー", // 規制は「ガイアール・カイザー」(中黒なし)
+          '"轟轟轟"ブランド', // 規制は「“轟轟轟”ブランド」(ASCII 引用符)
+          "＂天災＂デドダム", // 規制は「“天災”デドダム」(全角引用符)
+          "音精　ラフルル", // 規制は「音精 ラフルル」(全角空白)
+          "龍装艦チェンジザ", // 規制は両面、カードは片面
+          "テスト片面X / テスト片面Y", // 規制は片面、カードは両面 (逆向き)
+          "通常札",
+        ],
+        [
+          ["ボルシャック・ドラゴン", "プレミアム殿堂"],
+          ["ガイアール・カイザー", "プレミアム殿堂"],
+          ["“轟轟轟”ブランド", "プレミアム殿堂"],
+          ["“天災”デドダム", "殿堂入り"],
+          ["音精 ラフルル", "殿堂入り"],
+          ["龍装艦 チェンジザ / 六奇怪の四 ～土を割る逆瀧～", "殿堂入り"],
+          ["テスト片面X", "プレミアム殿堂"],
+        ],
+      ),
+    );
+
+    it("中黒・引用符のゆれでもプレミアム殿堂は入らない", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "ボルシャック･ドラゴン")).toBe(0);
+      expect(countOf(r, "ガイアールカイザー")).toBe(0);
+      expect(countOf(r, '"轟轟轟"ブランド')).toBe(0);
+    });
+
+    it("引用符・空白のゆれでも殿堂入りは1枚だけ", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "＂天災＂デドダム")).toBe(1);
+      expect(countOf(r, "音精　ラフルル")).toBe(1);
+    });
+
+    it("規制が両面・カードが片面でも殿堂入りは1枚だけ", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "龍装艦チェンジザ")).toBe(1);
+    });
+
+    it("規制が片面・カードが両面でもプレミアム殿堂は入らない (逆向き)", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "テスト片面X / テスト片面Y")).toBe(0);
+    });
+
+    it("規制外のカードは上限まで入る", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "通常札")).toBe(4);
+    });
+
+    it("requiredCards の表記ゆれ・片面でも殿堂制約が効く", async () => {
+      const r = await autoBuild("テスト", "original", {
+        requiredCards: ["ボルシャックドラゴン", "テスト片面X / 別面", "六奇怪の四～土を割る逆瀧～"],
+      });
+      expect(countOf(r, "ボルシャックドラゴン")).toBe(0);
+      expect(countOf(r, "テスト片面X / 別面")).toBe(0);
+      expect(countOf(r, "六奇怪の四～土を割る逆瀧～")).toBe(1);
+      expect(
+        r.weaknesses.filter((w) => w.includes("プレミアム殿堂のため採用できません")),
+      ).toHaveLength(2);
+    });
+  });
+
+  describe("誤爆しない", () => {
+    beforeEach(() =>
+      seed(
+        ["ボルシャックの書", "ボルシャック・ドラゴン / 別の呪文", "ドラゴン", "ボルシャック"],
+        [
+          ["ボルシャック / ドラゴン", "プレミアム殿堂"],
+          ["ドラゴン", "殿堂入り"],
+        ],
+      ),
+    );
+
+    it("片面名を部分に含むだけの別カードは制約しない", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "ボルシャックの書")).toBe(4);
+      expect(countOf(r, "ボルシャック・ドラゴン / 別の呪文")).toBe(4);
+    });
+
+    it("全体名の規制が片面より優先する (「ドラゴン」は殿堂入りで1枚、禁止にはならない)", async () => {
+      const r = await autoBuild("テスト", "original");
+      expect(countOf(r, "ドラゴン")).toBe(1);
+      // 全体名に無い片面「ボルシャック」はツインパクトの規制 (プレミアム殿堂) が効く
+      expect(countOf(r, "ボルシャック")).toBe(0);
+    });
+  });
+});
+
+/**
+ * #167 PR-C: autoBuild のデッキ内の名前の同一性 (counts / entryIndex / トリガー補充) を正規化キーで揃える。
+ * あわせて、長音・ハイフンのゆれと、同じキーが複数区分にあるときの上書き順を実際の autoBuild で確かめる。
+ *
+ * 表記の違う同じカードは、entries の中でどの表記で出てきても**キーで合算**して数える。
+ */
+describe.skipIf(!hasTestDb)(
+  "autoBuild 名前の同一性・長音ハイフン・上書き順 (#167 PR-C 統合)",
+  () => {
+    const sql = getTestSql()!;
+    beforeAll(() => enableAppDb());
+    afterAll(async () => {
+      await sql.end();
+    });
+
+    async function seed(cardNames: string[], regs: Array<[string, string]>): Promise<void> {
+      await truncateAll(sql);
+      for (const name of cardNames) {
+        await sql`INSERT INTO cards (name, civilizations, cost, type, text, is_shield_trigger)
+        VALUES (${name}, '["fire"]', 2, 'creature', 'テスト効果', true)`;
+      }
+      for (const [cardName, restriction] of regs) {
+        await sql`INSERT INTO regulations (format, restriction_type, card_name, effective_from)
+        VALUES ('original', ${restriction}, ${cardName}, '2024-01-01')`;
+      }
+    }
+    /** 表記に関係なく、同じカード (正規化キーが同じ) の合計枚数と行数 */
+    const sameCard = (r: { entries: Array<{ name: string; count: number }> }, name: string) => {
+      const rows = r.entries.filter((e) => regulationNameKey(e.name) === regulationNameKey(name));
+      return { count: rows.reduce((s, e) => s + e.count, 0), rows: rows.length };
+    };
+
+    describe("デッキ内の名前の同一性", () => {
+      beforeEach(() =>
+        seed(["龍装艦チェンジザ", "通常札", "火の札"], [["龍装艦チェンジザ", "殿堂入り"]]),
+      );
+
+      it("requiredCards と DB で表記が違っても、殿堂入りは合計1枚 (別カードとして2枚入らない)", async () => {
+        const r = await autoBuild("テスト", "original", { requiredCards: ["龍装艦 チェンジザ"] });
+        expect(sameCard(r, "龍装艦チェンジザ")).toEqual({ count: 1, rows: 1 });
+        // 表記は requiredCards のまま
+        expect(r.entries.find((e) => e.name === "龍装艦 チェンジザ")?.count).toBe(1);
+      });
+
+      it("requiredCards と DB で表記が違っても、規制外は合計4枚 (8枚にならない)", async () => {
+        const r = await autoBuild("テスト", "original", { requiredCards: ["通常・札"] });
+        expect(sameCard(r, "通常札")).toEqual({ count: 4, rows: 1 });
+      });
+
+      it("requiredCards に同じカードを表記ゆれで2回書いても1枚分", async () => {
+        const r = await autoBuild("テスト", "original", {
+          requiredCards: ["通常札", "《通常 札》", "龍装艦チェンジザ", "龍装艦　チェンジザ"],
+        });
+        expect(sameCard(r, "通常札")).toEqual({ count: 4, rows: 1 });
+        expect(sameCard(r, "龍装艦チェンジザ")).toEqual({ count: 1, rows: 1 });
+        expect(r.totalCards).toBe(r.entries.reduce((s, e) => s + e.count, 0));
+      });
+    });
+
+    describe("長音・ハイフンのゆれ", () => {
+      beforeEach(() =>
+        seed(
+          ["ヨミジ 丁ー二式", "テスト―ドラゴン", "ハイフン札"],
+          [
+            ["ヨミジ 丁-二式", "殿堂入り"],
+            ["テストードラゴン", "プレミアム殿堂"],
+          ],
+        ),
+      );
+
+      it("規制とカードで長音・ハイフンが違っても殿堂入りは1枚、プレミアム殿堂は0枚", async () => {
+        const r = await autoBuild("テスト", "original");
+        expect(sameCard(r, "ヨミジ 丁ー二式").count).toBe(1);
+        expect(sameCard(r, "テスト―ドラゴン").count).toBe(0);
+        expect(sameCard(r, "ハイフン札").count).toBe(4);
+      });
+
+      it("requiredCards をハイフンで書いても殿堂入り1枚、DB の長音表記と合算", async () => {
+        const r = await autoBuild("テスト", "original", { requiredCards: ["ヨミジ 丁−二式"] });
+        expect(sameCard(r, "ヨミジ 丁ー二式")).toEqual({ count: 1, rows: 1 });
+      });
+    });
+
+    describe("区分の上書き順", () => {
+      it("同じキーに殿堂入りとプレミアム殿堂があれば、後の行が殿堂入りでもプレミアム殿堂 (0枚)", async () => {
+        // 行の順は INSERT 順 (= 通常は SELECT の順)。殿堂入りを後に入れても厳しいほうが残ること。
+        await seed(
+          ["重複札", "通常札"],
+          [
+            ["重複札", "プレミアム殿堂"],
+            ["重複・札", "殿堂入り"],
+            ["《重複札》", "プレミアム殿堂コンビ"],
+          ],
+        );
+        const r = await autoBuild("テスト", "original");
+        expect(sameCard(r, "重複札").count).toBe(0);
+        expect(sameCard(r, "通常札").count).toBe(4);
+      });
+    });
+  },
+);

@@ -94,6 +94,14 @@ describe.skipIf(!hasTestDb)("GET /api/recipes (統合)", () => {
     expect(body.total).toBe(0);
   });
 
+  it("q の % を含む語はリテラルとして部分一致する (#170)", async () => {
+    await add("https://deneblog.jp/blog-entry-4.html", "2026-07-10", "赤単100%ビート");
+    await add("https://deneblog.jp/blog-entry-5.html", "2026-07-09", "赤単100ビート");
+    const res = await makeApp().request(`/api/recipes?q=${encodeURIComponent("100%")}`);
+    const body = (await res.json()) as ListBody;
+    expect(body.total).toBe(1);
+  });
+
   it("limit / offset でページングする", async () => {
     const res = await makeApp().request("/api/recipes?limit=2&offset=1");
     const body = (await res.json()) as ListBody;

@@ -1,6 +1,14 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { CIVILIZATIONS, CARD_TYPES } from "@dm-ai/core";
+import {
+  CIVILIZATIONS,
+  CARD_TYPES,
+  CARD_NAME_TRANSLATE_FROM,
+  CARD_NAME_TRANSLATE_TO,
+  aggregateTierData,
+  likeContains,
+  mergeArchetypeCounts,
+} from "@dm-ai/core";
 import { searchRules } from "@dm-ai/rag";
 import {
   parseDecklist,
@@ -8,6 +16,16 @@ import {
   validateRegulation,
   autoBuild,
   suggestReplacements,
+  loadRegulations,
+  buildRegulationIndex,
+  checkRegulationNames,
+  listRestrictedInDeck,
+  regulationTagForCard,
+  restrictionLimitLabel,
+  type ParsedDeck,
+  type RegulationsLoad,
+  type RegulationCheck,
+  type RestrictedInDeck,
 } from "@dm-ai/deck-engine";
 import { getSql } from "@dm-ai/db";
 import { buildCardSearchArgs, normalizeCardName } from "./card-search.js";
@@ -72,6 +90,119 @@ export const BUILD_DECK_SCHEMA = z.object({
   min_creatures: z.number().int().min(1).optional(),
 });
 
+const FORMAT_LABEL: Record<Format, string> = { original: "オリジナル", advance: "アドバンス" };
+
+/** check_regulation で一度に調べられる名前の上限 (デッキ1つぶんより少し多め) */
+const MAX_REGULATION_NAMES = 40;
+
+/** check_regulation ツールの引数スキーマ (#178)。runTool 内でも検証する (BUILD_DECK_SCHEMA と同じ理由) */
+export const CHECK_REGULATION_SCHEMA = z.object({
+  card_names: z.array(z.string()).min(1).max(MAX_REGULATION_NAMES),
+  format: z.enum(["original", "advance"]).optional(),
+});
+
+/**
+ * regulations を読めなかったときの返答 (#178 (e))。
+ * 「制限なし」「殿堂入りしていない」と言い切らせない。
+ */
+export function regulationUnavailableText(names: readonly string[], reason: string): string {
+  return (
+    `殿堂レギュレーションを確認できませんでした (${reason})。\n` +
+    `対象: ${names.map((n) => `「${n}」`).join("")}\n` +
+    `**これらのカードが殿堂入りしているか・していないかは、どちらとも言えません。** ` +
+    `「殿堂入りしていない」「4枚入れられる」と書いてはいけません。記憶で補わず、` +
+    `「殿堂の区分を確認できなかった。時間をおいて再度お試しください」とだけ伝えてください。`
+  );
+}
+
+/** 区分の1行表示 (例: `殿堂入り (1枚まで)`) */
+function restrictionText(restriction: string): string {
+  return `${restriction} (${restrictionLimitLabel(restriction)})`;
+}
+
+/**
+ * check_regulation の結果をモデルへ返す文にする (純粋関数, #178 (a))。
+ *
+ * @param cardsChecked cards テーブルを引けたか。引けなかったときは「カード名を特定できない」の理由を変える
+ */
+export function formatRegulationChecks(
+  checks: readonly RegulationCheck[],
+  fmt: Format,
+  fetchedAt: string | null,
+  cardsChecked = true,
+): string {
+  const header =
+    `殿堂レギュレーションの確認結果 (フォーマット: ${FORMAT_LABEL[fmt]}` +
+    `${fetchedAt ? ` / 殿堂データ取込日: ${fetchedAt}` : ""})`;
+  const lines = checks.map((c) => {
+    switch (c.status) {
+      case "restricted":
+        return (
+          `- 「${c.name}」: ${restrictionText(c.restriction)}` +
+          (c.matchedName !== c.name ? ` ※殿堂リスト上の表記《${c.matchedName}》` : "")
+        );
+      case "unrestricted":
+        return `- 「${c.name}」: ${restrictionText("制限なし")}。殿堂リスト (プレミアム殿堂・殿堂入り・プレミアム殿堂コンビ) に載っていません`;
+      case "unknown_name": {
+        const why = cardsChecked
+          ? "この名前のカードが見つからず、どのカードか特定できませんでした (略称・誤記の可能性)"
+          : "カードDBを引けず、どのカードか特定できませんでした";
+        const cands =
+          c.candidates.length > 0
+            ? ` 名前を含むカード: ${c.candidates.map((x) => `《${x.name}》[${x.restriction}]`).join(" ")}`
+            : " search_cards で正式なカード名を調べ、その名前でもう一度 check_regulation を呼んでください。";
+        return `- 「${c.name}」: ${why}。**制限なしと断定しないでください。**${cands}`;
+      }
+    }
+  });
+  return (
+    `${header}\n${lines.join("\n")}\n` +
+    `殿堂かどうか・何枚入れられるかは、この結果だけを根拠に答えてください。記憶と食い違う場合もこの結果を優先してください。`
+  );
+}
+
+/**
+ * evaluate_deck の restricted_in_deck (#178 (c)/(e))。
+ * 規制カードがあれば区分つきで全部、無ければ「規制カードなし」、読めなければ「確認できなかった」。
+ */
+export function restrictedInDeckField(
+  deck: ParsedDeck,
+  regs: RegulationsLoad,
+): RestrictedInDeck[] | string {
+  if (!regs.ok) {
+    return `確認できなかった (${regs.reason})。このデッキの殿堂カードの有無は不明です。殿堂入りしていないと言い切らないでください`;
+  }
+  const list = listRestrictedInDeck(deck, regs.rows);
+  return list.length > 0 ? list : "規制カードなし";
+}
+
+/**
+ * 聞かれた名前を含むカード名を cards から引く (check_regulation の名前確認・候補用)。
+ * 正規化は search_cards と同じ。引けなかったら null (例外は投げない)。
+ */
+async function findCardNamesLike(names: readonly string[]): Promise<string[] | null> {
+  try {
+    const sql = getSql();
+    const out = new Set<string>();
+    for (const name of names) {
+      const key = normalizeCardName(name);
+      if (key === "") continue;
+      const rows = await sql`
+        SELECT name FROM cards
+        WHERE lower(translate(normalize(name, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO})) LIKE ${likeContains(key)} ESCAPE '\\'
+        ORDER BY (lower(translate(normalize(name, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO})) = ${key}) DESC,
+                 length(name), name
+        LIMIT 20
+      `;
+      for (const r of rows) out.add(r.name as string);
+    }
+    return [...out];
+  } catch (err) {
+    console.error("[agent] check_regulation: cards の参照に失敗:", err);
+    return null;
+  }
+}
+
 /**
  * ツール実行のディスパッチャ。グラフの tools ノードが state.format を渡して呼ぶ。
  * 例外はここで握り、モデル/ユーザーに生のエラー文言を渡さない (詳細はサーバーログのみ)。
@@ -106,15 +237,18 @@ export async function runTool(
         /**
          * **カード名は正規化して突き合わせる。**
          * 《ヘブンズ・ゲート》を「ヘブンズゲート」(中黒なし) で探しても引けるように、
-         * DB 側の name にも同じ正規化 (中黒・空白・囲みを落として小文字化) をかける。
+         * DB 側の name にも同じ正規化 (NFKC → 長音・ハイフン類を `ー` に畳み、中黒・空白・囲み・引用符を
+         * 落とす → 小文字化) をかける。文字集合は TS の normalizeCardName と同じ
+         * CARD_NAME_TRANSLATE_FROM / TO (#167。以前は SQL だけ NFKC が無く、≪≫«»・タブ等も落としておらず、
+         * TS とズレていた)。
          * これをやらないと素朴な部分一致が 0件になり、agent がそれを「ツールのエラー」と
          * 誤解して「一時的なエラーが発生している」と誤報する (本番で実際に起きた)。
          */
         const normalized = query ? normalizeCardName(query) : "";
         const nameFrag = query
           ? sql`AND (
-              lower(translate(name, '・･ 　《》「」『』【】', '')) LIKE ${"%" + normalized + "%"}
-              OR text ILIKE ${"%" + query + "%"}
+              lower(translate(normalize(name, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO})) LIKE ${likeContains(normalized)} ESCAPE '\\'
+              OR text ILIKE ${likeContains(query)} ESCAPE '\\'
             )`
           : sql``;
         const civFrag = civilization
@@ -147,23 +281,75 @@ export async function runTool(
             text: `検索は成功しましたが、条件に一致するカードは0件でした (条件: ${cond})。これはエラーではありません。条件を緩めて再検索するか、該当するカードが無い旨を回答してください。`,
           };
         }
+        // 1行ごとに殿堂の区分を付ける (#178 (b))。モデルが check_regulation を呼ばなかったときの保険。
+        // 読めなかったら「確認できず」と付け、制限なしとは書かない (#178 (e))。
+        const fmt = resolveFormat(undefined, format);
+        const regs = await loadRegulations(fmt);
+        const index = regs.ok ? buildRegulationIndex(regs.rows) : null;
         const text = rows
           .map(
             (r) =>
-              `${r.name} (${r.cost}コスト, ${(r.civilizations as string[]).join("/")}, ${r.type}): ${String(r.text ?? "").slice(0, 100)}`,
+              `${r.name} ${regulationTagForCard(r.name as string, index)} (${r.cost}コスト, ${(r.civilizations as string[]).join("/")}, ${r.type}): ${String(r.text ?? "").slice(0, 100)}`,
           )
           .join("\n");
-        return { text };
+        const note = regs.ok
+          ? `\n※ [ ] 内は${FORMAT_LABEL[fmt]}の殿堂区分 (regulations 参照)。`
+          : `\n※ ${regs.reason}。殿堂区分は確認できませんでした。殿堂入りしていないと言い切らないでください。`;
+        return { text: text + note };
       }
 
       case "evaluate_deck": {
         const deck = parseDecklist(args.decklist as string);
         const fmt = resolveFormat(args.format, format);
-        const [score, validation] = await Promise.all([
+        const [score, validation, regs] = await Promise.all([
           scoreDeck(deck),
           validateRegulation(deck, fmt),
+          loadRegulations(fmt),
         ]);
-        return { text: JSON.stringify({ score, validation }, null, 2) };
+        // 違反の有無に関係なく、デッキ内の規制カードを必ず返す (#178 (c))。
+        // 無いと「このデッキの殿堂カードはどれか」をモデルが記憶で埋める (No.32)。
+        const restricted_in_deck = restrictedInDeckField(deck, regs);
+        // 読み取れなかった行があるときだけ parseErrors を添える (#165 B-06)。
+        const out = {
+          score,
+          validation,
+          restricted_in_deck,
+          ...(deck.errors.length > 0 ? { parseErrors: deck.errors } : {}),
+        };
+        return { text: JSON.stringify(out, null, 2) };
+      }
+
+      case "check_regulation": {
+        const parsed = CHECK_REGULATION_SCHEMA.safeParse(args);
+        if (!parsed.success) {
+          // 引数エラー。**システム障害ではない** — モデルは正しい引数で呼び直せる。
+          return {
+            text: `ツール引数が不正です: ${parsed.error.issues
+              .map((i) => `${i.path.join(".")}: ${i.message}`)
+              .join(", ")}`,
+            ok: false,
+          };
+        }
+        const names = [...new Set(parsed.data.card_names.map((n) => n.trim()))].filter(Boolean);
+        if (names.length === 0) {
+          return {
+            text: "ツール引数が不正です: card_names: カード名を1つ以上指定してください",
+            ok: false,
+          };
+        }
+        const fmt = resolveFormat(parsed.data.format, format);
+        const regs = await loadRegulations(fmt);
+        if (!regs.ok) {
+          // **「殿堂入りしていない」と言い切らせない** (#178 (e))。
+          return {
+            text: regulationUnavailableText(names, regs.reason),
+            ok: false,
+            systemFailure: true,
+          };
+        }
+        const cardNames = await findCardNamesLike(names);
+        const checks = checkRegulationNames(names, regs.rows, cardNames ?? []);
+        return { text: formatRegulationChecks(checks, fmt, regs.fetchedAt, cardNames !== null) };
       }
 
       case "build_deck": {
@@ -201,15 +387,49 @@ export async function runTool(
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - weeks * 7);
         const cutoffStr = cutoff.toISOString().split("T")[0];
+        // 要求された期間と**同じ長さ**のスナップショットだけを使う (API の /api/meta/tier と同じ。QA③)。
+        // 長さを見ないと、cron が作る 4 週ぶんのスナップショットが 2w / 8w にも返ってしまう。
+        // snapshot-meta は period_start = period_end - weeks*7日 で作るので、日数の差で照合する。
         const snapshots = await sql`
           SELECT tier_data, period_start, period_end
           FROM meta_snapshots
-          WHERE format = ${fmt} AND period_end >= ${cutoffStr}
+          WHERE format = ${fmt}
+            AND period_end >= ${cutoffStr}
+            AND (period_end - period_start) = ${weeks * 7}
           ORDER BY period_end DESC
           LIMIT 1
         `;
-        if (snapshots.length === 0) return { text: "ティアデータがまだありません" };
-        return { text: JSON.stringify(snapshots[0].tier_data, null, 2) };
+        if (snapshots.length > 0) return { text: JSON.stringify(snapshots[0].tier_data, null, 2) };
+
+        // 同じ長さのスナップショットが無ければその場で集計する (API と同じ優先度:
+        // 週次ランキング > 個別 CS 記事)。ここで「データなし」と返すと 2w / 8w が常に空になる。
+        const weekly = await sql`
+          SELECT deck_archetype, SUM(entries)::int as count
+          FROM archetype_weekly_stats
+          WHERE format = ${fmt} AND period_end >= ${cutoffStr}
+          GROUP BY deck_archetype
+          ORDER BY count DESC
+        `;
+        const results =
+          weekly.length > 0
+            ? weekly
+            : await sql`
+                SELECT deck_archetype, COUNT(*)::int as count
+                FROM tournament_results
+                WHERE format = ${fmt} AND event_date >= ${cutoffStr}
+                GROUP BY deck_archetype
+                ORDER BY count DESC
+              `;
+        if (results.length === 0) return { text: "ティアデータがまだありません" };
+        const tierData = aggregateTierData(
+          mergeArchetypeCounts(
+            results.map((r) => ({
+              deck_archetype: r.deck_archetype as string,
+              count: r.count as number,
+            })),
+          ),
+        );
+        return { text: JSON.stringify(tierData, null, 2) };
       }
 
       case "suggest_improvements": {
@@ -263,6 +483,17 @@ export const AGENT_TOOLS = [
       min_cost: z.number().optional().describe("最小コスト (これ以上)"),
       max_cost: z.number().optional().describe("最大コスト (これ以下)"),
       type: z.enum(CARD_TYPES).optional().describe("カード種別"),
+    }),
+  }),
+  tool(async (a: Record<string, unknown>) => (await runTool("check_regulation", a)).text, {
+    name: "check_regulation",
+    description:
+      "カードが殿堂入り・プレミアム殿堂・プレミアム殿堂コンビか (何枚入れられるか) を殿堂レギュレーションで確認します。" +
+      "「〇〇は殿堂入りしてる？」「何枚入れられる？」と聞かれたら、記憶で答えずに必ず呼んでください。" +
+      "略称しか分からないときは、先に search_cards で正式なカード名を調べてから渡してください。",
+    schema: z.object({
+      card_names: z.array(z.string()).describe("調べるカード名の配列 (正式名)"),
+      format: z.enum(["original", "advance"]).optional().describe("フォーマット"),
     }),
   }),
   tool(async (a: Record<string, unknown>) => (await runTool("evaluate_deck", a)).text, {

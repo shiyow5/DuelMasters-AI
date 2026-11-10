@@ -1,0 +1,297 @@
+name: Migrate 010 (chat_daily_usage, one-off)
+
+# migration 010 (infra/sql/010_chat_daily_usage.sql) **だけ**を本番 DB に当てる、使い捨ての workflow。
+#
+# なぜ要るか: PR #156 (F-1 日次クォータ) は main にマージすると deploy.yml で自動デプロイされる。
+# テーブルが無いまま出るとカウンタがエラーになり fail-open (クォータが効かない) になるため、
+# **マージ前に** 010 を当てておく。今の本番コードはこのテーブルを使わないので、先に当てても何も変わらない。
+#
+# - 手動実行 (workflow_dispatch) のみ。push / schedule では動かない。
+# - mode=check: 事前確認とスキーマのバックアップだけ (書き込まない)。
+#   mode=apply: 事前確認 → バックアップ → 適用 (1トランザクション) → 適用後の確認。
+# - SQL は PR #156 の head (bb8c106) のファイルを、ハッシュを照合してから当てる。食い違えば止まる。
+# - 既にテーブルがあれば当てない (冪等)。適用後の確認だけ流して、定義が違えば失敗にする。
+# - ロールバック SQL: infra/sql/rollback/010_chat_daily_usage.down.sql (この workflow は実行しない)。
+# - 手順と確認 SQL の出典: 手順書 migration-010-apply-runbook.md §1〜§3。
+#
+# 接続情報をログに出さないための決まり:
+# - set -x を使わない。DATABASE_URL を echo しない。
+# - ホスト・ユーザー・パスワード・ポート付きホストは ::add-mask:: で伏せる (Secret 全体は GitHub が自動で伏せる)。
+# - psql / pg_dump の stderr はファイルに落とし、ERROR/FATAL 等の行だけをホストや IP を伏せて出す。
+#
+# #156 がマージされ 010 が当たったら、この workflow は役目を終える (削除してよい)。
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check = 確認とバックアップだけ / apply = 010 を当てる"
+        type: choice
+        options: [check, apply]
+        default: check
+
+permissions:
+  contents: read
+
+concurrency:
+  # 同じ本番 DB へのスキーマ変更を重ねない。
+  group: migrate-010
+  cancel-in-progress: false
+
+env:
+  # PR #156 の head と、そこにある 010 の SHA-256。PR が更新されたらここも見直す (食い違えば止まる)。
+  PR156_SHA: bb8c10679cbcc17a8be02fdd69567af6adeeef86
+  SQL_PATH: infra/sql/010_chat_daily_usage.sql
+  SQL_SHA256: b6e545205e38afb3e2d2d33d83528d0aa9697ca8fd4154301e3dda4ad6631063
+
+jobs:
+  migrate:
+    name: migrate 010 (${{ github.event.inputs.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 010 の SQL を PR #156 の head から取り出して照合
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$PR156_SHA"
+          git show "$PR156_SHA:$SQL_PATH" > "$RUNNER_TEMP/010.sql"
+          actual=$(sha256sum "$RUNNER_TEMP/010.sql" | cut -d' ' -f1)
+          if [ "$actual" != "$SQL_SHA256" ]; then
+            echo "::error::010 の SQL が想定と違う (sha256=$actual)。当てずに止める"
+            exit 1
+          fi
+          echo "010 の SQL: sha256 一致 ($actual)"
+          echo "----- 当てる SQL -----"
+          cat "$RUNNER_TEMP/010.sql"
+
+      - name: 接続情報を伏せる
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Secret DATABASE_URL が無い"
+            exit 1
+          fi
+          # 各部分を ::add-mask:: する。値そのものは表示されない (コマンド行は runner が消費する)。
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit, unquote
+          u = urlsplit(os.environ["DATABASE_URL"])
+          vals = {u.hostname, u.username, u.password, u.netloc}
+          if u.password:
+              vals.add(unquote(u.password))
+          if u.username:
+              vals.add(unquote(u.username))
+          if u.hostname and u.port:
+              vals.add(f"{u.hostname}:{u.port}")
+          for v in vals:
+              if v and len(v) >= 3:
+                  print(f"::add-mask::{v}")
+          PY
+
+      - name: 事前確認 (読むだけ) と pg_dump の用意
+        id: pre
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PGCONNECT_TIMEOUT: "20"
+        run: |
+          set -euo pipefail
+          err="$RUNNER_TEMP/psql.err"
+          # 失敗時: ERROR/FATAL/DETAIL/HINT の行だけ、ホスト・IP を伏せて出す。
+          show_err() {
+            grep -E '(ERROR|FATAL|DETAIL|HINT):' "$err" \
+              | sed -E 's/"[^"]*"/"***"/g; s/\([0-9a-fA-F.:]+\)/(***)/g; s/[0-9]{1,3}(\.[0-9]{1,3}){3}/***/g' \
+              | head -n 20 || true
+          }
+          q() {
+            if ! psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -At -c "$1" 2> "$err"; then
+              echo "::error::DB への問い合わせに失敗 (接続情報は出さない)"
+              show_err
+              exit 1
+            fi
+          }
+
+          ver=$(q "SHOW server_version_num")
+          major=$((ver / 10000))
+          echo "server major version: $major"
+          echo "major=$major" >> "$GITHUB_OUTPUT"
+          echo "search_path: $(q 'SHOW search_path')"
+
+          # §1-3 (a) 010 のテーブルがまだ無いこと
+          t010=$(q "SELECT coalesce(to_regclass('public.chat_daily_usage')::text, 'NULL')")
+          echo "(a) to_regclass('public.chat_daily_usage') = $t010"
+          # 同名がほかのスキーマに無いこと (search_path 次第で別スキーマに作られるのを防ぐ確認)
+          other=$(q "SELECT coalesce(string_agg(n.nspname, ','), '') FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = 'chat_daily_usage' AND n.nspname <> 'public'")
+          echo "    public 以外の chat_daily_usage: ${other:-なし}"
+          if [ -n "$other" ]; then
+            echo "::error::public 以外のスキーマに chat_daily_usage がある。止める"
+            exit 1
+          fi
+
+          # §1-3 (b) 007 と 009 が当たっていること
+          prev=$(q "SELECT coalesce(to_regclass('public.deck_recipes')::text, 'NULL') || ' ' || coalesce(to_regclass('public.conversations')::text, 'NULL')")
+          echo "(b) t009 t007 = $prev"
+          case "$prev" in
+            *NULL*) echo "::error::前の migration (007/009) が抜けている。止める"; exit 1 ;;
+          esac
+
+          if [ "$t010" = "NULL" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::chat_daily_usage は既にある。当てずに適用後の確認だけ流す"
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          # pg_dump はサーバと同じメジャー版を入れる (古い pg_dump は新しいサーバを dump できない)。
+          sudo apt-get update -qq
+          if ! sudo apt-get install -y -qq --no-install-recommends "postgresql-client-$major" > /dev/null 2>&1; then
+            sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y > /dev/null
+            sudo apt-get install -y -qq --no-install-recommends "postgresql-client-$major" > /dev/null
+          fi
+          "/usr/lib/postgresql/$major/bin/pg_dump" --version
+
+      - name: バックアップ (public のスキーマだけ。データは含めない)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PGCONNECT_TIMEOUT: "20"
+          MAJOR: ${{ steps.pre.outputs.major }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/backup"
+          out="$RUNNER_TEMP/backup/schema-before-010.sql"
+          err="$RUNNER_TEMP/pg_dump.err"
+          if ! "/usr/lib/postgresql/$MAJOR/bin/pg_dump" "$DATABASE_URL" --schema-only --schema=public \
+              --no-owner --no-privileges -f "$out" 2> "$err"; then
+            echo "::error::pg_dump に失敗 (接続情報は出さない)。当てずに止める"
+            grep -E '(error|ERROR|FATAL):' "$err" \
+              | sed -E 's/"[^"]*"/"***"/g; s/\([0-9a-fA-F.:]+\)/(***)/g; s/[0-9]{1,3}(\.[0-9]{1,3}){3}/***/g' \
+              | head -n 20 || true
+            exit 1
+          fi
+          # 接続情報が dump に紛れていないこと (値は表示しない)
+          python3 - "$out" <<'PY'
+          import os, sys
+          from urllib.parse import urlsplit, unquote
+          u = urlsplit(os.environ["DATABASE_URL"])
+          body = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+          needles = [os.environ["DATABASE_URL"], u.hostname, u.password, u.netloc]
+          if u.password:
+              needles.append(unquote(u.password))
+          if u.username and "." in u.username:  # pooler のユーザー名 (postgres.<project-ref>)
+              needles.append(u.username)
+          hit = [n for n in needles if n and len(n) >= 6 and n in body]
+          if hit:
+              print("::error::dump に接続情報らしき文字列がある。artifact に置かない")
+              sys.exit(1)
+          print("dump に接続情報は含まれていない")
+          PY
+          if grep -qE '^COPY |^INSERT INTO ' "$out"; then
+            echo "::error::dump にデータ行がある (schema-only のはず)。artifact に置かない"
+            exit 1
+          fi
+          echo "dump: $(wc -l < "$out") 行 / sha256 $(sha256sum "$out" | cut -d' ' -f1)"
+
+      - name: バックアップを artifact に保存
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: schema-before-010-${{ github.run_id }}
+          path: ${{ runner.temp }}/backup/schema-before-010.sql
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: 010 を当てる (1トランザクション, ON_ERROR_STOP=1)
+        if: github.event.inputs.mode == 'apply' && steps.pre.outputs.present == 'false'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PGCONNECT_TIMEOUT: "20"
+        run: |
+          set -euo pipefail
+          err="$RUNNER_TEMP/apply.err"
+          # search_path を public に固定してから、PR #156 のファイルをそのまま流す。-1 で全体が1トランザクション。
+          if ! psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -1 \
+              -c "SET search_path TO public" -f "$RUNNER_TEMP/010.sql" 2> "$err"; then
+            echo "::error::010 の適用に失敗。1トランザクションなので何も変わっていない"
+            grep -E '(ERROR|FATAL|DETAIL|HINT):' "$err" \
+              | sed -E 's/"[^"]*"/"***"/g; s/\([0-9a-fA-F.:]+\)/(***)/g; s/[0-9]{1,3}(\.[0-9]{1,3}){3}/***/g' \
+              | head -n 20 || true
+            exit 1
+          fi
+          echo "010 適用: 成功"
+
+      - name: 適用後の確認 (読むだけ。手順書 §3)
+        if: github.event.inputs.mode == 'apply' || steps.pre.outputs.present == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PGCONNECT_TIMEOUT: "20"
+          PRESENT_BEFORE: ${{ steps.pre.outputs.present }}
+        run: |
+          set -euo pipefail
+          err="$RUNNER_TEMP/verify.err"
+          q() {
+            if ! psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -At -F '|' -c "$1" 2> "$err"; then
+              echo "::error::確認クエリに失敗 (接続情報は出さない)"
+              grep -E '(ERROR|FATAL|DETAIL|HINT):' "$err" \
+                | sed -E 's/"[^"]*"/"***"/g; s/\([0-9a-fA-F.:]+\)/(***)/g; s/[0-9]{1,3}(\.[0-9]{1,3}){3}/***/g' \
+                | head -n 20 || true
+              exit 1
+            fi
+          }
+          fail=0
+          check() { # $1=項目 $2=期待 $3=実際
+            echo "$1:"; printf '  %s\n' "$3" | sed 's/^  $/  (なし)/'
+            if [ "$2" != "$3" ]; then echo "::error::$1 が期待と違う"; echo "  期待: $2"; fail=1; else echo "  -> OK"; fi
+          }
+
+          t=$(q "SELECT coalesce(to_regclass('public.chat_daily_usage')::text, 'NULL')")
+          check "存在 to_regclass('public.chat_daily_usage')" "chat_daily_usage" "$t"
+          [ "$t" = "NULL" ] && exit 1
+
+          cols=$(q "SELECT column_name, data_type, is_nullable, coalesce(column_default, '') FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'chat_daily_usage' ORDER BY ordinal_position")
+          check "(a) 列" "$(printf 'user_id|character varying|NO|\nusage_date|date|NO|\ncount|integer|NO|0')" "$cols"
+
+          len=$(q "SELECT character_maximum_length FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'chat_daily_usage' AND column_name = 'user_id'")
+          check "(a') user_id の長さ" "100" "$len"
+
+          cons=$(q "SELECT conname, contype, pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'public.chat_daily_usage'::regclass ORDER BY conname")
+          check "(b) 制約" "chat_daily_usage_pkey|p|PRIMARY KEY (user_id, usage_date)" "$cons"
+
+          idx=$(q "SELECT indexname || '|' || indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'chat_daily_usage' ORDER BY indexname")
+          check "(b') インデックス" "chat_daily_usage_pkey|CREATE UNIQUE INDEX chat_daily_usage_pkey ON public.chat_daily_usage USING btree (user_id, usage_date)" "$idx"
+
+          rls=$(q "SELECT relrowsecurity FROM pg_class WHERE oid = 'public.chat_daily_usage'::regclass")
+          check "(c) RLS 有効" "t" "$rls"
+
+          pol=$(q "SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'chat_daily_usage'")
+          check "(d) ポリシー数" "0" "$pol"
+
+          rows=$(q "SELECT count(*) FROM public.chat_daily_usage")
+          if [ "$PRESENT_BEFORE" = "false" ]; then
+            check "(e) 行数" "0" "$rows"
+          else
+            echo "(e) 行数: $rows (既存テーブルなので値は問わない)"
+          fi
+
+          # UPSERT が動くか。最後に ROLLBACK するので本番には何も残らない (手順書 §3 の任意確認)。
+          up=$(psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -At 2> "$err" <<'SQL' | tr '\n' ' ' | sed 's/ *$//'
+          BEGIN;
+          INSERT INTO public.chat_daily_usage (user_id, usage_date, count) VALUES ('runbook:test', '2000-01-01', 1)
+            ON CONFLICT (user_id, usage_date) DO UPDATE SET count = public.chat_daily_usage.count + 1 RETURNING count;
+          INSERT INTO public.chat_daily_usage (user_id, usage_date, count) VALUES ('runbook:test', '2000-01-01', 1)
+            ON CONFLICT (user_id, usage_date) DO UPDATE SET count = public.chat_daily_usage.count + 1 RETURNING count;
+          ROLLBACK;
+          SQL
+          ) || { echo "::error::UPSERT の確認に失敗"; exit 1; }
+          check "UPSERT 1回目→2回目の count (ROLLBACK 済み)" "1 2" "$up"
+          left=$(q "SELECT count(*) FROM public.chat_daily_usage WHERE user_id = 'runbook:test'")
+          check "UPSERT の試験行が残っていない" "0" "$left"
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::適用後の確認で食い違いがある"
+            exit 1
+          fi
+          echo "適用後の確認: すべて OK"

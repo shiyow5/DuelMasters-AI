@@ -27,8 +27,12 @@ concurrency:
 env:
   NODE_VERSION: "22"
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
+    environment: production
     name: Deploy ${{ matrix.app }} Worker
     # CI は pull_request でも走る。conclusion == 'success' だけを見ると、未マージの PR コードが
     # workflow_run を発火させ、本番の Cloudflare 認証情報でデプロイされうる (fork の main ブランチ
@@ -63,7 +67,7 @@ jobs:
 
       - name: Checkout
         if: steps.scope.outputs.run == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         # workflow_run は既定でデフォルトブランチの HEAD を取るが、CI が通ったコミットを
         # 明示して取り違えを防ぐ。
         with:
@@ -71,11 +75,11 @@ jobs:
 
       - name: Setup pnpm
         if: steps.scope.outputs.run == 'true'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node.js
         if: steps.scope.outputs.run == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -132,7 +136,7 @@ jobs:
 
       - name: Deploy to Cloudflare Workers
         if: steps.scope.outputs.run == 'true'
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

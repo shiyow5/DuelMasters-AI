@@ -7,7 +7,14 @@ export { configureAgent } from "./models.js";
 export { runTool, type ToolResult } from "./tools.js";
 export { sanitizeCitations, type SanitizeResult } from "./citations.js";
 export type { AgentMode, Citation } from "./state.js";
-export { MAX_ITERATIONS, RAG_CONTEXT_HEADER, formatRagContext } from "./graph.js";
+export {
+  MAX_ITERATIONS,
+  MAX_TOOL_CALLS_PER_TURN,
+  MAX_TOOL_CALLS_PER_REQUEST,
+  TOOL_CALL_LIMIT_MESSAGE,
+  RAG_CONTEXT_HEADER,
+  formatRagContext,
+} from "./graph.js";
 
 export interface AgentInput {
   message: string;
@@ -74,6 +81,7 @@ function initialState(input: AgentInput) {
     iterations: 0,
     toolSuccesses: 0,
     toolFailures: [],
+    toolCallsExecuted: 0,
   };
 }
 

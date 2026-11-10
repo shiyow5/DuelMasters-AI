@@ -76,6 +76,14 @@ export type Tier = (typeof TIERS)[number];
 export const DECK_SIZE = 40;
 export const MAX_COPIES = 4;
 
+/**
+ * オリジナル形式のデッキに超次元・GR のカードがあったときの扱い (QA② / 2026-11-02 しよをさん決定・A案)。
+ *
+ * オリジナルでは超次元・GR ゾーンを使えないが、今は **"warning"** = 警告を出して評価は続ける。
+ * エラーに格上げするときは **ここを "error" に変えるだけ** でよい (validator がこの値を見る)。
+ */
+export const ORIGINAL_EXTRA_ZONE_SEVERITY: "warning" | "error" = "warning";
+
 /** デッキ評価の目安値 */
 export const DECK_GUIDELINES = {
   triggerCount: 8,

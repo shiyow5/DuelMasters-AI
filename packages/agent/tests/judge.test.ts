@@ -67,6 +67,21 @@ describe.skipIf(!hasTestDb)("buildCardGrounding (統合)", () => {
     expect(g).toContain("存在しないカードqwerty");
   });
 
+  it("カード名の _ や % をワイルドカードにしない (#170)", async () => {
+    await sql`INSERT INTO cards (name, civilizations, cost, type, power, text) VALUES
+      ('A_Bドラゴン', '["fire"]', 5, 'creature', 5000, 'テスト'),
+      ('100%ビート', '["fire"]', 3, 'creature', 3000, 'テスト')`;
+    // 本文に「AxBドラゴン」「100ビート」しか無いのに、名前の _ / % が1文字/任意長に当たって
+    // 実在確認済みと誤判定しないこと
+    const miss = await buildCardGrounding("4x AxBドラゴン と 4x 100ビート");
+    expect(miss).not.toContain("A_Bドラゴン");
+    expect(miss).not.toContain("100%ビート");
+    // 名前そのものが書かれていれば当たる
+    const hit = await buildCardGrounding("4x A_Bドラゴン と 4x 100%ビート");
+    expect(hit).toContain("A_Bドラゴン");
+    expect(hit).toContain("100%ビート");
+  });
+
   it("文明/コスト/種別/パワーを正解として提示する", async () => {
     // judge は実在カードのスペックも捏造する (火の《死亡遊戯》を「闇文明」と断じた等)。
     // 名前だけの grounding では防げないため、スペックまで渡す。

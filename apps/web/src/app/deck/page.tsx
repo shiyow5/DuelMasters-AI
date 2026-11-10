@@ -1,14 +1,22 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiPost, apiGet, apiDelete } from "@/lib/api";
 import { scoreGrade } from "@/lib/format";
+import { countMainCards, savedCardsToDecklist, type SavedDeckCard } from "@/lib/deck-text";
 import { supabase } from "@/lib/supabase";
 import type { DeckScore, ValidationResult, SavedDeckSummary } from "@/lib/types";
 import { CIV_COLORS, CIV_LABELS, CIV_HEX } from "@/lib/civ";
 import Header from "@/components/Header";
 import ErrorDisplay from "@/components/ErrorDisplay";
 import DeckCardGrid from "@/components/DeckCardGrid";
+import EvalSummaryStrip from "@/components/EvalSummaryStrip";
+import {
+  DESKTOP_MEDIA_QUERY,
+  REDUCED_MOTION_MEDIA_QUERY,
+  evalAnnouncement,
+  resultScrollBehavior,
+} from "@/lib/eval-result";
 
 export default function DeckPage() {
   const [decklist, setDecklist] = useState("");
@@ -16,6 +24,7 @@ export default function DeckPage() {
   const [format, setFormat] = useState<"original" | "advance">("original");
   const [score, setScore] = useState<DeckScore | null>(null);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [buildResult, setBuildResult] = useState<string>("");
   // デッキが持つカード (評価/読込/自動構築のたびにサーバのパース結果で更新する)。
   // カード画像グリッド (#129) の入力。
@@ -31,6 +40,15 @@ export default function DeckPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   // 読込/削除/評価/自動構築のエラーを画面内で統一表示する (alert は使わない)
   const [pageError, setPageError] = useState("");
+  // 評価完了時に結果へ移動する (UI改善 P-3)。
+  // サマリーストリップ (lg 未満のスクロール&フォーカス先) と pageError のラッパ。
+  const resultRef = useRef<HTMLElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  // 評価が成功するたびに +1。`score` の変化で発火させると loadDeck (マイデッキ読込) でも
+  // スクロールしてしまうので専用カウンタにする (loadDeck では増やさない: P-3-7 決定 1)。
+  const [evalSeq, setEvalSeq] = useState(0);
+  // デスクトップ幅用のスクリーンリーダー通知 (フォーカスを動かさない側)
+  const [announce, setAnnounce] = useState("");
 
   const refreshMyDecks = useCallback(async () => {
     if (!supabase) {
@@ -61,6 +79,29 @@ export default function DeckPage() {
     return () => sub.subscription.unsubscribe();
   }, [refreshMyDecks]);
 
+  // 評価成功 → lg 未満ならサマリーストリップへスクロールしてフォーカスを移す。
+  // lg 以上は 3 カラムで結果が評価ボタンと同時に見えているので動かさない (announce で通知)。
+  // effect は commit 後に走るので、同じバッチで描画されたストリップの DOM は既にある。
+  useEffect(() => {
+    if (evalSeq === 0) return; // 初期表示では動かない
+    if (window.matchMedia(DESKTOP_MEDIA_QUERY).matches) return;
+    const el = resultRef.current;
+    if (!el) return;
+    const reduce = window.matchMedia(REDUCED_MOTION_MEDIA_QUERY).matches;
+    // フォーカスは先に当て、スクロールは scrollIntoView に任せる (二重スクロール防止)
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ behavior: resultScrollBehavior(reduce), block: "start" });
+  }, [evalSeq]);
+
+  // エラーはコンテナ最上部に出る。lg 未満で評価ボタンまでスクロールしていると見えないので、
+  // 見えていないときだけ可視域へ入れる (`nearest` = 既に見えていれば動かない)。
+  // フォーカスは動かさない (role="alert" で読み上げられ、入力を続けられるように)。
+  useEffect(() => {
+    if (!pageError) return;
+    const reduce = window.matchMedia(REDUCED_MOTION_MEDIA_QUERY).matches;
+    errorRef.current?.scrollIntoView({ behavior: resultScrollBehavior(reduce), block: "nearest" });
+  }, [pageError]);
+
   async function handleSave() {
     if (!title.trim() || !score || saving) return;
     setSaveMsg("");
@@ -90,18 +131,21 @@ export default function DeckPage() {
     setPageError("");
     try {
       const deck = await apiGet<{
-        cards: Array<{ name: string; count: number }>;
+        // 超次元・GR の行は zone 付きで保存される (メインは zone 無し)。QA②
+        cards: SavedDeckCard[];
         format: "original" | "advance";
         // 保存時に計算・保存済みのスコア (#133)。GET /:id が返すので、
         // 読み込んだら再評価せずに即表示する (以前は捨てて「評価する」を押し直させていた)。
         scores: DeckScore | null;
       }>(`/api/deck/${id}`);
-      setDecklist(deck.cards.map((c) => `${c.count} ${c.name}`).join("\n"));
+      setDecklist(savedCardsToDecklist(deck.cards));
       setFormat(deck.format);
       setScore(deck.scores ?? null);
-      setDeckEntries(deck.cards);
+      // グリッドは評価時と同じくメインデッキだけ
+      setDeckEntries(deck.cards.filter((c) => !c.zone));
       // 殿堂チェック (validation) は保存していないので復元しない。スコアだけ即表示する。
       setValidation(null);
+      setParseErrors([]);
       setBuildResult("");
     } catch (err) {
       setPageError(`読み込みに失敗しました: ${err instanceof Error ? err.message : "不明"}`);
@@ -126,18 +170,27 @@ export default function DeckPage() {
     setPageError("");
     setScore(null);
     setValidation(null);
+    setParseErrors([]);
+    // 連続評価で同じ文面でも読み上げ直されるよう、いったん空にする
+    setAnnounce("");
     // 評価開始時に前回のカードグリッドも消す。ここで消さないと、評価が失敗したとき
     // (セッション切れ/500/通信断) に前のデッキのカード画像が新しい入力の隣に残る (Codex P2)。
     setDeckEntries([]);
     try {
       const res = await apiPost<{
-        parsed: { entries: Array<{ name: string; count: number }> };
+        parsed: { entries: Array<{ name: string; count: number }>; errors: string[] };
         score: DeckScore;
         validation: ValidationResult;
       }>("/api/deck/evaluate", { decklist, format });
       setScore(res.score);
       setValidation(res.validation);
+      setParseErrors(res.parsed.errors);
       setDeckEntries(res.parsed.entries);
+      // 成功時のみ。失敗 (catch) では結果へ移動しない
+      setEvalSeq((n) => n + 1);
+      if (window.matchMedia(DESKTOP_MEDIA_QUERY).matches) {
+        setAnnounce(evalAnnouncement(res.score, res.validation));
+      }
     } catch (err) {
       setPageError(`評価に失敗しました: ${err instanceof Error ? err.message : "不明"}`);
     } finally {
@@ -177,24 +230,38 @@ export default function DeckPage() {
     ? Object.values(score.civilizationBalance).reduce((a, b) => a + b, 0)
     : 0;
 
-  // 入力中デッキリストの合計枚数 (各行の先頭数値を合算)
-  const parsedCount = decklist.split("\n").reduce((s, l) => {
-    const m = l.trim().match(/^(\d+)/);
-    return s + (m ? parseInt(m[1], 10) : 0);
-  }, 0);
+  // 入力中デッキリストのメインデッキの枚数 (見出しと超次元・GR は数えない。#179)
+  const parsedCount = countMainCards(decklist);
+
+  // 読み取れなかった行 (#165 B-06)。以前は API が返していても画面に出していなかった
+  const parseErrorBox =
+    parseErrors.length > 0 ? (
+      <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
+        <h4 className="text-sm font-medium text-warning mb-2">
+          読み取れなかった行 (評価に入っていません)
+        </h4>
+        <ul className="space-y-1">
+          {parseErrors.map((e, i) => (
+            <li key={i} className="text-sm text-text-muted">
+              {e}
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Header */}
       <Header
         left={
-          <div>
-            <div className="flex items-center gap-2 text-text-muted text-sm mb-1">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-text-muted text-sm mb-1 max-sm:hidden">
               <span>Decks</span>
               <span className="material-symbols-outlined text-[14px]">chevron_right</span>
               <span className="text-white">デッキビルダー</span>
             </div>
-            <h1 className="text-3xl font-bold text-white">デッキ構築・評価</h1>
+            <h1 className="text-xl sm:text-3xl font-bold text-white truncate">デッキ構築・評価</h1>
           </div>
         }
         right={
@@ -206,14 +273,15 @@ export default function DeckPage() {
                   setFormat(f);
                   setScore(null);
                   setValidation(null);
+                  setParseErrors([]);
                 }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                   format === f
                     ? "bg-primary/20 text-primary border border-primary/20"
                     : "bg-bg-surface-highlight text-text-muted hover:text-white border border-border-subtle"
                 }`}
               >
-                {f === "original" ? "Original" : "Advance"}
+                {f === "original" ? "オリジナル" : "アドバンス"}
               </button>
             ))}
           </div>
@@ -222,9 +290,14 @@ export default function DeckPage() {
 
       {/* Dashboard Columns */}
       <div className="flex-1 overflow-y-auto lg:overflow-hidden p-6 grid grid-cols-12 gap-6">
+        {/* デスクトップ幅の評価完了通知 (SR 用)。中身だけ差し替えるので常に描画しておく */}
+        <p role="status" aria-live="polite" className="sr-only">
+          {announce}
+        </p>
+
         {/* ページ全体のエラー (読込/削除/評価/自動構築) */}
         {pageError && (
-          <div className="col-span-12">
+          <div className="col-span-12" ref={errorRef}>
             <ErrorDisplay message={pageError} variant="error" onDismiss={() => setPageError("")} />
           </div>
         )}
@@ -235,7 +308,7 @@ export default function DeckPage() {
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">
-                Deck List
+                デッキ内容
               </h3>
               <span
                 className={`text-xs px-2 py-0.5 rounded ${
@@ -270,7 +343,7 @@ export default function DeckPage() {
                   className="flex-1 py-2 bg-gradient-to-r from-primary to-primary-dark hover:opacity-90 text-bg-dark rounded-lg text-sm font-bold transition-opacity shadow-lg shadow-primary/10 flex justify-center items-center gap-2 disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-[18px]">auto_fix_high</span>
-                  Auto Build
+                  自動構築
                 </button>
               </div>
             </form>
@@ -278,7 +351,7 @@ export default function DeckPage() {
 
           {/* Theme Input for Auto Build */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-text-muted mb-3">Auto Build テーマ</h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-3">自動構築テーマ</h3>
             <input
               type="text"
               value={theme}
@@ -294,7 +367,7 @@ export default function DeckPage() {
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
                 <span className="material-symbols-outlined text-6xl text-primary">lightbulb</span>
               </div>
-              <h3 className="text-sm font-semibold text-white mb-2 relative z-10">AI Suggestion</h3>
+              <h3 className="text-sm font-semibold text-white mb-2 relative z-10">AI提案</h3>
               <p className="text-xs text-text-muted leading-relaxed relative z-10">
                 {score.suggestions[0]}
               </p>
@@ -319,7 +392,7 @@ export default function DeckPage() {
                         className="flex flex-col items-start min-w-0 flex-1 text-left"
                       >
                         <span className="text-xs text-white truncate w-full">{d.title}</span>
-                        <span className="text-[10px] text-text-muted">
+                        <span className="text-xs text-text-muted">
                           {d.format} · {d.overall ?? "--"}点
                         </span>
                       </button>
@@ -337,6 +410,9 @@ export default function DeckPage() {
             </div>
           )}
         </div>
+
+        {/* 評価結果サマリー (lg 未満のみ。DOM 順: 入力 → ここ → 中央 → スコア) */}
+        {score && <EvalSummaryStrip ref={resultRef} score={score} validation={validation} />}
 
         {/*
           Center Column: Build Result / Validation
@@ -394,6 +470,7 @@ export default function DeckPage() {
               </pre>
             ) : validation && !validation.valid ? (
               <div className="space-y-3">
+                {parseErrorBox}
                 <div className="rounded-xl border border-danger/30 bg-danger/10 p-4">
                   <h4 className="text-sm font-medium text-danger mb-2">レギュレーション違反</h4>
                   <ul className="space-y-1">
@@ -419,6 +496,19 @@ export default function DeckPage() {
               </div>
             ) : score ? (
               <div className="space-y-4">
+                {parseErrorBox}
+                {/*
+                  レギュレーションの警告 (valid のまま評価を続けたもの。例: オリジナルに超次元・GR。QA②)。
+                  以前は違反 (valid=false) のときしか出しておらず、評価が通ると警告が見えなかった。
+                */}
+                {validation?.warnings.map((w, i) => (
+                  <div
+                    key={`v${i}`}
+                    className="p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm text-text-muted"
+                  >
+                    {w}
+                  </div>
+                ))}
                 {score.warnings.map((w, i) => (
                   <div
                     key={i}
@@ -456,7 +546,7 @@ export default function DeckPage() {
           {/* Overall Score */}
           <div className="bg-gradient-to-br from-bg-surface to-bg-surface-highlight border border-border-highlight rounded-xl p-5 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
-            <h3 className="text-sm font-semibold text-text-muted mb-4">Deck Power Score</h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-4">デッキ評価スコア</h3>
             <div className="flex items-end gap-3">
               <span className="text-5xl font-bold text-white tracking-tighter">
                 {score ? scoreGrade(score.overall) : "--"}
@@ -465,7 +555,7 @@ export default function DeckPage() {
                 <div className="text-xs text-primary font-bold uppercase tracking-wider">
                   {score ? `${score.overall}/100` : "未評価"}
                 </div>
-                <div className="text-[10px] text-text-muted">
+                <div className="text-xs text-text-muted">
                   初動率: {score ? `${Math.round(score.openingHandRate * 100)}%` : "--"}
                 </div>
               </div>
@@ -474,7 +564,7 @@ export default function DeckPage() {
 
           {/* Mana Curve */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-text-muted mb-6">Mana Curve</h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-6">マナカーブ</h3>
             <div className="h-32 flex items-end justify-between gap-2 px-1">
               {[
                 {
@@ -502,7 +592,7 @@ export default function DeckPage() {
                       }}
                     />
                   </div>
-                  <span className="text-[10px] text-text-muted font-medium">
+                  <span className="text-xs text-text-muted font-medium">
                     {bar.label} ({bar.value})
                   </span>
                 </div>
@@ -512,7 +602,7 @@ export default function DeckPage() {
 
           {/* Civilization Ratio */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-text-muted mb-4">Civilization Ratio</h3>
+            <h3 className="text-sm font-semibold text-text-muted mb-4">文明比率</h3>
             {score ? (
               <div className="flex items-center gap-4">
                 {/* Donut placeholder */}
@@ -549,7 +639,7 @@ export default function DeckPage() {
                     <span className="text-xs font-bold text-white">
                       {Object.keys(score.civilizationBalance).length}
                     </span>
-                    <span className="text-[8px] text-text-muted">Civs</span>
+                    <span className="text-xs text-text-muted">文明</span>
                   </div>
                 </div>
                 <div className="flex flex-col gap-2 w-full">
@@ -576,7 +666,7 @@ export default function DeckPage() {
           {/* Shield Triggers */}
           <div className="bg-bg-surface border border-border-highlight rounded-xl p-5">
             <div className="flex justify-between items-center mb-2">
-              <h3 className="text-sm font-semibold text-text-muted">Shield Triggers</h3>
+              <h3 className="text-sm font-semibold text-text-muted">シールドトリガー</h3>
               <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                 {score?.triggerCount ?? 0} Cards
               </span>
@@ -590,11 +680,11 @@ export default function DeckPage() {
                   }}
                 />
               </div>
-              <div className="flex justify-between text-[10px] text-text-muted font-medium">
+              <div className="flex justify-between text-xs text-text-muted font-medium">
                 <span>0</span>
-                <span>Low</span>
-                <span className="text-warning">Avg (8)</span>
-                <span>High</span>
+                <span>低</span>
+                <span className="text-warning">平均 (8)</span>
+                <span>高</span>
                 <span>20</span>
               </div>
             </div>

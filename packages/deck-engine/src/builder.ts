@@ -5,9 +5,11 @@ import {
   DECK_GUIDELINES,
   type Format,
   type DeckEntry,
+  likeContains,
 } from "@dm-ai/core";
 import { getSql } from "@dm-ai/db";
 import { classifyRegulations, applyRegulationToRequired } from "./regulation-rules.js";
+import { regulationNameKey } from "./card-name.js";
 import { pickReplacements } from "./suggest.js";
 import { deriveStrategy } from "./strategy.js";
 
@@ -93,21 +95,30 @@ export async function autoBuild(
   if (constraints.requiredCards && constraints.requiredCards.length > 0) {
     const { adopted, warnings } = applyRegulationToRequired(constraints.requiredCards, reg);
     for (const a of adopted) {
-      entries.push(a);
-      totalCards += a.count;
+      // 同じカードを表記ゆれで2回指定されても1枚分として扱う (#167 PR-C)。
+      // 合算すると殿堂入りが2枚、通常カードが8枚になる。枚数は多いほう、表記は最初の指定。
+      const i = entries.findIndex((e) => regulationNameKey(e.name) === regulationNameKey(a.name));
+      if (i === -1) {
+        entries.push(a);
+        totalCards += a.count;
+      } else if (a.count > entries[i].count) {
+        totalCards += a.count - entries[i].count;
+        entries[i] = { ...entries[i], count: a.count };
+      }
     }
     weaknesses.push(...warnings);
   }
 
-  // 2. テーマに関連するカードを検索
+  // 2. テーマに関連するカードを検索 (テーマはユーザー入力なので LIKE のメタ文字をエスケープ, #170)
+  const themePattern = likeContains(searchTheme);
   const themeCards = await sql`
     SELECT name, cost, type, tags, civilizations, is_shield_trigger, is_rainbow
     FROM cards
     WHERE (
-      text ILIKE ${"%" + searchTheme + "%"}
-      OR name ILIKE ${"%" + searchTheme + "%"}
+      text ILIKE ${themePattern} ESCAPE '\\'
+      OR name ILIKE ${themePattern} ESCAPE '\\'
       OR EXISTS (
-        SELECT 1 FROM jsonb_array_elements_text(races) r WHERE r ILIKE ${"%" + searchTheme + "%"}
+        SELECT 1 FROM jsonb_array_elements_text(races) r WHERE r ILIKE ${themePattern} ESCAPE '\\'
       )
     )
     ${excludeFrag} ${civFrag} ${costFrag} ${playableFrag}
@@ -132,8 +143,15 @@ export async function autoBuild(
 
   // 採用済み枚数を名前ごとに持つ。cap 付きで部分的にしか入らなかったカードを
   // 後のパスで上限まで積み増せるようにするため、Set (使用済みフラグ) では足りない。
-  const counts = new Map(entries.map((e) => [e.name, e.count]));
-  const entryIndex = new Map(entries.map((e, i) => [e.name, i]));
+  //
+  // counts / entryIndex のキーは**正規化キー** (regulationNameKey) (#167 PR-C)。生の名前だと
+  // requiredCards の「龍装艦 チェンジザ」と DB の「龍装艦チェンジザ」が別のカードとして数えられ、
+  // 殿堂入りが各1枚 (計2枚)、通常カードが各4枚入りうる。entries の name は最初に入れた表記のまま。
+  const key = regulationNameKey;
+  const counts = new Map(entries.map((e) => [key(e.name), e.count]));
+  const entryIndex = new Map(entries.map((e, i) => [key(e.name), i]));
+  // SQL の `name IN` / `NOT IN` に渡す生の名前 (これまでに扱った全表記。swap で外したカードも残す)。
+  const usedNames = new Set(entries.map((e) => e.name));
 
   // 必須カードにクリーチャーが含まれていれば下限に数える。0 から数え直すと、
   // 全部クリーチャーの必須構築でも下限ぶんの枠を余計に予約し、「クリーチャーが0枚」と
@@ -145,23 +163,24 @@ export async function autoBuild(
     // 足してしまい (4枚 → 8枚)、クリーチャー補充が発火しなくなる。
     const requiredTypes = await sql`
       SELECT DISTINCT ON (name) name, type
-      FROM cards WHERE name IN ${sql(Array.from(counts.keys()))}
+      FROM cards WHERE name IN ${sql(Array.from(usedNames))}
       ORDER BY name
     `;
     for (const row of requiredTypes) {
-      if (isCreatureType(row.type as string)) creatureCount += counts.get(row.name as string) ?? 0;
+      if (isCreatureType(row.type as string))
+        creatureCount += counts.get(key(row.name as string)) ?? 0;
     }
   }
 
   /** 採用済みカード名 (SQL の NOT IN 用。空だと構文エラーになるためダミーを返す)。 */
   function usedList(): string[] {
-    return counts.size > 0 ? Array.from(counts.keys()) : ["__none__"];
+    return usedNames.size > 0 ? Array.from(usedNames) : ["__none__"];
   }
 
   /** 殿堂・高コストを踏まえた、そのカードのデッキ内上限枚数。 */
   function copyLimit(card: Record<string, unknown>): number {
     const name = card.name as string;
-    if (reg.limited.has(name)) return 1; // 殿堂入りは1枚
+    if (reg.isLimited(name)) return 1; // 殿堂入りは1枚
     if ((card.cost as number) >= 7) return 2;
     return MAX_COPIES;
   }
@@ -169,9 +188,10 @@ export async function autoBuild(
   /** カードを最大 want 枚まで入れる。実際に入れた枚数を返す (0 なら不採用)。 */
   function takeCard(card: Record<string, unknown>, want = MAX_COPIES, limit = DECK_SIZE): number {
     const name = card.name as string;
-    if (reg.banned.has(name)) return 0;
+    if (reg.isBanned(name)) return 0;
 
-    const already = counts.get(name) ?? 0;
+    const k = key(name);
+    const already = counts.get(k) ?? 0;
     let add = Math.min(copyLimit(card) - already, want, limit - totalCards);
     if (add <= 0) return 0;
 
@@ -185,14 +205,15 @@ export async function autoBuild(
       roleQuotas[tag] -= add;
     }
 
-    const idx = entryIndex.get(name);
+    const idx = entryIndex.get(k);
     if (idx === undefined) {
       entries.push({ name, count: add });
-      entryIndex.set(name, entries.length - 1);
+      entryIndex.set(k, entries.length - 1);
     } else {
       entries[idx] = { ...entries[idx], count: entries[idx].count + add };
     }
-    counts.set(name, already + add);
+    counts.set(k, already + add);
+    usedNames.add(name);
     totalCards += add;
     return add;
   }
@@ -212,7 +233,7 @@ export async function autoBuild(
    * 何もしない (40枚は崩さない)。
    */
   async function ensureTriggerFloor(floor: number): Promise<void> {
-    const names = Array.from(counts.keys());
+    const names = Array.from(usedNames);
     if (names.length === 0) return;
 
     // 現在の各カードの属性を1回で引く (再録の同名複数行は DISTINCT ON で1行に)。
@@ -220,9 +241,10 @@ export async function autoBuild(
       SELECT DISTINCT ON (name) name, cost, type, is_shield_trigger
       FROM cards WHERE name IN ${sql(names)} ORDER BY name
     `;
+    // 正規化キーで持つ (デッキ側の表記と DB の表記が違っても引けるように)。
     const info = new Map(
       infoRows.map((r) => [
-        r.name as string,
+        key(r.name as string),
         {
           cost: (r.cost as number) ?? 0,
           type: (r.type as string) ?? "",
@@ -230,7 +252,7 @@ export async function autoBuild(
         },
       ]),
     );
-    const isTrigger = (name: string) => info.get(name)?.trigger ?? false;
+    const isTrigger = (name: string) => info.get(key(name))?.trigger ?? false;
     const countTriggers = () => entries.reduce((s, e) => s + (isTrigger(e.name) ? e.count : 0), 0);
 
     let triggers = countTriggers();
@@ -245,16 +267,16 @@ export async function autoBuild(
       ORDER BY cost ASC, name ASC, official_id ASC
       LIMIT 60
     `;
-    const requiredSet = new Set(constraints.requiredCards ?? []);
+    const requiredSet = new Set((constraints.requiredCards ?? []).map(key));
 
     /** 40枚のとき、外して良いカードを1枚減らす。減らせたら true。 */
     function removeOneForSwap(addingName: string): boolean {
       let best: { name: string; cost: number; creature: boolean } | null = null;
       for (const e of entries) {
-        if (e.name === addingName) continue;
-        if (requiredSet.has(e.name)) continue;
+        if (key(e.name) === key(addingName)) continue;
+        if (requiredSet.has(key(e.name))) continue;
         if (isTrigger(e.name)) continue;
-        const meta = info.get(e.name);
+        const meta = info.get(key(e.name));
         const creature = isCreatureType(meta?.type);
         // 攻撃役の下限を割るクリーチャーは外さない。
         if (creature && creatureCount <= minCreatures) continue;
@@ -268,7 +290,7 @@ export async function autoBuild(
       const e = entries[idx];
       entries[idx] = { ...e, count: e.count - 1 };
       // counts は entries と同期している。entries 側の真の値から引く (?? フォールバックに頼らない)。
-      counts.set(e.name, e.count - 1);
+      counts.set(key(e.name), e.count - 1);
       if (best.creature) creatureCount -= 1;
       totalCards -= 1;
       if (entries[idx].count <= 0) entries.splice(idx, 1);
@@ -278,12 +300,14 @@ export async function autoBuild(
     /** トリガーを1枚差し込む (roleQuota は下限優先で無視する)。 */
     function addOneTrigger(card: Record<string, unknown>): void {
       const name = card.name as string;
-      const idx = entries.findIndex((e) => e.name === name);
+      const k = key(name);
+      const idx = entries.findIndex((e) => key(e.name) === k);
       if (idx === -1) entries.push({ name, count: 1 });
       else entries[idx] = { ...entries[idx], count: entries[idx].count + 1 };
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-      if (!info.has(name)) {
-        info.set(name, {
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+      usedNames.add(name);
+      if (!info.has(k)) {
+        info.set(k, {
           cost: (card.cost as number) ?? 0,
           type: (card.type as string) ?? "",
           trigger: true,
@@ -297,8 +321,8 @@ export async function autoBuild(
     for (const cand of candRows) {
       if (triggers >= floor) break;
       const name = cand.name as string;
-      if (reg.banned.has(name)) continue;
-      const room = copyLimit(cand) - (counts.get(name) ?? 0);
+      if (reg.isBanned(name)) continue;
+      const room = copyLimit(cand) - (counts.get(key(name)) ?? 0);
       for (let k = 0; k < room && triggers < floor; k++) {
         // 40枚なら1枚空けてから差す。空けられなければこれ以上は無理。
         if (totalCards >= DECK_SIZE && !removeOneForSwap(name)) return;
@@ -449,7 +473,7 @@ export async function suggestReplacements(
           ORDER BY cost ASC, name ASC, official_id ASC LIMIT 5`
       : await sql`
           SELECT name, cost, tags FROM cards
-          WHERE text ILIKE ${"%" + goal + "%"}
+          WHERE text ILIKE ${likeContains(goal)} ESCAPE '\\'
             AND name NOT IN ${sql(notInDeck)}
           ORDER BY cost ASC, name ASC, official_id ASC LIMIT 5`;
     candidatesByGoal.set(

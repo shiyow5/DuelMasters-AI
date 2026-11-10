@@ -108,6 +108,7 @@ interface ChatResponse {
 const TOOL_NOUNS: Record<string, string> = {
   search_rules: "ルール検索",
   search_cards: "カード検索",
+  check_regulation: "殿堂の確認",
   evaluate_deck: "デッキ評価",
   build_deck: "デッキ構築",
   get_tier_list: "環境データの取得",

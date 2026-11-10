@@ -86,3 +86,61 @@ describe("buildCardSearchArgs", () => {
     expect(buildCardSearchArgs({ type: "なにか" }).ok).toBe(false);
   });
 });
+
+describe("normalizeCardName 引用符・NFKC (#167)", () => {
+  it("曲がった引用符・ASCII 引用符・引用符なしが同じになる", () => {
+    const k = normalizeCardName("轟轟轟ブランド");
+    expect(normalizeCardName("“轟轟轟”ブランド")).toBe(k);
+    expect(normalizeCardName('"轟轟轟"ブランド')).toBe(k);
+    expect(normalizeCardName("＂轟轟轟＂ブランド")).toBe(k);
+  });
+
+  it("deck-engine の regulationNameKey と同じ結果 (同じ式の約束)", async () => {
+    const { regulationNameKey } = await import("@dm-ai/deck-engine/card-name");
+    for (const s of [
+      "“轟轟轟”ブランド",
+      "《ヘブンズ・ゲート》",
+      "接続\tＣＳ－２０",
+      "A ／ B",
+      "ヨミジ 丁−二式",
+      "ボルシャック・ドラゴン―",
+    ]) {
+      expect(normalizeCardName(s)).toBe(regulationNameKey(s));
+    }
+  });
+});
+
+describe("search_cards の SQL が共通の文字集合を使う (#167)", () => {
+  it("tools.ts に translate の文字列リテラルが残っていない", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("../src/tools.ts", import.meta.url), "utf8");
+    // 文字集合を SQL に直書きすると TS とズレる。CARD_NAME_TRANSLATE_FROM / TO をバインドすること。
+    expect(src).not.toMatch(/translate\([^)]*'[^']+'\s*,\s*'[^']*'\)/);
+    expect(src).toContain(
+      "lower(translate(normalize(name, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO}))",
+    );
+  });
+
+  it("公式の規制カード127件 (表記ゆれ込み) で deck-engine の regulationNameKey と同じ結果 (#167)", async () => {
+    const { regulationNameKey } = await import("@dm-ai/deck-engine/card-name");
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const fixture = join(
+      import.meta.dirname,
+      "../../deck-engine/tests/fixtures/official-regulations-2026-11-03.json",
+    );
+    const rows = JSON.parse(readFileSync(fixture, "utf8")) as Array<{ card_name: string }>;
+    expect(rows).toHaveLength(127);
+    for (const { card_name: n } of rows) {
+      for (const s of [
+        n,
+        n.replace(/[・･]/g, ""),
+        `《${n}》`,
+        n.replace(/ー/g, "－"),
+        n.normalize("NFKD"),
+      ]) {
+        expect(normalizeCardName(s)).toBe(regulationNameKey(s));
+      }
+    }
+  });
+});

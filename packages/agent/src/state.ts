@@ -34,6 +34,14 @@ export const AgentState = Annotation.Root({
     reducer: (_prev, next) => next,
     default: () => 0,
   }),
+  /**
+   * このリクエストで**実行した**ツール呼び出しの総数 (F-1)。上限超過で実行しなかった分は数えない。
+   * MAX_TOOL_CALLS_PER_REQUEST に達したら finalize へ進める。
+   */
+  toolCallsExecuted: Annotation<number>({
+    reducer: (_prev, next) => next,
+    default: () => 0,
+  }),
   /** 失敗したツール名 (システム障害・引数エラー)。観測用。 */
   toolFailures: Annotation<string[]>({
     reducer: (_prev, next) => next,

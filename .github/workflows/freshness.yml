@@ -1,0 +1,162 @@
+name: Freshness (data check)
+
+# 取込データの鮮度チェック (読み取りだけ)。古ければ失敗し、Issue を起票する。
+#
+# Ingest (cron) に job として足さず、別 workflow にしている理由:
+# - Ingest (cron) は faq の失敗・cards のタイムアウトで run がほぼ毎回 failure になっている。
+#   同じ run に入れると、鮮度の失敗がその中に埋もれて「また落ちてる」で見過ごされる。
+# - Ingest は concurrency group `ingest` で直列化している。待ちに入れるのは1本だけで、
+#   新しい待ちが来ると古い待ちが置き換わる。鮮度チェックを同じ group に入れると、
+#   待っていた取込の run を押し出しうる。別 workflow・別 group なら取込に影響しない。
+#
+# **このチェックは workflow 自体の停止を検知できない。** public リポジトリの schedule は
+# 60日間リポジトリに動きがないと自動で止まり、この workflow も一緒に止まる。
+# 捕まえられるのは「取込は動いているのに、データが古い・欠けている」場合だけ。
+on:
+  schedule:
+    # 毎週火曜 12:00 JST (03:00 UTC 火曜)。
+    # 大会結果 → メタ集計は火曜 06:00 JST に走る (ingest-cron.yml)。6時間空けて、その結果を見る。
+    # 毎日回すと、週次ランキングは正常でも月曜〜火曜朝に 8〜9日前になり誤検知する。
+    - cron: "0 3 * * 2"
+  workflow_dispatch:
+    inputs:
+      weekly_max_age:
+        description: "週次ランキングの最終日が何日以上前なら失敗か"
+        type: number
+        default: 9
+      snapshot_max_age:
+        description: "メタスナップショットの最終日が何日以上前なら失敗か"
+        type: number
+        default: 8
+      events_max_age:
+        description: "個別CSの最終日が何日以上前なら警告か (失敗にはしない)"
+        type: number
+        default: 14
+
+# 既定は読み取りだけ。Issue を起票する job だけ issues: write を足す。
+permissions:
+  contents: read
+
+concurrency:
+  # ingest とは別の group にする (上の理由)。鮮度チェック同士は重ねない。
+  group: freshness
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  check:
+    name: check freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      report: ${{ steps.report.outputs.report }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm build
+
+      # 接続エラーにホスト名・DB ユーザー名 (Supabase の project ref) が出ても、run のログで伏せる。
+      # GitHub が自動で伏せるのは Secret の値全体だけなので、部分ごとに ::add-mask:: する (migrate-010 と同じ)。
+      # 値そのものは表示されない (コマンド行は runner が消費する)。set -x は使わない。
+      - name: Mask DB connection parts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit, unquote
+          url = os.environ.get("DATABASE_URL", "")
+          if url:
+              u = urlsplit(url)
+              vals = {u.hostname, u.username, u.password, u.netloc}
+              if u.password:
+                  vals.add(unquote(u.password))
+              if u.username:
+                  vals.add(unquote(u.username))
+              if u.hostname and u.port:
+                  vals.add(f"{u.hostname}:{u.port}")
+              for v in vals:
+                  if v and len(v) >= 3:
+                      print(f"::add-mask::{v}")
+          PY
+
+      - name: check freshness
+        env:
+          # 既存の取込用 Secret を読み取りにだけ使う (SELECT だけ。read only トランザクション)。
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # schedule では inputs が空なので既定値に倒す。
+          WEEKLY_MAX_AGE: ${{ github.event.inputs.weekly_max_age || '9' }}
+          SNAPSHOT_MAX_AGE: ${{ github.event.inputs.snapshot_max_age || '8' }}
+          EVENTS_MAX_AGE: ${{ github.event.inputs.events_max_age || '14' }}
+        run: |
+          set -o pipefail
+          pnpm --silent --filter @dm-ai/worker check:freshness \
+            "--weekly-max-age=$WEEKLY_MAX_AGE" \
+            "--snapshot-max-age=$SNAPSHOT_MAX_AGE" \
+            "--events-max-age=$EVENTS_MAX_AGE" 2>&1 | tee freshness.log
+
+      # 失敗しても出力を Issue 本文に渡すため、always で拾う。
+      # 公開 Issue と Step Summary に貼る前に、接続情報 (ホスト・ユーザー・IP 等) を *** にする。
+      # ::add-mask:: はログにしか効かないので、貼る文面そのものを freshness-redact.py で置き換える。
+      # ::error:: などのワークフローコマンドも、Issue 本文で読みにくいので同じスクリプトで外す。
+      - name: Collect report
+        id: report
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          touch freshness.log
+          python3 .github/scripts/freshness-redact.py <freshness.log >freshness.safe.log
+          delim="EOF_$(openssl rand -hex 8)"
+          {
+            echo "report<<$delim"
+            tail -n 50 freshness.safe.log
+            echo "$delim"
+          } >>"$GITHUB_OUTPUT"
+          {
+            echo '### 鮮度チェック'
+            echo '```'
+            cat freshness.safe.log
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  open-issue:
+    name: open issue on failure
+    needs: check
+    # check が失敗したときだけ (cancelled のときは起票しない)。
+    if: ${{ failure() && needs.check.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # この job だけ Issue を書ける。PAT は使わず GITHUB_TOKEN で起票する。
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Checkout (scripts only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Open or update issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPORT: ${{ needs.check.outputs.report }}
+        run: bash .github/scripts/freshness-issue.sh

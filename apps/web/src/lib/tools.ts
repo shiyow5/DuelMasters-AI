@@ -10,6 +10,7 @@
 export const TOOL_LABELS: Record<string, string> = {
   search_rules: "ルールを検索しています",
   search_cards: "カードを検索しています",
+  check_regulation: "殿堂レギュレーションを確認しています",
   evaluate_deck: "デッキを評価しています",
   build_deck: "デッキを構築しています",
   get_tier_list: "環境データを確認しています",
@@ -25,6 +26,7 @@ export const TOOL_LABELS: Record<string, string> = {
 const SUBJECT_KEY: Record<string, string> = {
   search_rules: "query",
   search_cards: "query",
+  check_regulation: "card_names",
   build_deck: "theme",
   get_tier_list: "format",
 };
@@ -33,6 +35,9 @@ const FORMAT_LABELS: Record<string, string> = {
   original: "オリジナル",
   advance: "アドバンス",
 };
+
+/** 配列引数 (`check_regulation` の `card_names`) を1行にするときの区切り。 */
+const LIST_SEPARATOR = "・";
 
 /** 進行表示は1行に収める。長いクエリはここで切る。 */
 const MAX_SUBJECT_LENGTH = 40;
@@ -53,7 +58,16 @@ export function toolSubject(name: string, args: Record<string, unknown>): string
   const key = SUBJECT_KEY[name];
   if (!key) return null;
 
-  const raw = args?.[key];
+  const value = args?.[key];
+  // `card_names` は配列 (#199)。文字列の要素だけを「・」で繋いで1行にする。
+  // 空要素を混ぜると「A・・B」になるので落とす。長さは下の truncate で切る。
+  const raw = Array.isArray(value)
+    ? value
+        .filter((v): v is string => typeof v === "string")
+        .map((v) => v.trim())
+        .filter((v) => v !== "")
+        .join(LIST_SEPARATOR)
+    : value;
   if (typeof raw !== "string") return null;
 
   // 改行を空白に潰す。進行表示が複数行になるとレイアウトが崩れる。
@@ -88,6 +102,7 @@ export function toolLabel(name: string, args: Record<string, unknown> = {}): str
 const TOOL_NOUNS: Record<string, string> = {
   search_rules: "ルール検索",
   search_cards: "カード検索",
+  check_regulation: "殿堂の確認",
   evaluate_deck: "デッキ評価",
   build_deck: "デッキ構築",
   get_tier_list: "環境データの取得",

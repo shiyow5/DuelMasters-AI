@@ -12,6 +12,11 @@ const chatRouter = new Hono();
  * **履歴はサーバを正とする。** クライアントが送ってきた history は conversationId がある限り
  * 使わない。信じると利用者が文脈を差し替えてモデルを誘導できる。
  *
+ * **ログイン済みなら conversationId が無くてもクライアントの history は使わない** (F-3)。
+ * 会話の作成に失敗した経路でも、ログイン済みの利用者に文脈の差し替えを許さないため。
+ * クライアントの history を使うのは匿名 (ALLOW_ANONYMOUS のローカル開発) のときだけ。
+ * その経路の文脈は失われるが、チャット自体は動く (仕様として受け入れる)。
+ *
  * 戻り値の `history` は agent に渡すもの。会話が他人のもの / 存在しなければ `notFound`。
  */
 async function beginTurn(
@@ -20,7 +25,8 @@ async function beginTurn(
   message: string,
   clientHistory: StoredMessage[],
 ): Promise<{ notFound: true } | { notFound: false; history: StoredMessage[] }> {
-  if (!conversationId || !userId) return { notFound: false, history: clientHistory };
+  if (!userId) return { notFound: false, history: clientHistory };
+  if (!conversationId) return { notFound: false, history: [] };
 
   const history = await loadHistory(conversationId, userId);
   if (history === null) return { notFound: true };

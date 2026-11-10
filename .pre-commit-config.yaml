@@ -1,0 +1,8 @@
+# ローカルのコミット前にシークレット混入を検出する（gitleaks）。
+# 初回のみ: pip install pre-commit && pre-commit install
+# rev はタグではなくコミット SHA で固定（タグ付け替え対策）。
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # frozen: v8.30.1
+    hooks:
+      - id: gitleaks

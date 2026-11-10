@@ -4,6 +4,7 @@ import {
   CARD_TYPES,
   type Civilization,
   type CardType,
+  cardNameKey,
 } from "@dm-ai/core";
 
 /**
@@ -30,15 +31,13 @@ import {
 /**
  * カード名の照合用に正規化する。
  *
- * 中黒・空白・囲み記号を落とし、全角/半角と大小文字を揃える。
- * DB 側も同じ正規化をかけて比較する (SQL の translate/lower で同等の処理を行う)。
+ * 中黒・空白・囲み記号・引用符を落とし、長音・ハイフン類を `ー` に畳み、全角/半角と大小文字を揃える。
+ * 実体は `@dm-ai/core` の `cardNameKey`。DB 側 (tools.ts の SQL) も同じ
+ * `CARD_NAME_TRANSLATE_FROM` / `CARD_NAME_TRANSLATE_TO` で translate するので、
+ * TS と SQL の文字集合は1か所で決まる (#167)。
  */
 export function normalizeCardName(name: string): string {
-  return name
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[・･]/g, "") // 中黒 (これが本番のバグの本体)
-    .replace(/[《》≪≫«»『』【】「」\s]/g, ""); // 囲み記号と空白
+  return cardNameKey(name);
 }
 
 /** 文明の日本語 → 内部コード。Gemini は「火」と日本語で渡してくることがある。 */

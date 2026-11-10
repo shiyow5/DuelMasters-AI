@@ -1,5 +1,11 @@
-export { parseDecklist, type ParsedDeck } from "./parser.js";
-export { validateRegulation } from "./validator.js";
+export {
+  parseDecklist,
+  detectZoneHeading,
+  type ParsedDeck,
+  type DeckZone,
+  type ExtraZones,
+} from "./parser.js";
+export { validateRegulation, checkExtraZones } from "./validator.js";
 export { scoreDeck } from "./scorer.js";
 export {
   inferDeckConcept,
@@ -23,3 +29,20 @@ export {
   applyRegulationToRequired,
   type RegulationSets,
 } from "./regulation-rules.js";
+export {
+  buildRegulationIndex,
+  lookupRegulation,
+  type RegulationIndex,
+  type RegulationRow,
+} from "./regulation-index.js";
+export {
+  loadRegulations,
+  checkRegulationNames,
+  listRestrictedInDeck,
+  regulationTagForCard,
+  restrictionLimitLabel,
+  UNRESTRICTED,
+  type RegulationsLoad,
+  type RegulationCheck,
+  type RestrictedInDeck,
+} from "./regulation-check.js";

@@ -27,6 +27,12 @@ const USER_AGENT =
 const REQUEST_INTERVAL_MS = 1000;
 /** 既定で遡るカテゴリページ数。1ページあたり記事 20本前後 */
 const DEFAULT_MAX_PAGES = 5;
+/**
+ * スキップ率 (skipped / (recipes + skipped)) がこれを超えたら CLI を非ゼロ終了させる。
+ * #126 で 41/117 件を console.warn だけで静かに取りこぼした件の再発防止 (#147)。
+ * 件数ではなく率で見るのは、初回は分母が大きく、定常運用では週 20 件程度しかないため。
+ */
+export const DEFAULT_MAX_SKIP_RATE = 0.1;
 
 export interface RecipeTitle {
   event_name: string;
@@ -316,9 +322,56 @@ export function parseDeneblogArgs(argv: string[]): IngestDeneblogOptions {
   return maxPages && maxPages > 0 ? { maxPages } : {};
 }
 
+/**
+ * スキップ率が閾値を**超えた**か。ちょうど閾値は超えていない扱い。
+ * 分母 (recipes + skipped) が 0 = 新着記事なしは正常なので false。
+ */
+export function exceedsSkipRate(
+  result: { recipes: number; skipped: number },
+  maxRate: number,
+): boolean {
+  const total = result.recipes + result.skipped;
+  if (total === 0) return false;
+  return result.skipped / total > maxRate;
+}
+
+/**
+ * `--max-skip-rate=0.25` を読む。無い・不正 (数値でない・負・1 超) なら既定値に戻す。
+ * 取込オプションではなく CLI の終了判定にだけ使うので、parseDeneblogArgs とは分けている。
+ */
+export function parseMaxSkipRate(
+  argv: string[],
+  defaultRate: number = DEFAULT_MAX_SKIP_RATE,
+): number {
+  const arg = argv.find((a) => a.startsWith("--max-skip-rate="));
+  if (!arg) return defaultRate;
+  const raw = arg.slice("--max-skip-rate=".length).trim();
+  // Number("") は 0 になるので空文字は明示的に弾く
+  if (raw === "") return defaultRate;
+  const rate = Number(raw);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 1) return defaultRate;
+  return rate;
+}
+
+function formatPercent(rate: number): string {
+  return `${(rate * 100).toFixed(1)}%`;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runIngestDeneblog(parseDeneblogArgs(process.argv.slice(2)))
-    .then(() => process.exit(0))
+  const argv = process.argv.slice(2);
+  const maxSkipRate = parseMaxSkipRate(argv);
+  runIngestDeneblog(parseDeneblogArgs(argv))
+    .then((result) => {
+      if (exceedsSkipRate(result, maxSkipRate)) {
+        const total = result.recipes + result.skipped;
+        console.error(
+          `[deneblog] スキップ率 ${formatPercent(result.skipped / total)} ` +
+            `(${result.skipped}/${total}) が閾値 ${formatPercent(maxSkipRate)} を超えました`,
+        );
+        process.exit(1);
+      }
+      process.exit(0);
+    })
     .catch((err) => {
       console.error("Error:", err);
       process.exit(1);

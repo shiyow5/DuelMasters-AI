@@ -70,4 +70,14 @@ describe.skipIf(!hasTestDb)("GET /api/meta/archetype/:name の期間フィルタ
     expect(body.period).toBe("4w");
     expect(body.stats.total_entries).toBe(2);
   });
+
+  it("recent_results[].event_date は時刻なしの YYYY-MM-DD で、新しい順 (#197)", async () => {
+    const res = await makeApp().request("/api/meta/archetype/モルト系?format=original&period=8w");
+    const body = (await res.json()) as { recent_results: { event_date: unknown }[] };
+    expect(body.recent_results.map((r) => r.event_date)).toEqual([
+      daysAgo(3),
+      daysAgo(20),
+      daysAgo(50),
+    ]);
+  });
 });

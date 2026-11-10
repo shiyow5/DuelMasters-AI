@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "../src/components/Markdown.js";
 import { safeUrl } from "../src/lib/safe-url.js";
+import { fixCjkEmphasis } from "../src/lib/cjk-emphasis.js";
 
 /**
  * 実コンポーネントを HTML 文字列に描画して確かめる。
@@ -141,5 +142,84 @@ describe("Markdown", () => {
 
   it("空文字でも落ちない", () => {
     expect(() => render("")).not.toThrow();
+  });
+});
+
+// --- 日本語の太字 (P-8) -------------------------------------------------------
+//
+// CommonMark の flanking 規則で、閉じ `**` の直前が約物 (`」` `:` 等) かつ直後が本文の文字だと
+// 閉じとして認識されず `**` が画面に出る。日本語は語間に空白が無いので頻発する。
+// fixCjkEmphasis が約物を `**` の外へ出して直す。
+
+const strongCount = (html: string) => (html.match(/<strong[^>]*>/g) ?? []).length;
+
+describe("Markdown: 日本語の太字 (P-8)", () => {
+  it("T1: 括弧で終わる太字の直後が本文でも太字になる", () => {
+    const html = render("**「S・トリガー」**です");
+    expect(html).toMatch(/<strong[^>]*>S・トリガー<\/strong>/);
+    expect(html).not.toContain("**");
+  });
+
+  it("T2: 普通の太字は前処理で壊れない", () => {
+    const html = render("**太字**です");
+    expect(html).toMatch(/<strong[^>]*>太字<\/strong>/);
+    expect(html).not.toContain("**");
+  });
+
+  it("T3: 箇条書きの中でも太字になる", () => {
+    const html = render("- **「強い」**を使う\n- 普通の**太字**です");
+    const items = html.match(/<li[^>]*>[\s\S]*?<\/li>/g) ?? [];
+    expect(items).toHaveLength(2);
+    for (const li of items) expect(li).toMatch(/<strong[^>]*>/);
+    expect(html).not.toContain("**");
+  });
+
+  it("T4: 未閉じの ** は例外を投げずテキストのまま残る (ストリーミング途中)", () => {
+    expect(() => render("**途中まで")).not.toThrow();
+    expect(render("**途中まで")).toContain("**途中まで");
+  });
+
+  it("T5: 1文に太字が2つあっても対応がずれない", () => {
+    const html = render("結論は**「攻撃できない」**ため、効果は**無効**です。");
+    expect(strongCount(html)).toBe(2);
+    expect(html).toMatch(/<strong[^>]*>攻撃できない<\/strong>/);
+    expect(html).toMatch(/<strong[^>]*>無効<\/strong>/);
+    expect(html).not.toContain("**");
+  });
+
+  it("T6: インラインコード・コードフェンスの中は変換しない", () => {
+    const inline = "`**「x」**`です";
+    expect(fixCjkEmphasis(inline)).toBe(inline);
+    expect(render(inline)).toMatch(/<code[^>]*>\*\*「x」\*\*<\/code>/);
+
+    const fence = "```\n**「y」**z\n```";
+    expect(fixCjkEmphasis(fence)).toBe(fence);
+    expect(render(fence)).toContain("**「y」**z");
+
+    // 閉じていないフェンス (ストリーミング途中) の中も触らない
+    const open = "```\n**「y」**z";
+    expect(fixCjkEmphasis(open)).toBe(open);
+
+    // コードの外は従来どおり直る
+    expect(fixCjkEmphasis("`a` **「b」**c")).toBe("`a` 「**b**」c");
+  });
+
+  it("T7: 太字の中の生 HTML もエスケープされる (XSS)", () => {
+    const html = render("**<img src=x onerror=alert(1)>**");
+    expect(html).not.toContain("<img");
+    expect(html).not.toMatch(/<[^>]+\bonerror=/i);
+    // `<` は約物なので ** の外へ出るが、テキストとしてエスケープされるのは変わらない
+    expect(html).toContain("&lt;");
+  });
+
+  it("前処理の変換結果 (約物を ** の外へ出す)", () => {
+    expect(fixCjkEmphasis("**「S・トリガー」**です")).toBe("「**S・トリガー**」です");
+    expect(fixCjkEmphasis("**結論:**効果は無効")).toBe("**結論**:効果は無効");
+    expect(fixCjkEmphasis("**太字**です")).toBe("**太字**です");
+    expect(fixCjkEmphasis("**「a」**と**「b」**")).toBe("「**a**」と「**b**」");
+    // 内側が約物だけ / *** は対象外 (従来どおり)
+    expect(fixCjkEmphasis("**「」**です")).toBe("**「」**です");
+    expect(fixCjkEmphasis("***「x」***です")).toBe("***「x」***です");
+    expect(fixCjkEmphasis("***太字斜体***です")).toBe("***太字斜体***です");
   });
 });

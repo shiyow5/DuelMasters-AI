@@ -30,6 +30,7 @@ import { pathToFileURL } from "node:url";
 import { getSql, closeDb } from "@dm-ai/db";
 import { type Format } from "@dm-ai/core";
 import { sleep } from "../lib.js";
+import { exceedsSkipRate, parseMaxSkipRate } from "./ingest-deneblog.js";
 
 type Sql = ReturnType<typeof getSql>;
 
@@ -41,6 +42,12 @@ const USER_AGENT =
   "DM-AI-bot/1.0 (+https://github.com/shiyow5/DuelMasters-AI; Duel Masters Q&A assistant)";
 /** リクエスト間のウェイト (ms)。個人ブログなので控えめにする */
 const REQUEST_INTERVAL_MS = 1000;
+/**
+ * 週次ランキング記事の「取得失敗 + パース不能」の率がこれを超えたら CLI を非ゼロ終了する (#195)。
+ * 1回の巡回で見るランキング記事は10本前後と少ないので、deneblog (0.1) より緩くして
+ * 一時的な取得失敗1〜2本では落とさない。
+ */
+export const DEFAULT_TOURNAMENTS_MAX_SKIP_RATE = 0.25;
 /** 既定で遡るカテゴリページ数。1ページあたり CS 記事 15〜23 本、20ページで概ね過去5〜6週 */
 const DEFAULT_MAX_PAGES = 20;
 
@@ -237,6 +244,8 @@ export function parseWeeklyRanking(body: string, format: Format): WeeklyRanking 
 
   const entries: WeeklyEntry[] = [];
   let currentCount: number | null = null;
+  // 直前の行が順位見出しだったか。見出しの直後の行は「・」が抜けていても項目として読む。
+  let afterHeading = false;
 
   for (const raw of body.split("\n")) {
     const line = raw.trim();
@@ -245,19 +254,31 @@ export function parseWeeklyRanking(body: string, format: Format): WeeklyRanking 
     const rank = line.match(RANK_HEADING_PATTERN);
     if (rank) {
       currentCount = parseInt(rank[1], 10);
+      afterHeading = true;
       continue;
     }
     if (SINGLETON_HEADING_PATTERN.test(line)) {
       currentCount = 1; // 「母数1のデッキ」節はすべて 1件
+      afterHeading = true;
       continue;
     }
 
     const item = line.match(ARCHETYPE_LINE_PATTERN);
+    const wasAfterHeading = afterHeading;
+    afterHeading = false;
 
     // データ節はここで終わり。記事の下にはコメント欄の注意書きが「・」付きで並んでいるので、
     // 見出しでも項目でもない行 (地の文) が出たら、そこから先は読まない。
     // HTML のコンテナ名に頼るより、ブログのテンプレ変更に強い。
-    if (!item) {
+    // ただし順位見出しの直後の行だけは「・」の付け忘れとみなして項目にする
+    // (#188: advance 2026/10/19～10/25 の記事で4位の行に「・」が無く、合計 21 / 母数 75 で
+    // 週ごと取り込めなかった)。読み違えても下の「合計 = 母数」の自己検証で弾かれる。
+    let rawName: string;
+    if (item) {
+      rawName = item[1];
+    } else if (currentCount !== null && wasAfterHeading) {
+      rawName = line;
+    } else {
       if (currentCount !== null) break;
       continue;
     }
@@ -266,7 +287,7 @@ export function parseWeeklyRanking(body: string, format: Format): WeeklyRanking 
     // 「ウィリデ(白緑42、白青6、赤白2)」→「ウィリデ」。色や型の内訳は捨てる。
     // 個別 CS 記事は「白緑ウィリデ」のような色つきの名前を使うが、ティアの単位は
     // ブログが束ねているアーキタイプ (ウィリデ) のほうなので、そちらに揃える。
-    const name = item[1].replace(/[（(][^）)]*[）)]\s*$/, "").trim();
+    const name = rawName.replace(/[（(][^）)]*[）)]\s*$/, "").trim();
     if (name === "") continue;
     entries.push({ deck_archetype: name, entries: currentCount });
   }
@@ -339,6 +360,27 @@ export interface IngestTournamentsResult {
   placements: number;
   weeks: number;
   weeklyEntries: number;
+  /**
+   * 週次ランキング記事のうち、本文を読めて形を認識できた本数 (取込済み週・「合計≠母数」で
+   * 取り込まなかった週も含む)。スキップ率の分母に使う。
+   */
+  rankingParsed: number;
+  /**
+   * 週次ランキング記事のうち、取得に失敗した・パースできなかった本数。
+   * 「合計≠母数」は時々起きる正当なスキップで、鮮度チェック (#157) が拾うのでここに入れない。
+   */
+  rankingSkipped: number;
+}
+
+/** 週次ランキングのスキップ率が閾値を超えたか (判定は deneblog と同じ関数) */
+export function tournamentsExceedSkipRate(
+  result: Pick<IngestTournamentsResult, "rankingParsed" | "rankingSkipped">,
+  maxRate: number,
+): boolean {
+  return exceedsSkipRate(
+    { recipes: result.rankingParsed, skipped: result.rankingSkipped },
+    maxRate,
+  );
 }
 
 export async function runIngestTournaments(
@@ -399,6 +441,8 @@ export async function runIngestTournaments(
   // --- 週次ランキング → archetype_weekly_stats (ティア表の一次ソース) ---
   let weeks = 0;
   let weeklyEntries = 0;
+  let rankingParsed = 0;
+  let rankingSkipped = 0;
   const seenRanking = new Set<string>();
 
   for (const link of rankingLinks) {
@@ -410,14 +454,17 @@ export async function runIngestTournaments(
       ranking = parseWeeklyRanking(extractEntryBody(await fetchPage(link.url)), link.format);
     } catch (err) {
       console.error(`[tournaments] ランキング記事の取得に失敗: ${link.url}`, err);
+      rankingSkipped++;
       continue;
     }
     await sleep(REQUEST_INTERVAL_MS);
 
     if (!ranking) {
       console.warn(`[tournaments] ランキング記事をパースできません: ${link.url}`);
+      rankingSkipped++;
       continue;
     }
+    rankingParsed++;
     if (ingestedWeeks.has(`${ranking.format}|${ranking.period_start}`)) continue;
 
     // 自己検証: 入賞数の合計は母数に一致するはず。ずれたら記事の書式が変わった疑いがある。
@@ -480,11 +527,12 @@ export async function runIngestTournaments(
 
   console.log(
     `=== 大会結果取り込み完了: 週次ランキング ${weeks}週 (${weeklyEntries}行) / ` +
-      `個別CS ${events}大会 (${placements}入賞) ===`,
+      `個別CS ${events}大会 (${placements}入賞) / ` +
+      `ランキング記事 読めた ${rankingParsed}本・読めず ${rankingSkipped}本 ===`,
   );
 
   await closeDb();
-  return { events, placements, weeks, weeklyEntries };
+  return { events, placements, weeks, weeklyEntries, rankingParsed, rankingSkipped };
 }
 
 /** CLI 引数を検証する */
@@ -495,8 +543,22 @@ export function parseTournamentsArgs(argv: string[]): IngestTournamentsOptions {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runIngestTournaments(parseTournamentsArgs(process.argv.slice(2)))
-    .then(() => process.exit(0))
+  const argv = process.argv.slice(2);
+  const maxSkipRate = parseMaxSkipRate(argv, DEFAULT_TOURNAMENTS_MAX_SKIP_RATE);
+  runIngestTournaments(parseTournamentsArgs(argv))
+    .then((result) => {
+      if (tournamentsExceedSkipRate(result, maxSkipRate)) {
+        const total = result.rankingParsed + result.rankingSkipped;
+        console.error(
+          `[tournaments] ランキング記事のスキップ率 ` +
+            `${((result.rankingSkipped / total) * 100).toFixed(1)}% ` +
+            `(${result.rankingSkipped}/${total}) が閾値 ${(maxSkipRate * 100).toFixed(1)}% を超えました。` +
+            `取込元のテンプレートが変わった可能性があります`,
+        );
+        process.exit(1);
+      }
+      process.exit(0);
+    })
     .catch((err) => {
       console.error("Error:", err);
       process.exit(1);

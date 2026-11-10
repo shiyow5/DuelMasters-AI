@@ -4,6 +4,9 @@ import {
   parseRecipeBody,
   parseRecipeEntryList,
   recipeCategoryPageUrls,
+  exceedsSkipRate,
+  parseMaxSkipRate,
+  DEFAULT_MAX_SKIP_RATE,
 } from "../src/jobs/ingest-deneblog.js";
 
 describe("parseRecipeTitle", () => {
@@ -248,5 +251,56 @@ describe("recipeCategoryPageUrls", () => {
       "https://deneblog.jp/blog-category-72-1.html",
       "https://deneblog.jp/blog-category-72-2.html",
     ]);
+  });
+});
+
+describe("exceedsSkipRate", () => {
+  it("閾値未満なら false", () => {
+    // 1/20 = 5%
+    expect(exceedsSkipRate({ recipes: 19, skipped: 1 }, 0.1)).toBe(false);
+  });
+
+  it("ちょうど閾値なら false (超えたときだけ失敗)", () => {
+    // 2/20 = 10%
+    expect(exceedsSkipRate({ recipes: 18, skipped: 2 }, 0.1)).toBe(false);
+  });
+
+  it("閾値を超えたら true", () => {
+    // 3/20 = 15%
+    expect(exceedsSkipRate({ recipes: 17, skipped: 3 }, 0.1)).toBe(true);
+  });
+
+  it("#126 の取りこぼし (41/117) は既定の閾値で検知できる", () => {
+    expect(exceedsSkipRate({ recipes: 76, skipped: 41 }, DEFAULT_MAX_SKIP_RATE)).toBe(true);
+  });
+
+  it("分母 0 (新着なし) は失敗扱いにしない", () => {
+    expect(exceedsSkipRate({ recipes: 0, skipped: 0 }, 0.1)).toBe(false);
+    expect(exceedsSkipRate({ recipes: 0, skipped: 0 }, 0)).toBe(false);
+  });
+
+  it("全件スキップは閾値 1 未満なら true", () => {
+    expect(exceedsSkipRate({ recipes: 0, skipped: 5 }, 0.1)).toBe(true);
+    expect(exceedsSkipRate({ recipes: 0, skipped: 5 }, 1)).toBe(false);
+  });
+});
+
+describe("parseMaxSkipRate", () => {
+  it("指定が無ければ既定値 0.1", () => {
+    expect(DEFAULT_MAX_SKIP_RATE).toBe(0.1);
+    expect(parseMaxSkipRate([])).toBe(0.1);
+    expect(parseMaxSkipRate(["--pages=3"])).toBe(0.1);
+  });
+
+  it("--max-skip-rate= で上書きできる", () => {
+    expect(parseMaxSkipRate(["--pages=3", "--max-skip-rate=0.25"])).toBe(0.25);
+    expect(parseMaxSkipRate(["--max-skip-rate=0"])).toBe(0);
+    expect(parseMaxSkipRate(["--max-skip-rate=1"])).toBe(1);
+  });
+
+  it("不正値 (数値でない・空・負・1 超) は既定値に戻す", () => {
+    for (const bad of ["abc", "", "NaN", "-0.1", "1.5", "Infinity", "0.2x"]) {
+      expect(parseMaxSkipRate([`--max-skip-rate=${bad}`])).toBe(DEFAULT_MAX_SKIP_RATE);
+    }
   });
 });

@@ -77,7 +77,14 @@ deckRouter.post("/save", requireAuth, async (c) => {
   const { title, format, decklist } = body.data;
 
   const parsed = parseDecklist(decklist);
-  if (parsed.entries.length === 0) {
+  // 超次元・GR は entries (メイン) に入らない。保存では落とさず、zone を付けて同じ配列に残す
+  // (読み込み側はこれを見て見出しを付け直す)。メインの行は従来どおり zone 無し。
+  const cards = [
+    ...parsed.entries,
+    ...(parsed.zones?.hyperspatial ?? []).map((e) => ({ ...e, zone: "hyperspatial" as const })),
+    ...(parsed.zones?.gr ?? []).map((e) => ({ ...e, zone: "gr" as const })),
+  ];
+  if (cards.length === 0) {
     return c.json({ error: "デッキリストを解析できませんでした" }, 400);
   }
   const score = await scoreDeck(parsed);
@@ -85,7 +92,7 @@ deckRouter.post("/save", requireAuth, async (c) => {
   const sql = getSql();
   const rows = await sql`
     INSERT INTO decks (format, title, cards, user_id, scores)
-    VALUES (${format}, ${title}, ${sql.json(parsed.entries)}, ${userId}, ${sql.json(score)})
+    VALUES (${format}, ${title}, ${sql.json(cards)}, ${userId}, ${sql.json(score)})
     RETURNING id, title, format, cards, scores
   `;
   const row = rows[0];

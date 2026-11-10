@@ -77,7 +77,9 @@ export async function buildCardGrounding(response: string): Promise<string> {
     const sql = getSql();
     const rows = await sql`
       SELECT name, civilizations, cost, type, power FROM cards
-      WHERE length(name) >= ${MIN_NAME_LEN} AND ${response} ILIKE '%' || name || '%'
+      WHERE length(name) >= ${MIN_NAME_LEN}
+        -- パターン側はカード名。名前の LIKE メタ文字をエスケープしてから部分一致にする (#170)
+        AND ${response} ILIKE '%' || replace(replace(replace(name, '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%' ESCAPE '\\'
       ORDER BY length(name) DESC
       LIMIT ${MAX_CONFIRMED}
     `;

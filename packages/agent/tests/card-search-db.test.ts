@@ -79,8 +79,85 @@ describe.skipIf(!hasTestDb)("search_cards (統合)", () => {
     expect(r.text).toContain("検索条件");
   });
 
+  it("引用符のゆれでもカード名で引ける (#167: SQL 側も引用符・NFKC を揃えた)", async () => {
+    await sql`INSERT INTO cards (name, civilizations, cost, type, races, text, power, official_id)
+              VALUES ('“轟轟轟”ブランド', ${sql.json(["fire"])}, 6, 'creature', ${sql.json([])}, '', 9000, 'gogogo')`;
+    for (const query of ["轟轟轟ブランド", '"轟轟轟"ブランド', "＂轟轟轟＂ブランド"]) {
+      const r = await runTool("search_cards", { query });
+      expect(r.text).toContain("“轟轟轟”ブランド");
+    }
+  });
+
   it("テキストでも引ける (名前以外)", async () => {
     const r = await runTool("search_cards", { query: "マナブースト" });
     expect(r.text).toContain("青銅の鎧");
+  });
+
+  it("query の % と _ をワイルドカードにしない (#170)", async () => {
+    // エスケープしないと「%」の一語で全カードに当たる
+    for (const query of ["%", "_", "%%"]) {
+      const r = await runTool("search_cards", { query });
+      expect(r.text).toContain("0件");
+      expect(r.text).not.toContain("ボルシャック・ドラゴン");
+    }
+  });
+
+  it("% や _ を含む語はリテラルとして部分一致する (#170)", async () => {
+    await sql`INSERT INTO cards (name, civilizations, cost, type, races, text, power, official_id)
+              VALUES ('百パー', ${sql.json(["fire"])}, 2, 'spell', ${sql.json([])}, '攻撃を100%にする', null, 'hyakupa')`;
+    const hit = await runTool("search_cards", { query: "100%" });
+    expect(hit.text).toContain("百パー");
+    // "_" を1文字ワイルドカードにすると「攻撃を100%」に「攻撃_100」が当たってしまう
+    const miss = await runTool("search_cards", { query: "攻撃_100" });
+    expect(miss.text).toContain("0件");
+  });
+});
+
+/**
+ * SQL の translate/normalize と TS の normalizeCardName が**実際の Postgres で**同じ結果になるか (#167)。
+ * 単体テスト (packages/core/tests/card-name.test.ts) は SQL を JS で再現したもの。
+ * ここでは本物の `lower(translate(normalize(x, NFKC), CARD_NAME_TRANSLATE_FROM, CARD_NAME_TRANSLATE_TO))`
+ * を走らせる。
+ */
+describe.skipIf(!hasTestDb)("カード名正規化: SQL と TS の一致 (統合, #167)", () => {
+  const sql = getTestSql()!;
+  afterAll(async () => {
+    await sql.end();
+  });
+
+  it("落とす文字・長音に畳む文字の全文字と代表的なカード名で SQL == TS", async () => {
+    const {
+      CARD_NAME_STRIP_CHARS,
+      CARD_NAME_DASH_CHARS,
+      CARD_NAME_TRANSLATE_FROM,
+      CARD_NAME_TRANSLATE_TO,
+    } = await import("@dm-ai/core");
+    const { normalizeCardName } = await import("../src/card-search.js");
+    const samples = [
+      ...[...CARD_NAME_STRIP_CHARS].map((c) => `あ${c}い`),
+      ...[...CARD_NAME_DASH_CHARS].map((c) => `あ${c}い`),
+      "ヨミジ 丁-二式",
+      "ヨミジ 丁―二式",
+      "ボルシャック・ドラゴン−",
+      "“轟轟轟”ブランド",
+      '"轟轟轟"ブランド',
+      "＂轟轟轟＂ブランド",
+      "‘轟轟轟’ブランド",
+      "《ヘブンズ・ゲート》",
+      "≪ボルシャック･ドラゴン≫",
+      "«ボルシャック»",
+      "接続\tＣＳ－２０",
+      "龍装艦 チェンジザ ／ 六奇怪の四",
+      "ＤＧ",
+    ];
+    const rows = await sql`
+      SELECT s, lower(translate(normalize(s, NFKC), ${CARD_NAME_TRANSLATE_FROM}, ${CARD_NAME_TRANSLATE_TO})) AS k
+      -- text[] リテラルは空白・引用符を含む要素で壊れるので jsonb 経由で渡す (apps/api/src/card.ts と同じ)
+      FROM jsonb_array_elements_text(${sql.json(samples)}::jsonb) AS s
+    `;
+    expect(rows).toHaveLength(samples.length);
+    for (const r of rows) {
+      expect({ s: r.s, k: r.k }).toEqual({ s: r.s, k: normalizeCardName(r.s as string) });
+    }
   });
 });

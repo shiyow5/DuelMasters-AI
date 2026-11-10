@@ -5,6 +5,7 @@ import {
   FORMATS,
   IngestUrlRequestSchema,
   aggregateTierData,
+  likeContains,
   mergeArchetypeCounts,
 } from "@dm-ai/core";
 import { extractTextFromHtml } from "@dm-ai/rag";
@@ -103,14 +104,34 @@ async function withMainCards<T extends { archetype: string }>(entries: T[]): Pro
   });
 }
 
+/** `/tier` と `/archetype/:name` が受け付ける期間 (B-11, #184) */
+const TIER_PERIODS = ["2w", "4w", "8w"] as const;
+
+/** period が不正なときの 400 応答の本文 */
+const PERIOD_ERROR = `period は ${TIER_PERIODS.join(" | ")} のいずれかを指定してください`;
+
+/**
+ * クエリの period を週数にする。未指定は 4w。
+ * Web が出すのは 2w / 4w / 8w だけなので、3w や 100w・"abc" などは黙って通さず null を返す
+ * (呼び出し側で 400 にする)。`/tier` と `/archetype/:name` で同じ判定を使う (#184)。
+ */
+function parsePeriodWeeks(raw: string | undefined): number | null {
+  const period = raw ?? "4w";
+  if (!(TIER_PERIODS as readonly string[]).includes(period)) return null;
+  return parseInt(period.slice(0, -1), 10);
+}
+
 metaRouter.get("/tier", async (c) => {
   const format = c.req.query("format") ?? "original";
   if (!(FORMATS as readonly string[]).includes(format)) {
     return c.json({ error: `format は ${FORMATS.join(" | ")} のいずれかを指定してください` }, 400);
   }
-  const period = c.req.query("period") ?? "4w";
+  // Web が出すのは 2w / 4w / 8w だけ。3w や 100w を黙って通さない (B-11)
+  const weeks = parsePeriodWeeks(c.req.query("period"));
+  if (weeks === null) {
+    return c.json({ error: PERIOD_ERROR }, 400);
+  }
 
-  const weeks = parseInt(period.replace("w", ""), 10) || 4;
   const periodEnd = new Date();
   const periodStart = new Date();
   periodStart.setDate(periodStart.getDate() - weeks * 7);
@@ -118,12 +139,21 @@ metaRouter.get("/tier", async (c) => {
   try {
     const sql = getSql();
 
-    // スナップショットから最新を取得
+    // 要求された期間と**同じ長さ**のスナップショットのうち最新を取る。
+    // 長さを見ないと、cron が作る 4 週ぶんのスナップショットが 2w / 8w にも返ってしまい、
+    // 期間ボタンが効かない (QA③)。該当が無ければ下のその場集計に落とす。
+    // snapshot-meta は period_start = period_end - weeks*7日 で作るので、日数の差で照合する。
     const snapshots = await sql`
-      SELECT tier_data, period_start, period_end, created_at
+      SELECT tier_data,
+             -- DATE をそのまま返すと postgres.js が Date にして JSON で時刻つきになる (#185)。
+             -- その場集計の経路と同じ YYYY-MM-DD にそろえる (DateStyle に左右されない to_char)
+             to_char(period_start, 'YYYY-MM-DD') AS start_date,
+             to_char(period_end, 'YYYY-MM-DD') AS end_date,
+             created_at
       FROM meta_snapshots
       WHERE format = ${format}
         AND period_end >= ${isoDate(periodStart)}
+        AND (period_end - period_start) = ${weeks * 7}
       ORDER BY period_end DESC
       LIMIT 1
     `;
@@ -184,8 +214,8 @@ metaRouter.get("/tier", async (c) => {
     return c.json({
       format,
       period: `${weeks}w`,
-      period_start: snapshots[0].period_start,
-      period_end: snapshots[0].period_end,
+      period_start: snapshots[0].start_date as string,
+      period_end: snapshots[0].end_date as string,
       tier_data: await withMainCards(
         snapshots[0].tier_data as Array<Record<string, unknown> & { archetype: string }>,
       ),
@@ -217,8 +247,11 @@ metaRouter.get("/archetype/:name", async (c) => {
    * 見ないと、詳細の優勝/Top4/記録数と直近結果だけが**全期間**になり、開いたカードと
    * 数字が矛盾する (2週間で5件のデッキを開くと「記録数25」と出る)。
    */
-  const period = c.req.query("period") ?? "4w";
-  const weeks = parseInt(period.replace("w", ""), 10) || 4;
+  // `/tier` と同じ判定。3w / 100w / "abc" などを別の窓で黙って集計しない (#184)
+  const weeks = parsePeriodWeeks(c.req.query("period"));
+  if (weeks === null) {
+    return c.json({ error: PERIOD_ERROR }, 400);
+  }
   const periodStart = new Date();
   periodStart.setDate(periodStart.getDate() - weeks * 7);
 
@@ -229,16 +262,21 @@ metaRouter.get("/archetype/:name", async (c) => {
     // tournament_results は個別 CS 記事の色つき表記 (「白緑ウィリデ」「白青ウィリデ」)。
     // 完全一致だけだと詳細がいつも空になるので、部分一致も拾う。
     // LIKE のメタ文字はユーザー入力なのでエスケープする。
-    const pattern = `%${name.replace(/[\\%_]/g, "\\$&")}%`;
-    const match = sql`(deck_archetype = ${name} OR deck_archetype LIKE ${pattern} ESCAPE '\')`;
+    // ESCAPE は JS ソース上 '\\' と書く。'\' だと cooked で '' になりエスケープが無効になる (#170)
+    const pattern = likeContains(name);
+    const match = sql`(deck_archetype = ${name} OR deck_archetype LIKE ${pattern} ESCAPE '\\')`;
     // ティア表と同じ期間窓で絞る (上のコメント参照)。
     const inPeriod = sql`event_date >= ${isoDate(periodStart)}`;
 
+    // event_date は DATE。postgres.js は DATE を JS の Date にするので、そのまま返すと
+    // c.json で時刻つき ("2026-10-04T00:00:00.000Z") になる。/tier と同じく to_char で
+    // YYYY-MM-DD にそろえる (#197, #185 と同じ事情)。並びは列そのもので決める。
     const results = await sql`
-      SELECT event_name, event_date, placement, participants, source_url, deck_archetype
+      SELECT event_name, to_char(event_date, 'YYYY-MM-DD') AS event_date,
+             placement, participants, source_url, deck_archetype
       FROM tournament_results
       WHERE ${match} AND format = ${format} AND ${inPeriod}
-      ORDER BY event_date DESC
+      ORDER BY tournament_results.event_date DESC
       LIMIT 20
     `;
 
@@ -255,7 +293,8 @@ metaRouter.get("/archetype/:name", async (c) => {
     return c.json({
       archetype: name,
       format,
-      period,
+      // 受け取った文字列ではなく `/tier` と同じ `${weeks}w` で返す (#184)
+      period: `${weeks}w`,
       stats: stats[0],
       recent_results: results,
     });
@@ -264,6 +303,7 @@ metaRouter.get("/archetype/:name", async (c) => {
     return c.json({
       archetype: name,
       format,
+      period: `${weeks}w`,
       stats: { total_entries: 0, wins: 0, top4: 0, top8: 0 },
       recent_results: [],
     });
