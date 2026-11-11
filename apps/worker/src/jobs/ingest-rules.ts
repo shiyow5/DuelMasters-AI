@@ -9,7 +9,7 @@
  * バージョンも PDF 本文の「Ver.1.50」表記から読み取り、ハードコードしない。
  */
 import { pathToFileURL } from "node:url";
-import pdf from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 import { embed } from "@dm-ai/core";
 import { getSql, closeDb } from "@dm-ai/db";
 import { chunkRuleText } from "@dm-ai/rag";
@@ -36,9 +36,16 @@ export async function runIngestRules(): Promise<{ chunks: number; version: strin
   // 2. ダウンロード + パース
   const res = await fetch(pdfUrl);
   if (!res.ok) throw new Error(`PDF ダウンロード失敗: HTTP ${res.status}`);
-  const parsed = await pdf(Buffer.from(await res.arrayBuffer()));
+  // pdf-parse v2 は default export なし。PDFParse インスタンスで getText() し、必ず destroy() する。
+  const parser = new PDFParse({ data: new Uint8Array(await res.arrayBuffer()) });
+  let parsed: { text: string; total: number };
+  try {
+    parsed = await parser.getText();
+  } finally {
+    await parser.destroy();
+  }
   const version = extractVersion(parsed.text);
-  console.log(`ページ数: ${parsed.numpages} / バージョン: ${version}`);
+  console.log(`ページ数: ${parsed.total} / バージョン: ${version}`);
 
   // 3. チャンク化 (条番号は meta.article に入る)
   const chunks = chunkRuleText(parsed.text);
