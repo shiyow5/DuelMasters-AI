@@ -199,6 +199,7 @@ export async function scoreDeck(deck: ParsedDeck): Promise<DeckScore> {
     overall,
     warnings,
     suggestions,
+    unresolvedCards,
     concept,
     archetype,
     synergy,

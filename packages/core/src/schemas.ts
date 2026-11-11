@@ -174,6 +174,12 @@ export const DeckScoreSchema = z.object({
   warnings: z.array(z.string()),
   suggestions: z.array(z.string()),
   /**
+   * カードDBで見つからず、スコアに入っていないカード名 (#128 / #151 A, #165 B-06)。
+   * warnings の文面と同じ内容を構造化したもの (warnings は後方互換のため維持)。
+   * **optional** — 過去に保存した scores (unresolvedCards 無し) も通すため。
+   */
+  unresolvedCards: z.array(z.string()).optional(),
+  /**
    * 推定したデッキ戦略コンセプト (#130)。combo/control のときは受け・フィニッシャー等の
    * 減点を緩和している。**optional** — 過去に保存した scores (concept 無し) も通すため。
    */
