@@ -35,7 +35,9 @@ function getClient(): GoogleGenAI {
   if (!_client) {
     const apiKey = _apiKey ?? readEnv("GEMINI_API_KEY");
     if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
-    _client = new GoogleGenAI({ apiKey });
+    // @google/genai 3.0.0 は既定が v1 に変わったが、gemini-flash-latest 等の alias は v1beta のみ。
+    // 明示固定して挙動を従来 (v1beta) に保つ。
+    _client = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "v1beta" } });
   }
   return _client;
 }
