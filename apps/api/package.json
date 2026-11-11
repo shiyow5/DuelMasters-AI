@@ -19,7 +19,7 @@
     "@dm-ai/db": "workspace:*",
     "@dm-ai/deck-engine": "workspace:*",
     "@dm-ai/rag": "workspace:*",
-    "@hono/node-server": "^1.14.0",
+    "@hono/node-server": "^2.1.6",
     "hono": "^4.13.17",
     "zod": "^3.24.0"
   },
