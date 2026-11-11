@@ -3,9 +3,14 @@ import { z } from "zod";
 
 // generateContent のモック (テストごとに挙動を差し替える)
 const generateContentMock = vi.fn();
+// GoogleGenAI コンストラクタ引数の記録用
+const ctorArgsMock = vi.fn();
 
 vi.mock("@google/genai", () => ({
   GoogleGenAI: class {
+    constructor(opts: unknown) {
+      ctorArgsMock(opts);
+    }
     models = { generateContent: generateContentMock };
   },
   Type: { OBJECT: "OBJECT", STRING: "STRING", ARRAY: "ARRAY", NUMBER: "NUMBER" },
@@ -21,6 +26,19 @@ describe("generateStructured", () => {
   beforeEach(() => {
     generateContentMock.mockReset();
     process.env.GEMINI_API_KEY = "test-key";
+  });
+
+  it("GoogleGenAI 初期化時に apiVersion=v1beta を明示する", async () => {
+    vi.resetModules();
+    ctorArgsMock.mockClear();
+    const { generateStructured } = await import("../src/gemini.js");
+    generateContentMock.mockResolvedValueOnce(
+      makeResponse(JSON.stringify({ name: "a", value: 1 })),
+    );
+    await generateStructured("p", schema, { responseSchema: {} });
+    expect(ctorArgsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ httpOptions: { apiVersion: "v1beta" } }),
+    );
   });
 
   it("正しい JSON を返すと parse された値が返る", async () => {
