@@ -24,6 +24,8 @@ describe("scoreDeck 特性テスト (DB無し = 全カード情報なしの劣�
       archetype: "unknown",
       // #141: 種族が1枚も無いのでトライバルシナジーは null。
       synergy: null,
+      // #128/#151 A: 1枚も引けないとき (DB 未接続を含む) は「未解決」を並べない (警告と同じ扱い)。
+      unresolvedCards: [],
       warnings: [
         "S・トリガーが0枚です (推奨: 8枚以上)",
         "低コスト(3以下)が0枚です (推奨: 15枚)",

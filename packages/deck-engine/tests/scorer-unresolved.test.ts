@@ -28,12 +28,15 @@ describe.skipIf(!hasTestDb)("scoreDeck DB にないカード (統合 / #165 B-06
     expect(score.warnings).toContain(
       "カードDBで見つからないカードが1種類あり、スコアに入っていません: 打ち間違いカード",
     );
+    // #128/#151 A: 同じ内容を構造化して返す (警告文字列は後方互換で維持)
+    expect(score.unresolvedCards).toEqual(["打ち間違いカード"]);
   });
 
   it("全カードが DB にあれば、この警告は出ない", async () => {
     await card("既知カード");
     const score = await scoreDeck(parseDecklist("4 既知カード"));
     expect(score.warnings.some((w) => w.startsWith("カードDBで見つからない"))).toBe(false);
+    expect(score.unresolvedCards).toEqual([]);
   });
 
   it("1枚も引けないときは「参考値」の警告だけにする (全カードを DB にないと言わない)", async () => {
