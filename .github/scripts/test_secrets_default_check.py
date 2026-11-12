@@ -67,6 +67,12 @@ class EvaluateTest(unittest.TestCase):
             self.assertFalse(ok, s)
             self.assertIn(None, r.values())
 
+    def test_empty_secret_exits_1(self):
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {"DATABASE_URL": ""}, clear=False), redirect_stdout(buf):
+            self.assertEqual(scd.main(), 1)
+        self.assertIn("::error::Secret DATABASE_URL が無い", buf.getvalue())
+
 
 class OutputTest(unittest.TestCase):
     def run_main(self, url: str) -> str:

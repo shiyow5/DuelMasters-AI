@@ -3,7 +3,7 @@
 - 環境変数 DATABASE_URL を文字列として解析・比較するだけ。DB には接続しない。
 - 出力は 7 項目の真偽値と固定文言だけ。値・長さ・ハッシュ・部分文字列・例外の中身は出さない。
 - 解析できないときは固定文言と unknown だけ出す (例外・traceback は出さない)。
-- 判定結果では失敗させない (常に exit 0)。
+- 判定結果では失敗させない。失敗 (exit 1) するのは Secret が空・未設定のときだけ。
 """
 
 from __future__ import annotations
@@ -68,6 +68,10 @@ def render(result: dict[str, bool | None], parsed: bool) -> list[str]:
 
 
 def main() -> int:
+    if not os.environ.get("DATABASE_URL", "").strip():
+        # Secret が空・未設定のときだけ失敗させる。値は出さない。
+        print("::error::Secret DATABASE_URL が無い")
+        return 1
     try:
         result, parsed = evaluate(os.environ.get("DATABASE_URL", ""))
         lines = render(result, parsed)
