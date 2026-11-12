@@ -21,3 +21,6 @@ REFACTORING_PLAN.md
 # Playwright の実行結果
 apps/web/test-results/
 apps/web/playwright-report/
+
+# Python キャッシュ
+__pycache__/
