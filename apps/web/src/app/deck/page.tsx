@@ -329,6 +329,25 @@ export default function DeckPage() {
                 className="w-full h-64 bg-bg-dark border border-border-highlight rounded-lg p-3 text-sm text-text-main font-mono focus:border-primary focus:ring-1 focus:ring-primary resize-none placeholder-text-dim/50"
                 placeholder={`デッキリストを貼り付け...\n4 x ボルシャック・ドラゴン\n4 x ナチュラル・トラップ\n...`}
               />
+              <details className="mt-2 text-xs text-text-muted">
+                <summary className="cursor-pointer select-none hover:text-text-main">
+                  受け付ける書き方
+                </summary>
+                <ul className="mt-1 list-disc pl-5 space-y-0.5">
+                  <li>
+                    1行に1カード。<code>4 ボルシャック・ドラゴン</code> /{" "}
+                    <code>ボルシャック・ドラゴン ×4</code> / <code>ボルシャック・ドラゴン 4枚</code>
+                    （全角数字も可）
+                  </li>
+                  <li>枚数が無い行は1枚として読みます</li>
+                  <li>
+                    <code>メインデッキ</code> などの見出し行は無視されます。
+                    <code>超次元ゾーン</code> / <code>GRゾーン</code>{" "}
+                    の見出し以降は、40枚には数えません
+                  </li>
+                  <li>読み取れない行や、カードDBに無い名前は、評価結果に表示されます</li>
+                </ul>
+              </details>
               <div className="mt-4 flex gap-2">
                 <button
                   type="submit"
