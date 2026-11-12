@@ -88,6 +88,60 @@ function isPublicHttpUrl(raw: string): boolean {
   return true;
 }
 
+/** ingest/url の取得制限 (#252)。大会結果ページ 1 枚の取得用途なので十分な値。 */
+const FETCH_TIMEOUT_MS = 10_000;
+const FETCH_MAX_BYTES = 2 * 1024 * 1024;
+const FETCH_MAX_REDIRECTS = 3;
+
+/**
+ * 公開 URL を安全に取得して本文テキストを返す (#252)。
+ * - redirect は手動で辿り、各ホップを isPublicHttpUrl で再検証する (最大 FETCH_MAX_REDIRECTS)
+ * - 全体で FETCH_TIMEOUT_MS のタイムアウト
+ * - 応答サイズは FETCH_MAX_BYTES まで (Content-Length 事前チェック + ストリーム累計)
+ * DNS 解決後 IP の検証 (DNS リバインディング) は対象外。
+ */
+async function fetchPublicPage(url: string, fetchImpl: typeof fetch = fetch): Promise<string> {
+  const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+  let current = url;
+  for (let hop = 0; hop <= FETCH_MAX_REDIRECTS; hop++) {
+    if (!isPublicHttpUrl(current)) throw new Error("許可されていない URL");
+    const res = await fetchImpl(current, { redirect: "manual", signal });
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get("location");
+      await res.body?.cancel().catch(() => {});
+      if (!loc) throw new Error(`HTTP ${res.status} (Location なし)`);
+      try {
+        current = new URL(loc, current).toString();
+      } catch {
+        throw new Error("不正な Location");
+      }
+      continue;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const len = Number(res.headers.get("content-length"));
+    if (Number.isFinite(len) && len > FETCH_MAX_BYTES) {
+      await res.body?.cancel().catch(() => {});
+      throw new Error("応答サイズが上限を超えています");
+    }
+    if (!res.body) return "";
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > FETCH_MAX_BYTES) {
+        await reader.cancel().catch(() => {});
+        throw new Error("応答サイズが上限を超えています");
+      }
+      chunks.push(value);
+    }
+    return new TextDecoder().decode(Buffer.concat(chunks));
+  }
+  throw new Error("リダイレクトが多すぎます");
+}
+
 /** ティアリスト取得 */
 /**
  * ティア表の各行にメインカードの画像を添える (#122)。
@@ -386,9 +440,7 @@ metaRouter.post("/ingest/url", requireInternal, async (c) => {
 
   let html: string;
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    html = await res.text();
+    html = await fetchPublicPage(url);
   } catch (err) {
     console.error("[api/meta] ページ取得失敗:", err);
     return c.json({ error: "ページを取得できませんでした" }, 502);
@@ -425,4 +477,4 @@ metaRouter.post("/ingest/url", requireInternal, async (c) => {
   });
 });
 
-export { metaRouter };
+export { metaRouter, fetchPublicPage };
