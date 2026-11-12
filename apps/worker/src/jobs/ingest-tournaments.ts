@@ -28,7 +28,7 @@
  */
 import { pathToFileURL } from "node:url";
 import { getSql, closeDb } from "@dm-ai/db";
-import { type Format } from "@dm-ai/core";
+import { type Format, normalizeEventName, partitionValidArchetypes } from "@dm-ai/core";
 import { sleep } from "../lib.js";
 import { exceedsSkipRate, parseMaxSkipRate } from "./ingest-deneblog.js";
 
@@ -443,6 +443,7 @@ export async function runIngestTournaments(
   let weeklyEntries = 0;
   let rankingParsed = 0;
   let rankingSkipped = 0;
+  let rejectedNames = 0;
   const seenRanking = new Set<string>();
 
   for (const link of rankingLinks) {
@@ -480,11 +481,20 @@ export async function runIngestTournaments(
     // 週の行はトランザクションでまとめて入れる。途中で落ちて一部だけ残ると、
     // 次回以降その週は「取込済み」と誤認されかねず、ティア割合が狂ったまま固定される。
     const week = ranking;
+    // アーキタイプ名を検証し、不合格の行はスキップする (#254 M-3 ②)。合計 = 母数の自己検証は
+    // 上で済んでいるので、ここで行を減らしても週の total_entries は変えない。
+    const checked = partitionValidArchetypes(week.entries);
+    if (checked.rejected > 0) {
+      console.warn(
+        `[tournaments] アーキタイプ名の検証で ${checked.rejected}/${week.entries.length} 行をスキップ (${link.url})`,
+      );
+      rejectedNames += checked.rejected;
+    }
     await sql.begin(async (tx) => {
       // postgres.js の TransactionSql はタグ付きテンプレートとして呼べる型になっていない
       // (packages/rag/src/search.ts の withIterativeScan と同じ回避)
       const txSql = tx as unknown as Sql;
-      for (const e of week.entries) {
+      for (const e of checked.valid) {
         await txSql`
           INSERT INTO archetype_weekly_stats
             (format, period_start, period_end, deck_archetype, entries, total_entries, source_url)
@@ -495,7 +505,7 @@ export async function runIngestTournaments(
         `;
       }
     });
-    weeklyEntries += week.entries.length;
+    weeklyEntries += checked.valid.length;
     weeks++;
     console.log(
       `[tournaments] 週次ランキング ${ranking.format} ${ranking.period_start}〜${ranking.period_end}: ` +
@@ -509,13 +519,27 @@ export async function runIngestTournaments(
 
   for (const { cs, url } of csResults) {
     let insertedHere = 0;
-    for (const r of cs.results) {
+    // 大会名・アーキタイプ名の検証 (#254 M-3 ②)。不合格はスキップして件数を出す。
+    const eventName = normalizeEventName(cs.event_name);
+    if (eventName === null) {
+      console.warn(`[tournaments] 大会名が検証を通らないためスキップ (${url})`);
+      rejectedNames += cs.results.length;
+      continue;
+    }
+    const checkedCs = partitionValidArchetypes(cs.results);
+    if (checkedCs.rejected > 0) {
+      console.warn(
+        `[tournaments] アーキタイプ名の検証で ${checkedCs.rejected}/${cs.results.length} 行をスキップ (${url})`,
+      );
+      rejectedNames += checkedCs.rejected;
+    }
+    for (const r of checkedCs.valid) {
       // source_url は記事の URL を入れる。サイトのトップを入れると
       // /api/meta/archetype/:name の recent_results から元記事に辿れなくなる。
       const res = await sql`
         INSERT INTO tournament_results
           (event_name, event_date, format, deck_archetype, placement, source_url)
-        VALUES (${cs.event_name}, ${cs.event_date}, ${cs.format},
+        VALUES (${eventName}, ${cs.event_date}, ${cs.format},
                 ${r.deck_archetype}, ${r.placement}, ${url})
         ON CONFLICT (event_name, event_date, format, deck_archetype, placement) DO NOTHING
       `;
@@ -528,7 +552,8 @@ export async function runIngestTournaments(
   console.log(
     `=== 大会結果取り込み完了: 週次ランキング ${weeks}週 (${weeklyEntries}行) / ` +
       `個別CS ${events}大会 (${placements}入賞) / ` +
-      `ランキング記事 読めた ${rankingParsed}本・読めず ${rankingSkipped}本 ===`,
+      `ランキング記事 読めた ${rankingParsed}本・読めず ${rankingSkipped}本 / ` +
+      `名前の検証でスキップ ${rejectedNames}行 ===`,
   );
 
   await closeDb();

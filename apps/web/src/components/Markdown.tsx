@@ -4,6 +4,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { safeUrl } from "@/lib/safe-url";
+import { isAllowedLink } from "@/lib/link-hosts";
 import { fixCjkEmphasis } from "@/lib/cjk-emphasis";
 
 /**
@@ -35,12 +36,31 @@ function isExternal(href: string | undefined): boolean {
   return /^https?:\/\//i.test(href ?? "");
 }
 
+/** リンクの表示テキストを文字列で取り出す (自動リンク判定用)。文字列以外が混ざれば null 扱い。 */
+function nodeText(children: React.ReactNode): string | null {
+  if (typeof children === "string") return children;
+  if (Array.isArray(children) && children.every((c) => typeof c === "string"))
+    return children.join("");
+  return null;
+}
+
 /** 見出しは吹き出しの中なので、ページ見出しより一段小さくする。 */
 const COMPONENTS: Components = {
   a: ({ href, children }) => {
     // ページ内リンク (remark-gfm の脚注は `#user-content-fn-1` を出す) に target="_blank" を
     // 付けると、脚注を踏むたびに新しいタブが開く。外部リンクのときだけ付ける。
     const external = isExternal(href);
+    // 許可ホスト以外の http(s) はリンクにしない (#254 M-3 ③)。`テキスト (URL)` で見せる。
+    // 自動リンク (テキスト = URL) のときは URL だけを出す。href は React のテキストとして出るだけで、
+    // クリックしても遷移しない。
+    if (!isAllowedLink(href)) {
+      const label = nodeText(children);
+      return (
+        <span className="text-text-sub break-all">
+          {label === href ? href : `${label} (${href})`}
+        </span>
+      );
+    }
     return (
       <a
         href={href}
