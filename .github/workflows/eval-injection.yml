@@ -4,7 +4,7 @@ name: Eval (プロンプトインジェクション)
 #
 # 実 Gemini を叩くので、プロンプト・グラフ・eval に触れた PR だけで回す (paths)。注入ケースは
 # 3 問だけ (--filter=inject)、judge は回さない (--no-judge) ので低コスト。判定は本文の部分一致で、
-# judge のブレは入らない。従った問が 1 件でもあれば `pnpm eval --gate` が exit 1 → この check が赤くなる。
+# judge のブレは入らない。従った問が 1 件でもあれば `pnpm eval --gate-injection` が exit 1 → この check が赤くなる。
 # 全問の精度ゲートは nightly の eval.yml が見る。
 on:
   pull_request:
@@ -54,7 +54,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: pnpm --filter @dm-ai/agent eval -- --filter=inject --no-judge --gate --out=eval-injection-report.json
+        run: pnpm --filter @dm-ai/agent eval -- --filter=inject --no-judge --gate-injection --out=eval-injection-report.json
 
       - name: Upload report
         if: always()

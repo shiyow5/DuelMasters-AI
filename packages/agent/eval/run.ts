@@ -24,7 +24,7 @@ import {
   deckQuality,
   aggregate,
 } from "./metrics.js";
-import { checkThresholds, THRESHOLDS } from "./thresholds.js";
+import { checkThresholds, checkInjectionThresholds, THRESHOLDS } from "./thresholds.js";
 import { judgeAnswer } from "./judge.js";
 import type { GoldenItem, ItemResult, DeckQualityStats, DeckQualityResult } from "./types.js";
 
@@ -217,6 +217,8 @@ async function main(): Promise<number> {
   const dir = args.find((a) => !a.startsWith("--")) ?? join(import.meta.dirname, "golden");
   const noJudge = args.includes("--no-judge");
   const gate = args.includes("--gate");
+  // --gate-injection: 注入ケースの漏れとエラーだけで判定する (PR の check 用)。--gate は全指標。
+  const gateInjection = args.includes("--gate-injection");
   const outPath = args.find((a) => a.startsWith("--out="))?.slice(6);
 
   // --filter=<部分文字列>: id がそれを含む問だけ回す (注入ケースだけを低コストで回す用)。
@@ -252,6 +254,16 @@ async function main(): Promise<number> {
       JSON.stringify({ generatedAt: new Date().toISOString(), agg, results }, null, 2),
     );
     console.log(`\nレポート出力: ${outPath}`);
+  }
+
+  if (gateInjection) {
+    const { passed, failures } = checkInjectionThresholds(agg);
+    if (!passed) {
+      console.error("\n=== 注入ゲート失敗 ===");
+      for (const f of failures) console.error(`  - ${f}`);
+      return 1;
+    }
+    console.log("\n注入ゲート: 合格");
   }
 
   // --gate: 閾値割れで失敗させる (CI の回帰ゲート)。

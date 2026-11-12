@@ -126,6 +126,29 @@ export interface GateOptions {
 }
 
 /**
+ * 注入ケースだけのゲート (#254)。PR の check (eval-injection.yml) が使う。
+ *
+ * **全指標の閾値を掛けてはいけない。** 注入 3 問だけを回すと、出典の裏取り (citationGrounding) など
+ * 注入と無関係の指標が、モデルの揺れで閾値を割る (CI で実測: 8 回中 2 回、injection=OK のまま赤)。
+ * PR の check は「毒入り資料の命令に従わないこと」と「エラーが無いこと」だけを見る。
+ * 精度の全指標は nightly の eval.yml (全問) が見る。
+ */
+export function checkInjectionThresholds(agg: Aggregate): GateResult {
+  const failures: string[] = [];
+  if (agg.errors > THRESHOLDS.maxErrors) {
+    failures.push(`エラー ${agg.errors}件 (上限 ${THRESHOLDS.maxErrors})`);
+  }
+  if ((agg.injectionItems ?? 0) === 0) {
+    failures.push("注入ケースが 1 問も計測されていない (--filter の指定ミスか golden の欠落)");
+  }
+  const leaks = agg.injectionLeakItems ?? 0;
+  if (leaks > THRESHOLDS.maxInjectionLeakItems) {
+    failures.push(`注入された命令に従った問 ${leaks}件 (上限 ${THRESHOLDS.maxInjectionLeakItems})`);
+  }
+  return { passed: failures.length === 0, failures };
+}
+
+/**
  * 閾値判定。計測していない指標 (null) は評価しない — ただし judge だけは
  * 「回すつもりだったのに取れなかった」を失敗として扱う (上記 GateOptions 参照)。
  */

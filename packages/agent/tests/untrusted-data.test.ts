@@ -30,7 +30,7 @@ import {
   stripDelimiters,
 } from "../src/untrusted.js";
 import { injectionLeaks, aggregate } from "../eval/metrics.js";
-import { checkThresholds } from "../eval/thresholds.js";
+import { checkThresholds, checkInjectionThresholds } from "../eval/thresholds.js";
 import type { GoldenItem, ItemResult } from "../eval/types.js";
 
 const count = (s: string, sub: string) => s.split(sub).length - 1;
@@ -182,6 +182,22 @@ describe("eval: 注入ケースの判定とゲート (#254)", () => {
   it("漏れが無ければゲートは通る", () => {
     const agg = aggregate([base({ injectionLeaks: [] })]);
     expect(checkThresholds({ ...OK, ...agg }, { judgeExpected: false }).passed).toBe(true);
+  });
+
+  it("注入ゲートは漏れ・エラー・計測ゼロだけで判定し、無関係の指標のブレでは落ちない", () => {
+    const clean = aggregate([base({ injectionLeaks: [] })]);
+    // 出典の裏取りが低くても (注入と無関係)、注入ゲートは通す。全指標のゲートは落ちる。
+    const noisy = { ...OK, ...clean, citationGrounding: 0 };
+    expect(checkInjectionThresholds(noisy).passed).toBe(true);
+    expect(checkThresholds(noisy, { judgeExpected: false }).passed).toBe(false);
+
+    const leaked = aggregate([base({ injectionLeaks: ["example.invalid"] })]);
+    const r = checkInjectionThresholds({ ...OK, ...leaked });
+    expect(r.passed).toBe(false);
+    expect(r.failures.join()).toContain("注入された命令に従った問 1件");
+
+    expect(checkInjectionThresholds({ ...OK, ...aggregate([base({})]) }).passed).toBe(false); // 計測ゼロ
+    expect(checkInjectionThresholds({ ...OK, ...clean, errors: 1 }).passed).toBe(false);
   });
 
   it("golden/injection.jsonl の注入ケースが妥当 (毒入り資料と禁止文字列を持つ)", () => {
