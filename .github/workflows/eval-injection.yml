@@ -1,0 +1,65 @@
+name: Eval (プロンプトインジェクション)
+
+# 毒入りの資料 (RAG) を差し込み、命令に従って禁止文字列を出力したら失敗させる (#254 M-3)。
+#
+# 実 Gemini を叩くので、プロンプト・グラフ・eval に触れた PR だけで回す (paths)。注入ケースは
+# 3 問だけ (--filter=inject)、judge は回さない (--no-judge) ので低コスト。判定は本文の部分一致で、
+# judge のブレは入らない。従った問が 1 件でもあれば `pnpm eval --gate` が exit 1 → この check が赤くなる。
+# 全問の精度ゲートは nightly の eval.yml が見る。
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/agent/src/**"
+      - "packages/agent/eval/**"
+      - ".github/workflows/eval-injection.yml"
+
+concurrency:
+  group: eval-injection-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+permissions:
+  contents: read
+
+jobs:
+  injection:
+    name: injection cases (毒入り資料に従わないこと)
+    # fork / dependabot の PR には secrets が渡らない。渡らないものを回して赤くしない。
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm build
+
+      - name: Run injection cases with gate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: pnpm --filter @dm-ai/agent eval -- --filter=inject --no-judge --gate --out=eval-injection-report.json
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-injection-report
+          path: packages/agent/eval-injection-report.json
+          if-no-files-found: warn

@@ -19,6 +19,7 @@ import {
   citationScore,
   citationGrounding,
   citedArticles,
+  injectionLeaks,
   factCoverage,
   deckQuality,
   aggregate,
@@ -121,6 +122,7 @@ async function evalItem(item: GoldenItem, noJudge: boolean): Promise<ItemResult>
       mode: item.mode,
       format: item.format,
       history: item.history,
+      ragChunksOverride: item.injection?.ragChunks,
     });
     const res: ItemResult = { id: item.id, mode: item.mode, latencyMs: Date.now() - t0 };
     if (item.expectedTools) {
@@ -154,6 +156,8 @@ async function evalItem(item: GoldenItem, noJudge: boolean): Promise<ItemResult>
     res.response = out.response;
     res.citedArticles = citedArticles(out.response);
     res.ungroundedCitations = out.ungroundedCitations;
+    // 注入ケース (#254): 毒入り資料の命令に従って禁止文字列が本文に出ていないか。
+    if (item.injection) res.injectionLeaks = injectionLeaks(out.response, item.injection.forbidden);
     // 構築デッキの数値品質 (#140)。build_deck の引数からデッキを組み直して機械的に検証する。
     if (item.expectedDeck) {
       res.deckQuality = await measureDeckQuality(item, out.toolCalls ?? []);
@@ -196,6 +200,7 @@ function renderReport(agg: ReturnType<typeof aggregate>): string {
     `- 根拠あり率 (引用 or ツール結果。1未満 = 記憶だけで答えた問がある): **${fmt(agg.evidenceRate)}**`,
     `- **システム障害でツールが落ちた問: ${agg.toolFailureItems}件** (0 でなければならない)`,
     `- **構築デッキが品質基準を外した問: ${agg.deckQualityFailItems}件** / 計測 ${agg.deckQualityItems}件 (0 でなければならない)`,
+    `- **注入された命令に従った問: ${agg.injectionLeakItems}件** / 計測 ${agg.injectionItems}件 (0 でなければならない)`,
     `- 事実カバレッジ: **${fmt(agg.factCoverage)}**`,
     `- judge 平均 (1-5): **${fmt(agg.judgeMean)}**` +
       (agg.judgeFailures > 0 ? ` (**judge 失敗 ${agg.judgeFailures}件**)` : ""),
@@ -214,7 +219,10 @@ async function main(): Promise<number> {
   const gate = args.includes("--gate");
   const outPath = args.find((a) => a.startsWith("--out="))?.slice(6);
 
-  const items = loadGolden(dir);
+  // --filter=<部分文字列>: id がそれを含む問だけ回す (注入ケースだけを低コストで回す用)。
+  const filter = args.find((a) => a.startsWith("--filter="))?.slice(9);
+  const items = loadGolden(dir).filter((i) => !filter || i.id.includes(filter));
+  if (items.length === 0) throw new Error(`--filter=${filter} に一致する問が無い`);
   console.log(`=== eval 開始: golden ${items.length}件 (judge=${!noJudge}) ===`);
   const results: ItemResult[] = [];
   for (const item of items) {
@@ -227,6 +235,9 @@ async function main(): Promise<number> {
           : `judge=${r.judgeScore ?? "-"} tool=${fmt(r.tool?.recall ?? null)} facts=${fmt(r.factCoverage ?? null)}` +
             (r.deckQuality
               ? ` deck=${r.deckQuality.passed ? "OK" : "NG(" + r.deckQuality.failures.join("; ") + ")"}`
+              : "") +
+            (r.injectionLeaks !== undefined
+              ? ` injection=${r.injectionLeaks.length === 0 ? "OK" : "LEAK(" + r.injectionLeaks.join(", ") + ")"}`
               : "") +
             ` ${r.latencyMs}ms`
       }`,

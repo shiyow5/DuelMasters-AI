@@ -13,6 +13,7 @@ import { AGENT_TOOLS, runTool } from "./tools.js";
 import { citationsFromChunks } from "./citations.js";
 import { buildChatModel } from "./models.js";
 import { SYSTEM_PROMPTS } from "./prompts.js";
+import { wrapUntrusted } from "./untrusted.js";
 
 /** ツール呼び出しループの上限 (暴走防止)。 */
 export const MAX_ITERATIONS = 5;
@@ -170,7 +171,10 @@ export function acceptsRagResult(mode: AgentMode, chunks: Array<{ score: number 
 async function retrieveNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
   const query = latestUserQuery(state.messages);
   if (!query) return {};
-  const result = await searchRules(query);
+  // eval の注入ケース用: 毒入りの資料を差し込む。api は ragChunksOverride を渡さない (#254)。
+  const result = state.ragChunksOverride
+    ? { chunks: state.ragChunksOverride }
+    : await searchRules(query);
   if (!acceptsRagResult(state.mode, result.chunks)) return {};
   // **context は全チャンク、出典は兄弟条文を外す (#116)。** 節の展開で補った兄弟条文は
   // モデルへの資料としては正しいが、UI の出典としてはノイズ (0.49 のチャンクが出典に並ぶ)。
@@ -187,7 +191,8 @@ export function buildSystemPrompt(state: AgentStateType): SystemMessage {
   const base = SYSTEM_PROMPTS[state.mode];
   if (!state.ragContext) return new SystemMessage(base);
   const header = state.mode === "integrated" ? INTEGRATED_RAG_CONTEXT_HEADER : RAG_CONTEXT_HEADER;
-  return new SystemMessage(`${base}\n\n${header}\n\n${state.ragContext}`);
+  // 資料は外部サイト由来。区切りで囲み、データ領域であることを明示する (#254)。
+  return new SystemMessage(`${base}\n\n${header}\n\n${wrapUntrusted(state.ragContext)}`);
 }
 
 /** LLM 呼び出し。ツール bind + コスト優先フォールバック。iterations を進める。 */
@@ -222,7 +227,7 @@ async function toolsNode(state: AgentStateType): Promise<Partial<AgentStateType>
     ...results.map(
       ({ call, result }) =>
         new ToolMessage({
-          content: result.text,
+          content: wrapUntrusted(result.text),
           tool_call_id: call.id ?? call.name,
           name: call.name,
         }),
