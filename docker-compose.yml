@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: infra/docker/api.Dockerfile
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     env_file: .env
     depends_on:
       - db
@@ -20,7 +20,7 @@ services:
   db:
     image: pgvector/pgvector:pg16
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: dm_ai
       POSTGRES_USER: postgres
