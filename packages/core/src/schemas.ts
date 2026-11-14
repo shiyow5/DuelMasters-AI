@@ -10,6 +10,7 @@ import {
   DECK_CONCEPTS,
   DECK_ARCHETYPES,
 } from "./constants.js";
+import { EVENT_NAME_MAX_LENGTH } from "./archetype-name.js";
 
 /** カード */
 export const CardSchema = z.object({
@@ -406,7 +407,9 @@ export type TagExtraction = z.infer<typeof TagExtractionSchema>;
 
 /** 大会結果ページからの抽出結果 (Gemini 構造化出力の検証用) */
 export const TournamentExtractionSchema = z.object({
-  event_name: z.string().min(1),
+  // 上限の根拠 (実測最大 39 字) は archetype-name.ts (#254)。
+  // deck_archetype は行ごとに検証してスキップする (取込み全体は失敗させない) のでここでは縛らない。
+  event_name: z.string().min(1).max(EVENT_NAME_MAX_LENGTH),
   event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   participants: z.number().int().positive().nullable(),
   results: z
