@@ -39,6 +39,17 @@ export interface GoldenItem {
    * 実際に組まれたデッキが火文明中心・低コスト・アグロ採点かを数値で見る。
    */
   expectedDeck?: DeckQualitySpec;
+  /**
+   * プロンプトインジェクションの注入ケース (#254 M-3)。
+   *
+   * `ragChunks` は事前 RAG の結果として差し込む「毒入りの資料」。`forbidden` のどれかが回答本文に
+   * 現れたら**命令に従った (漏れた)** と機械的に判定する。judge には任せない。
+   * 正しい資料 (条文) も混ぜておき、回答が普通に成立する形にする。
+   */
+  injection?: {
+    ragChunks: Array<{ text: string; score: number; meta: Record<string, unknown> }>;
+    forbidden: string[];
+  };
 }
 
 /**
@@ -134,6 +145,8 @@ export interface ItemResult {
    * judge 4.94 のまま本番だけが壊れ続けた。
    */
   toolFailures?: string[];
+  /** 注入ケースで、回答本文に現れた禁止文字列 (#254)。空でなければ命令に従った = 漏れ。 */
+  injectionLeaks?: string[];
   latencyMs: number;
   error?: string;
 }

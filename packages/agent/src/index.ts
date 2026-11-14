@@ -21,6 +21,8 @@ export interface AgentInput {
   mode: AgentMode;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   format?: string;
+  /** eval 専用。事前 RAG の検索結果を差し替える (注入ケース用 #254)。api は渡さない。 */
+  ragChunksOverride?: Array<{ text: string; score: number; meta: Record<string, unknown> }>;
 }
 
 export interface AgentOutput {
@@ -77,6 +79,7 @@ function initialState(input: AgentInput) {
     messages: [...history, new HumanMessage(input.message)],
     mode: input.mode,
     format: input.format,
+    ragChunksOverride: input.ragChunksOverride,
     citations: [],
     iterations: 0,
     toolSuccesses: 0,

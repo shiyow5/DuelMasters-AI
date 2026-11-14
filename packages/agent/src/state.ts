@@ -16,6 +16,13 @@ export const AgentState = Annotation.Root({
   // rule モードの RAG 条文。system 指示に畳み込む (2 連続 human メッセージを避けるため
   // messages には積まない。Gemini は human/ai 交互が必要)。
   ragContext: Annotation<string | undefined>(),
+  /**
+   * eval 専用: 事前 RAG の検索結果を差し替える (#254 の注入ケース)。api は渡さない。
+   * 本番の DB は書き換えられないので、「毒入りの資料が来たとき従わないか」はここから差し込んで測る。
+   */
+  ragChunksOverride: Annotation<
+    Array<{ text: string; score: number; meta: Record<string, unknown> }> | undefined
+  >(),
   citations: Annotation<Citation[]>({
     reducer: (_prev, next) => next,
     default: () => [],
