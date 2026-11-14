@@ -285,29 +285,59 @@ export const ChatRequestSchema = z.object({
 });
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 
+/**
+ * deck 系リクエストの入力サイズ上限 (#253 / R8 M-1)。
+ *
+ * 40 枚 + 超次元 8 + GR 12 でも最大 60 行強 (見出し込み)。1 行は「枚数 + カード名」で
+ * 100 字前後に収まるので、実デッキは 6,000 字程度。20,000 字はその 3 倍強の余裕を持たせつつ、
+ * 巨大な文字列で parser / DB 照会を回させる DoS 隣接の穴を塞ぐ。
+ * カード名 1 件の上限 200 は card/resolve (CardResolveRequestSchema) と揃える。
+ */
+export const DECKLIST_MAX_LENGTH = 20_000;
+export const DECK_THEME_MAX_LENGTH = 200;
+export const DECK_CARD_NAME_MAX_LENGTH = 200;
+export const DECK_CARD_LIST_MAX_ITEMS = 60;
+export const DECK_CIVILIZATIONS_MAX_ITEMS = 10;
+export const DECK_CIVILIZATION_MAX_LENGTH = 20;
+export const DECK_MAX_COST_LIMIT = 99;
+export const DECK_GOALS_MAX_ITEMS = 10;
+export const DECK_GOAL_MAX_LENGTH = 200;
+
+const decklistField = z
+  .string()
+  .min(1, "decklist は必須です")
+  .max(DECKLIST_MAX_LENGTH, "decklist が長すぎます");
+
+const cardNameList = z
+  .array(z.string().max(DECK_CARD_NAME_MAX_LENGTH, "カード名が長すぎます"))
+  .max(DECK_CARD_LIST_MAX_ITEMS, "カード名の指定が多すぎます");
+
 /** POST /api/deck/parse */
 export const DeckParseRequestSchema = z.object({
-  decklist: z.string().min(1, "decklist は必須です"),
+  decklist: decklistField,
 });
 export type DeckParseRequest = z.infer<typeof DeckParseRequestSchema>;
 
 /** POST /api/deck/evaluate */
 export const DeckEvaluateRequestSchema = z.object({
-  decklist: z.string().min(1, "decklist は必須です"),
+  decklist: decklistField,
   format: z.enum(FORMATS).default("original"),
 });
 export type DeckEvaluateRequest = z.infer<typeof DeckEvaluateRequestSchema>;
 
 /** POST /api/deck/build */
 export const DeckBuildRequestSchema = z.object({
-  theme: z.string().min(1, "theme は必須です"),
+  theme: z.string().min(1, "theme は必須です").max(DECK_THEME_MAX_LENGTH, "theme が長すぎます"),
   format: z.enum(FORMATS).default("original"),
   constraints: z
     .object({
-      requiredCards: z.array(z.string()).optional(),
-      excludeCards: z.array(z.string()).optional(),
-      civilizations: z.array(z.string()).optional(),
-      maxCost: z.number().optional(),
+      requiredCards: cardNameList.optional(),
+      excludeCards: cardNameList.optional(),
+      civilizations: z
+        .array(z.string().max(DECK_CIVILIZATION_MAX_LENGTH, "文明名が長すぎます"))
+        .max(DECK_CIVILIZATIONS_MAX_ITEMS, "文明の指定が多すぎます")
+        .optional(),
+      maxCost: z.number().int().min(0).max(DECK_MAX_COST_LIMIT).optional(),
       /** クリーチャーの最低枚数。未指定なら deck-engine 側の既定 (デッキの 55%) */
       minCreatures: z.number().int().positive().optional(),
     })
@@ -317,8 +347,11 @@ export type DeckBuildRequest = z.infer<typeof DeckBuildRequestSchema>;
 
 /** POST /api/deck/suggest */
 export const DeckSuggestRequestSchema = z.object({
-  decklist: z.string().min(1, "decklist は必須です"),
-  goals: z.array(z.string()).default([]),
+  decklist: decklistField,
+  goals: z
+    .array(z.string().max(DECK_GOAL_MAX_LENGTH, "goal が長すぎます"))
+    .max(DECK_GOALS_MAX_ITEMS, "goals が多すぎます")
+    .default([]),
 });
 export type DeckSuggestRequest = z.infer<typeof DeckSuggestRequestSchema>;
 
@@ -326,7 +359,7 @@ export type DeckSuggestRequest = z.infer<typeof DeckSuggestRequestSchema>;
 export const DeckSaveRequestSchema = z.object({
   title: z.string().min(1, "title は必須です").max(100),
   format: z.enum(FORMATS).default("original"),
-  decklist: z.string().min(1, "decklist は必須です"),
+  decklist: decklistField,
 });
 export type DeckSaveRequest = z.infer<typeof DeckSaveRequestSchema>;
 

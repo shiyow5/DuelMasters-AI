@@ -70,3 +70,14 @@ describe("POST /api/deck/evaluate 超次元・GR (QA②)", () => {
     expect(body.validation.warnings.some((w) => w.includes("超次元"))).toBe(false);
   });
 });
+
+describe("deck 系の入力サイズ上限 (#253)", () => {
+  it("decklist が上限 +1 なら /evaluate は 400", async () => {
+    const res = await makeApp().request("/api/deck/evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decklist: "a".repeat(20_001), format: "original" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
