@@ -32,27 +32,46 @@ app.use("*", dbEnv);
  * (スキーム + ホスト[:ポート] のみ) だけを受け付け、`*` / `null` / パス付きなどは捨てる。
  */
 export function allowedOrigins(webUrl: string | undefined, allowLocalhost: boolean): string[] {
-  const configured = (webUrl ?? "")
-    .split(",")
-    .map((o) => o.trim())
-    .filter(Boolean)
-    .filter((o) => isValidOrigin(o) && (allowLocalhost || !isLocalOrigin(o)));
-  return allowLocalhost ? ["http://localhost:3000", ...configured] : configured;
+  const configured: string[] = [];
+  for (const raw of (webUrl ?? "").split(",")) {
+    const origin = normalizeOrigin(raw.trim());
+    if (!origin || (!allowLocalhost && isLocalOrigin(origin))) continue;
+    configured.push(origin);
+  }
+  // 正規化後に重複したものは 1 つにまとめる (localhost:3000 の重複も含む)
+  return [...new Set(allowLocalhost ? ["http://localhost:3000", ...configured] : configured)];
 }
 
-/** 正規の http(s) Origin か (`new URL(o).origin === o`)。`*` / `null` / パス付きは false。 */
-function isValidOrigin(o: string): boolean {
+/**
+ * 正規の http(s) Origin に正規化する。不正なら null。
+ *
+ * 末尾スラッシュ・大文字ホスト・既定ポート明示 (`:443` / `:80`) は `URL.origin` で正規化して受け付ける
+ * (ブラウザの Origin ヘッダと同じ形に揃える)。`*` / `null` / パス・クエリ・フラグメント・認証情報付き /
+ * 非 http(s) は null。
+ */
+function normalizeOrigin(o: string): string | null {
   try {
     const u = new URL(o);
-    return (u.protocol === "https:" || u.protocol === "http:") && u.origin === o;
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    if (u.pathname !== "/" || u.search || u.hash || u.username || u.password) return null;
+    // `https://a.example?x` のようなクエリだけ/`#` だけの形は URL では search/hash が空になるため文字列でも弾く
+    if (/[?#]/.test(o)) return null;
+    return u.origin;
   } catch {
-    return false;
+    return null;
   }
 }
 
+/** localhost 系ホストか。localhost / *.localhost (末尾ドット可) / 127.0.0.0/8 / 0.0.0.0 / [::1]。 */
 function isLocalOrigin(o: string): boolean {
-  const h = new URL(o).hostname;
-  return h === "localhost" || h.endsWith(".localhost") || h === "127.0.0.1" || h === "[::1]";
+  const h = new URL(o).hostname.replace(/\.$/, "");
+  return (
+    h === "localhost" ||
+    h.endsWith(".localhost") ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h) ||
+    h === "0.0.0.0" ||
+    h === "[::1]"
+  );
 }
 
 // CORS。WEB_URL は env 由来 (Workers=c.env / Node=process.env) のため per-request で解決する。
