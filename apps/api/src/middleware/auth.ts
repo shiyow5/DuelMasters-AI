@@ -62,7 +62,7 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
  * そこで明示的な opt-out フラグを置く。本番 Worker では設定しない (deploy.yml が
  * wrangler.jsonc への混入を検査する)。`"true"` 以外はすべて認証必須として扱う。
  */
-function allowAnonymous(c: Context): boolean {
+export function allowAnonymous(c: Context): boolean {
   const env = c.env as { ALLOW_ANONYMOUS?: string } | undefined;
   return (env?.ALLOW_ANONYMOUS ?? process.env.ALLOW_ANONYMOUS) === "true";
 }
