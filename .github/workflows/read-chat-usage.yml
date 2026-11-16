@@ -6,7 +6,9 @@ name: Read chat_daily_usage (read-only, one-off)
 # - permissions: contents: read。checkout しない (リポジトリのコードは使わない)。
 # - SQL は固定の SELECT 1本だけ。BEGIN READ ONLY → SHOW transaction_read_only が on であることを確認
 #   (on 以外なら SELECT せず失敗) → SELECT → ROLLBACK。書き込み系の文は含まない。
-# - 出すもの: 日ごとの合計回数・ユーザー数と、ユーザーごとの回数。user_id は出さず md5 の先頭6文字だけ。
+# - 出すもの: 日ごとの集計値 (合計回数・利用ユーザー数) だけ。user_id やそのハッシュなど、
+#   ユーザーごとの値・識別子は出さない (リポジトリが PUBLIC で、ログが誰でも読めるため)。
+#   artifact / step summary / 外部送信もしない。
 # - 接続情報は ::add-mask:: で伏せる。set -x は使わない。エラー時は ERROR/FATAL 行だけ、ホスト/IP を伏せて出す。
 #
 # 1回実行して結果を確認したら、この workflow を削除する PR を出す (役目を終える)。
@@ -68,14 +70,13 @@ jobs:
             \echo READ ONLY になっていないので SELECT せず止める
             SELECT 1/0;
           \endif
-          SELECT usage_date::text AS usage_date,
-                 left(md5(user_id), 6) AS user_hash,
-                 count AS user_count,
-                 sum(count) OVER (PARTITION BY usage_date) AS day_total,
-                 count(*) OVER (PARTITION BY usage_date) AS day_users
-            FROM chat_daily_usage
-           WHERE usage_date IN ('2026-11-15', '2026-11-16')
-           ORDER BY usage_date, count DESC, user_hash;
+          SELECT d.usage_date::text AS usage_date,
+                 coalesce(sum(u.count), 0) AS day_total,
+                 count(u.user_id) AS day_users
+            FROM (VALUES (DATE '2026-11-15'), (DATE '2026-11-16')) AS d(usage_date)
+            LEFT JOIN chat_daily_usage u ON u.usage_date = d.usage_date
+           GROUP BY d.usage_date
+           ORDER BY d.usage_date;
           ROLLBACK;
           SQL
           if ! psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -P pager=off -P footer=off -f "$sql" 2> "$err"; then
