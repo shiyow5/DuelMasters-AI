@@ -55,6 +55,9 @@ export const incrementChatUsage: ChatUsageCounter = async (userId, day) => {
  * - userId が無い (ALLOW_ANONYMOUS のローカル開発) なら数えない
  * - カウンタの DB が落ちていたら**通す** (fail-open)。分単位のレート制限は残るうえ、
  *   DB 障害時にチャットを全面停止させるほうが被害が大きい。エラーはログに残す
+ *
+ * #260 L-6: fail-open 時は `QUOTA_FAIL_OPEN` プレフィックスで log に出す。
+ * 監視側でこのプレフィックスを拾ってアラートを発火させる。
  */
 export function dailyChatQuota(
   counter: ChatUsageCounter = incrementChatUsage,
@@ -69,7 +72,8 @@ export function dailyChatQuota(
     try {
       count = await counter(userId, quotaDay(now()));
     } catch (err) {
-      console.error("[api] 日次クォータのカウントに失敗 (通過させる):", err);
+      // #260 L-6: fail-open 検知 → アラート用ログ (監視が検出可能)
+      console.error("[api] QUOTA_FAIL_OPEN 日次クォータのカウント失敗 (通過させる):", err);
       return next();
     }
     if (count > DAILY_CHAT_LIMIT) return c.json(DAILY_QUOTA_EXCEEDED, 429);

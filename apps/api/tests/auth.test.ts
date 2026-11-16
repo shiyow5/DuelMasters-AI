@@ -76,4 +76,22 @@ describe("auth middleware", () => {
     const res = await makeApp().request("/protected");
     expect(res.status).toBe(401);
   });
+
+  // #256 L-2: X-User-Id の名前空間検証
+  it("X-User-Id が supabase: プレフィックス → 401 (#256 L-2)", async () => {
+    const res = await makeApp().request("/whoami", {
+      headers: { "X-Internal-Key": "test-key", "X-User-Id": "supabase:fake-id" },
+    });
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body).toHaveProperty("error");
+  });
+
+  it("X-User-Id が discord: プレフィックス → 通過 (#256 L-2)", async () => {
+    const res = await makeApp().request("/whoami", {
+      headers: { "X-Internal-Key": "test-key", "X-User-Id": "discord:98765" },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ userId: "discord:98765" });
+  });
 });

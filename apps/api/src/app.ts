@@ -25,21 +25,27 @@ app.use("*", dbEnv);
  *
  * 移行期は workers.dev と独自ドメイン (dm-ai.shiyow.dev) の両方から web が配信されるため、
  * 単一オリジンしか許可できないとどちらかの web から api を叩けなくなる。
- * ローカル開発 (localhost:3000) は常に許可する。
+ *
+ * ローカル開発 (localhost:3000) は `ALLOW_ANONYMOUS=true` の時のみに許可する。
+ * 本番 (ALLOW_ANONYMOUS 未設定) では許可リストのみ。(#257 L-3)
  */
-export function allowedOrigins(webUrl: string | undefined): string[] {
+export function allowedOrigins(webUrl: string | undefined, allowLocalhost: boolean): string[] {
   const configured = (webUrl ?? "")
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
-  return ["http://localhost:3000", ...configured];
+  return allowLocalhost ? ["http://localhost:3000", ...configured] : configured;
 }
 
 // CORS。WEB_URL は env 由来 (Workers=c.env / Node=process.env) のため per-request で解決する。
+// localhost:3000 の許可は ALLOW_ANONYMOUS が "true" の時のみ (#257 L-3)
 app.use("*", (c, next) => {
   const webUrl = c.env.WEB_URL ?? process.env.WEB_URL;
+  const allowLocal =
+    (c.env as { ALLOW_ANONYMOUS?: string } | undefined)?.ALLOW_ANONYMOUS === "true" ||
+    process.env.ALLOW_ANONYMOUS === "true";
   return cors({
-    origin: allowedOrigins(webUrl),
+    origin: allowedOrigins(webUrl, allowLocal),
     // 許可ヘッダ/メソッドを明示 (Hono の既定エコー挙動に頼らず堅牢化する)
     allowHeaders: ["Content-Type", "Authorization", "X-Internal-Key", "X-User-Id"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
