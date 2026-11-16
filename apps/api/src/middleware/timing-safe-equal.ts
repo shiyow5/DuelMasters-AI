@@ -1,27 +1,36 @@
 /**
- * 内部キーの定数時間比較 (#255 L-1)。
+ * 内部キーの比較 (#255 L-1 / #273 R1)。
  *
- * 文字列の === 比較は早期リターンするため、タイミングアタックでキーの先頭から
- * 1文字ずつ推測できる。Workers / Node 双方で動くよう、プラットフォーム API に
- * 依存せず XOR を累積する実装にする。長さが異なる場合も最長側の長さ分だけ
- * ループし、長さ差は結果に畳み込んで最後に false を返す。
+ * 両入力を SHA-256 で固定長 (32 バイト) にしてから、ランタイム標準の
+ * `crypto.timingSafeEqual` で比較する (Workers は `nodejs_compat`、Node はそのまま動く)。
+ * 確認できる保証は次のとおり:
+ *  - 比較が接頭辞の一致位置で早期終了しない (固定長ダイジェスト同士の比較)
+ *  - 入力長の違いが比較ループの回数に影響しない
+ * 入力長そのもの (ハッシュ計算量) は隠さない。内部キーは固定長 ASCII (hex / base64url 等) を
+ * 前提とし、長さはタイミング上の秘匿対象にしない。
+ * 孤立サロゲートを含む文字列は UTF-8 変換で U+FFFD に置換され別文字列と衝突するため、
+ * 常に false を返す。
  */
+import { createHash, timingSafeEqual as nodeTimingSafeEqual } from "node:crypto";
 
-/** 2つの文字列を定数時間で比較する。undefined/null は false。 */
+/** 比較対象の最大長 (文字数)。これを超える入力は比較せず false。 */
+const MAX_INPUT_LENGTH = 1024;
+
+/** 孤立サロゲート (対になっていない上位/下位サロゲート)。 */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+function digest(value: string): Buffer {
+  return createHash("sha256").update(value, "utf8").digest();
+}
+
+/** 2つの文字列を比較する。undefined/null/空文字/長すぎる/不正な Unicode は false。 */
 export function timingSafeEqual(
   a: string | null | undefined,
   b: string | null | undefined,
 ): boolean {
   if (typeof a !== "string" || typeof b !== "string") return false;
-
-  const encoder = new TextEncoder();
-  const bufA = encoder.encode(a);
-  const bufB = encoder.encode(b);
-  const len = Math.max(bufA.length, bufB.length);
-
-  let diff = bufA.length ^ bufB.length;
-  for (let i = 0; i < len; i++) {
-    diff |= (bufA[i] ?? 0) ^ (bufB[i] ?? 0);
-  }
-  return diff === 0;
+  if (a.length === 0 || b.length === 0) return false;
+  if (a.length > MAX_INPUT_LENGTH || b.length > MAX_INPUT_LENGTH) return false;
+  if (LONE_SURROGATE.test(a) || LONE_SURROGATE.test(b)) return false;
+  return nodeTimingSafeEqual(digest(a), digest(b));
 }

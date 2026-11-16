@@ -33,4 +33,31 @@ describe("timingSafeEqual", () => {
     expect(timingSafeEqual("abcd", "abc")).toBe(false);
     expect(timingSafeEqual("abc", "abc\0")).toBe(false);
   });
+
+  it("双方空文字は false (空キーを一致扱いにしない)", () => {
+    expect(timingSafeEqual("", "")).toBe(false);
+  });
+
+  it("型不正 (数値・オブジェクト) は false", () => {
+    expect(timingSafeEqual(123 as unknown as string, "123")).toBe(false);
+    expect(timingSafeEqual({} as unknown as string, {} as unknown as string)).toBe(false);
+  });
+
+  it("長い入力: 上限以内は比較でき、上限超過は false", () => {
+    const ok = "a".repeat(1024);
+    expect(timingSafeEqual(ok, ok)).toBe(true);
+    const tooLong = "a".repeat(1025);
+    expect(timingSafeEqual(tooLong, tooLong)).toBe(false);
+  });
+
+  it("固定長 ASCII (hex) キーの一致 / 1文字違い", () => {
+    const key = Array.from({ length: 64 }, (_, i) => ((i * 7) % 16).toString(16)).join("");
+    expect(timingSafeEqual(key, key)).toBe(true);
+    expect(timingSafeEqual(key, key.slice(0, -1) + "0")).toBe(false);
+  });
+
+  it("孤立サロゲートは別物でも衝突せず false", () => {
+    expect(timingSafeEqual("\uD800", "\uD801")).toBe(false);
+    expect(timingSafeEqual("\uD800", "\uD800")).toBe(false);
+  });
 });
