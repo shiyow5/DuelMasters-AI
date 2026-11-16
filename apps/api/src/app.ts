@@ -12,6 +12,7 @@ import { optionalAuth, requireAuthUnlessAnonymous } from "./middleware/auth.js";
 import { rateLimitByIp, rateLimitByUser } from "./middleware/rate-limit.js";
 import { dailyChatQuota } from "./middleware/daily-quota.js";
 import { dbEnv, type Bindings } from "./db.js";
+import { handleAppError } from "./error-handler.js";
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -73,9 +74,6 @@ app.route("/api/user", userRouter);
 app.route("/api/conversations", conversationRouter);
 
 // 予期しない例外の共通ハンドリング (詳細はサーバーログのみに出し、クライアントには汎用文言を返す)
-app.onError((err, c) => {
-  console.error(`[api] ${c.req.method} ${c.req.path} で未処理エラー:`, err);
-  return c.json({ error: "内部エラーが発生しました" }, 500);
-});
+app.onError(handleAppError);
 
 export default app;
