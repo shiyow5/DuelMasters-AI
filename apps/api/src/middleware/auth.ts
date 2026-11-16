@@ -1,5 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { getSupabase } from "@dm-ai/db";
+import { timingSafeEqual } from "./timing-safe-equal.js";
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -24,11 +25,16 @@ export const optionalAuth: MiddlewareHandler = async (c, next) => {
   const internalKey = c.req.header("x-internal-key");
   if (internalKey) {
     const configured = getInternalApiKey(c);
-    if (!configured || internalKey !== configured) {
+    if (!configured || !timingSafeEqual(internalKey, configured)) {
       return c.json({ error: "内部APIキーが不正です" }, 401);
     }
     // X-User-Id は X-Internal-Key が正しい場合のみ信用する
-    c.set("userId", c.req.header("x-user-id") ?? null);
+    // #256 L-2: supabase: プレフィックスは内部利用専用。外部からは受け付けない
+    const rawUserId = c.req.header("x-user-id");
+    if (rawUserId?.startsWith("supabase:")) {
+      return c.json({ error: "不正なユーザーID形式です" }, 401);
+    }
+    c.set("userId", rawUserId ?? null);
     return next();
   }
 
@@ -65,7 +71,7 @@ function allowAnonymous(c: Context): boolean {
 function hasValidInternalKey(c: Context): boolean {
   const key = c.req.header("x-internal-key");
   const configured = getInternalApiKey(c);
-  return Boolean(configured) && key === configured;
+  return Boolean(configured) && timingSafeEqual(key, configured);
 }
 
 /**
@@ -89,7 +95,7 @@ export const requireAuthUnlessAnonymous: MiddlewareHandler = async (c, next) => 
 export const requireInternal: MiddlewareHandler = async (c, next) => {
   const key = c.req.header("x-internal-key");
   const configured = getInternalApiKey(c);
-  if (!configured || key !== configured) {
+  if (!configured || !timingSafeEqual(key, configured)) {
     return c.json({ error: "内部APIキーが不正です" }, 401);
   }
   return next();

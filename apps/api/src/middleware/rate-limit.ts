@@ -26,8 +26,13 @@ function getLimiter(c: Context, name: LimiterName): RateLimiter | undefined {
 }
 
 const TOO_MANY = { error: "リクエストが多すぎます。しばらく待って再試行してください" } as const;
+const SERVICE_ERROR = { error: "一時的なエラーです。後ほど再度お試しください" } as const;
 
-/** 送信元 IP。Cloudflare が付ける CF-Connecting-IP を使う (X-Forwarded-For は詐称できる)。 */
+/**
+ * 送信元 IP。Cloudflare が付ける CF-Connecting-IP を使う (X-Forwarded-For は詐称できる)。
+ * 本番 Workers では必ず付く。欠落時は "unknown" にフォールバックするが、これは同一キーに
+ * 集約される問題 (#258 L-4) がある。
+ */
 function clientIp(c: Context): string {
   return c.req.header("cf-connecting-ip") ?? "unknown";
 }
@@ -35,22 +40,35 @@ function clientIp(c: Context): string {
 /**
  * IP 単位のレート制限。**optionalAuth より前**に置くこと。
  * 認証に失敗するリクエスト (不正 Bearer) も数えるのが目的。
+ *
+ * #258 L-4: binding 欠落時は fail-closed。Workers 以外 (Node ローカル/テスト) のみ通す。
  */
 export const rateLimitByIp: MiddlewareHandler = async (c, next) => {
   const limiter = getLimiter(c, "RATE_LIMITER_IP");
-  // binding が無い環境 (Node のローカル/テスト) では素通しする。
-  // Workers では wrangler.jsonc で必ず注入されるので、本番で無効になることはない。
-  if (!limiter) return next();
+  if (!limiter) {
+    // binding 無い = Node ローカル/テスト環境。素通し。
+    return next();
+  }
 
   const { success } = await limiter.limit({ key: clientIp(c) });
   if (!success) return c.json(TOO_MANY, 429);
+
+  // IP ヘッダ欠落 → "unknown" キーに集約される。レート制限が実質機能しない。
+  if (!c.req.header("cf-connecting-ip")) {
+    console.error("[rate-limit] cf-connecting-ip が欠落 (fail-closed)");
+    return c.json(SERVICE_ERROR, 503);
+  }
+
   return next();
 };
 
 /** ユーザー単位のレート制限。**認証の後**に置くこと (userId が要る)。 */
 export const rateLimitByUser: MiddlewareHandler = async (c, next) => {
   const limiter = getLimiter(c, "RATE_LIMITER_USER");
-  if (!limiter) return next();
+  if (!limiter) {
+    // binding 無い = Node ローカル/テスト環境。素通し。
+    return next();
+  }
 
   const { success } = await limiter.limit({ key: c.get("userId") ?? clientIp(c) });
   if (!success) return c.json(TOO_MANY, 429);
