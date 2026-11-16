@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { DrizzleQueryError } from "drizzle-orm";
 import {
   classifyDbError,
+  getConstraintName,
   getSqlState,
   isUniqueViolation,
   toDbErrorResponse,
@@ -127,6 +128,72 @@ describe("getSqlState / classifyDbError", () => {
   });
 });
 
+describe("ネストした cause (2 段以上) の扱い (現状の仕様を固定)", () => {
+  it("DB 例外を cause でさらに包むと SQLSTATE を拾わず null / unknown になる", () => {
+    // 例: アプリ側で DrizzleQueryError を new Error(..., { cause }) で包み直したケース。
+    // cause は 1 段しか読まないため SQLSTATE は取れない。apps/api の onError では
+    // DB 以外の例外扱いになり、従来どおり例外本体 (params / query を含みうる) がログに出る。
+    // 現状そのように包む箇所は無い。包む箇所を作るときは getSqlState の探索段数を見直すこと。
+    const nested = new Error("wrap", { cause: wrapped("23505") });
+    expect(getSqlState(nested)).toBeNull();
+    expect(classifyDbError(nested)).toBe("unknown");
+    expect(getConstraintName(nested)).toBeNull();
+  });
+});
+
+describe("getConstraintName", () => {
+  function withConstraint(name: unknown, code = "23505"): Error {
+    return Object.assign(driverError(code), { constraint_name: name });
+  }
+
+  it("cause の constraint_name を返す (drizzle 0.45.2 の形)", () => {
+    const err = new DrizzleQueryError("q", [], withConstraint("user_settings_pkey"));
+    expect(getConstraintName(err)).toBe("user_settings_pkey");
+    expect(toSafeDbErrorLog(err).constraint).toBe("user_settings_pkey");
+  });
+
+  it("直下の constraint_name も返す (後方互換)", () => {
+    expect(getConstraintName(withConstraint("cards_official_id_uidx"))).toBe(
+      "cards_official_id_uidx",
+    );
+  });
+
+  it("SQLSTATE を採用した側の constraint_name だけを見る", () => {
+    const err = Object.assign(new Error("x"), {
+      code: "23505",
+      constraint_name: "outer_c",
+      cause: { code: "23503", constraint_name: "inner_c" },
+    });
+    expect(getConstraintName(err)).toBe("inner_c");
+  });
+
+  it.each([
+    ["無い", undefined],
+    ["数値", 1],
+    ["空文字", ""],
+    ["空白入り", "a b"],
+    ["改行入り", "a\n"],
+    ["数字始まり", "1abc"],
+    ["64 文字", "a".repeat(64)],
+    ["引用符付き識別子相当", 'c"x'],
+  ])("不正・欠落 (%s) は null", (_l, name) => {
+    expect(getConstraintName(withConstraint(name))).toBeNull();
+  });
+
+  it("SQLSTATE が無ければ constraint_name があっても null", () => {
+    expect(getConstraintName({ constraint_name: "c" })).toBeNull();
+  });
+
+  it("throw する getter でも throw しない", () => {
+    const err = Object.defineProperty({ code: "23505" }, "constraint_name", {
+      get: () => {
+        throw new Error(MARKER);
+      },
+    });
+    expect(getConstraintName(err)).toBeNull();
+  });
+});
+
 describe("toSafeDbErrorLog / toDbErrorResponse は入力を漏らさない", () => {
   const cases = [
     ["23505 (cause.code)", wrapped("23505")],
@@ -137,7 +204,7 @@ describe("toSafeDbErrorLog / toDbErrorResponse は入力を漏らさない", () 
 
   it.each(cases)("%s: ログ要約に許可したキーだけがあり、マーカーを含まない", (_l, err) => {
     const log = toSafeDbErrorLog(err);
-    expect(Object.keys(log).sort()).toEqual(["event", "kind", "sqlstate"]);
+    expect(Object.keys(log).sort()).toEqual(["constraint", "event", "kind", "sqlstate"]);
     expect(JSON.stringify(log)).not.toContain(MARKER);
   });
 

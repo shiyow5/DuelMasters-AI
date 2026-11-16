@@ -10,6 +10,7 @@ const MARKER = "SYNTH_MARKER_api_e81d";
 function drizzleLike(code: string): Error {
   const cause = Object.assign(new Error(`driver ${MARKER}`), {
     code,
+    constraint_name: "user_settings_pkey",
     detail: `Key (user_id)=(${MARKER}) already exists.`,
   });
   return Object.assign(new Error(`Failed query: insert ... params: ${MARKER}`), {
@@ -50,6 +51,7 @@ describe("handleAppError (app.onError)", () => {
     expect(logged).not.toContain(MARKER);
     expect(logged).toContain('"kind":"unique_violation"');
     expect(logged).toContain('"sqlstate":"23505"');
+    expect(logged).toContain('"constraint":"user_settings_pkey"');
   });
 
   it("23505 以外の DB 例外は従来どおり 500 / 汎用文言で、ログ・応答にマーカーを出さない", async () => {
