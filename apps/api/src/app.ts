@@ -28,17 +28,12 @@ app.use("*", dbEnv);
  * ローカル開発 (localhost:3000) は `ALLOW_ANONYMOUS=true` の時のみに許可する。
  * 本番 (ALLOW_ANONYMOUS 未設定) では許可リストのみ。(#257 L-3)
  */
-export function allowedOrigins(
-  webUrl: string | undefined,
-  allowLocalhost: boolean,
-): string[] {
+export function allowedOrigins(webUrl: string | undefined, allowLocalhost: boolean): string[] {
   const configured = (webUrl ?? "")
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
-  return allowLocalhost
-    ? ["http://localhost:3000", ...configured]
-    : configured;
+  return allowLocalhost ? ["http://localhost:3000", ...configured] : configured;
 }
 
 // CORS。WEB_URL は env 由来 (Workers=c.env / Node=process.env) のため per-request で解決する。

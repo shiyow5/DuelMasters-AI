@@ -2,38 +2,26 @@
  * 内部キーの定数時間比較 (#255 L-1)。
  *
  * 文字列の === 比較は早期リターンするため、タイミングアタックでキーの先頭から
- * 1文字ずつ推測できる。Workers 環境ではネットワーク越しの計測は困難だが、
- * 正しい実装として統一する。
- *
- * Cloudflare Workers: `crypto.subtle.timingSafeEqual` (Web Crypto API)
- * Node.js: `node:crypto.timingSafeEqual`
- * 両方の環境で動くように polyfill する。
+ * 1文字ずつ推測できる。Workers / Node 双方で動くよう、プラットフォーム API に
+ * 依存せず XOR を累積する実装にする。長さが異なる場合も最長側の長さ分だけ
+ * ループし、長さ差は結果に畳み込んで最後に false を返す。
  */
 
-/** ArrayBuffer (Uint8Array のビュー) 間の定数時間比較。 */
-function timingEqual(ab: ArrayBuffer, bb: ArrayBuffer): boolean {
-  if (ab.byteLength !== bb.byteLength) return false;
+/** 2つの文字列を定数時間で比較する。undefined/null は false。 */
+export function timingSafeEqual(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
 
-  // Cloudflare Workers (Web Crypto API)
-  if (typeof crypto.subtle?.timingSafeEqual === "function") {
-    return crypto.subtle.timingSafeEqual(ab, bb);
-  }
-
-  // Node.js (node:crypto) — 動的 import
-  const { timingSafeEqual } = require("node:crypto");
-  return timingSafeEqual(new Uint8Array(ab), new Uint8Array(bb));
-}
-
-/** 2つの文字列を定数時間で比較する。 */
-export function timingSafeEqual(a: string, b: string): boolean {
   const encoder = new TextEncoder();
   const bufA = encoder.encode(a);
   const bufB = encoder.encode(b);
+  const len = Math.max(bufA.length, bufB.length);
 
-  if (bufA.length !== bufB.length) return false;
-
-  return timingEqual(
-    bufA.buffer as ArrayBuffer,
-    bufB.buffer as ArrayBuffer
-  );
+  let diff = bufA.length ^ bufB.length;
+  for (let i = 0; i < len; i++) {
+    diff |= (bufA[i] ?? 0) ^ (bufB[i] ?? 0);
+  }
+  return diff === 0;
 }

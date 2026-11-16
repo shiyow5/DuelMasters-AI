@@ -22,4 +22,15 @@ describe("timingSafeEqual", () => {
     expect(timingSafeEqual("こんにちは", "こんにちは")).toBe(true);
     expect(timingSafeEqual("こんにちは", "こんいちは")).toBe(false);
   });
+
+  it("undefined/null は false", () => {
+    expect(timingSafeEqual(undefined, "abc")).toBe(false);
+    expect(timingSafeEqual("abc", undefined)).toBe(false);
+    expect(timingSafeEqual(null, null)).toBe(false);
+  });
+
+  it("接頭辞一致でも長さが違えば false", () => {
+    expect(timingSafeEqual("abcd", "abc")).toBe(false);
+    expect(timingSafeEqual("abc", "abc\0")).toBe(false);
+  });
 });
