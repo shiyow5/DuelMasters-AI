@@ -9,6 +9,7 @@ name: Read chat_daily_usage (read-only, one-off)
 # - 出すもの: 日ごとの集計値 (合計回数・利用ユーザー数) だけ。user_id やそのハッシュなど、
 #   ユーザーごとの値・識別子は出さない (リポジトリが PUBLIC で、ログが誰でも読めるため)。
 #   artifact / step summary / 外部送信もしない。
+# - 0行の原因切り分け用に、件数 (RLS 適用後 / 統計値)・ロール分類 (postgres かそれ以外)・RLS 関連の真偽値だけを追加で出す。
 # - 接続情報は ::add-mask:: で伏せる。set -x は使わない。エラー時は ERROR/FATAL 行だけ、ホスト/IP を伏せて出す。
 #
 # 1回実行して結果を確認したら、この workflow を削除する PR を出す (役目を終える)。
@@ -77,6 +78,25 @@ jobs:
             LEFT JOIN chat_daily_usage u ON u.usage_date = d.usage_date
            GROUP BY d.usage_date
            ORDER BY d.usage_date;
+          -- 0行の切り分け用 (全部が集計値かロール名で、ユーザーごとの値は出さない)。
+          -- visible_rows は RLS を通した後の件数。stats_live_tup は統計上の行数で RLS の影響を受けない。
+          -- visible_rows=0 かつ stats_live_tup>0 なら RLS で見えていない。両方0ならテーブルが空。
+          SELECT CASE WHEN current_user IN ('postgres') THEN current_user ELSE 'other' END AS role_class,
+                 (SELECT count(*) FROM chat_daily_usage) AS visible_rows,
+                 c.relrowsecurity AS rls_enabled,
+                 c.relforcerowsecurity AS rls_forced,
+                 pg_get_userbyid(c.relowner) = current_user AS is_owner,
+                 r.rolsuper AS is_superuser,
+                 r.rolbypassrls AS bypass_rls,
+                 (SELECT count(*) FROM pg_policies p
+                   WHERE p.schemaname = n.nspname AND p.tablename = c.relname) AS policy_count,
+                 s.n_live_tup AS stats_live_tup,
+                 c.reltuples::bigint AS reltuples
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_roles r ON r.rolname = current_user
+            LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
+           WHERE c.oid = 'chat_daily_usage'::regclass;
           ROLLBACK;
           SQL
           if ! psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -P pager=off -P footer=off -f "$sql" 2> "$err"; then
