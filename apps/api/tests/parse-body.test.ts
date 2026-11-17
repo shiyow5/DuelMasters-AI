@@ -42,28 +42,31 @@ describe("parseBody の 400 応答", () => {
     });
   });
 
-  it("カスタムメッセージ無しの組み込みメッセージ (v4 で変わる見込み: 文言が変わる)", async () => {
+  it("カスタムメッセージ無しの組み込みメッセージ (zod 4 の文言)", async () => {
     const res = await post(JSON.stringify({ name: "x", count: "1" }));
     const json = (await res.json()) as { details: string[] };
-    expect(json.details).toEqual(["count: Expected number, received string"]);
+    expect(json.details).toEqual(["count: Invalid input: expected number, received string"]);
   });
 
-  it("必須キー欠落 (v4 で変わる見込み: 'Required' → 型不一致の文言)", async () => {
+  it("必須キー欠落 (zod 4: v3 の 'Required' → 型不一致の文言)", async () => {
     const res = await post(JSON.stringify({}));
     const json = (await res.json()) as { details: string[] };
-    expect(json.details).toEqual(["name: Required", "count: Required"]);
+    expect(json.details).toEqual([
+      "name: Invalid input: expected string, received undefined",
+      "count: Invalid input: expected number, received undefined",
+    ]);
   });
 
-  it("小数は int で失敗 (v4 で変わる見込み: 文言)", async () => {
+  it("小数は int で失敗 (zod 4 の文言)", async () => {
     const res = await post(JSON.stringify({ name: "x", count: 1.5 }));
     const json = (await res.json()) as { details: string[] };
-    expect(json.details).toEqual(["count: Expected integer, received float"]);
+    expect(json.details).toEqual(["count: Invalid input: expected int, received number"]);
   });
 
-  it("enum 不一致 (v4 で変わる見込み: 文言)", async () => {
+  it("enum 不一致 (zod 4 の文言。受け取った値は文言に含まれない)", async () => {
     const res = await post(JSON.stringify({ name: "x", count: 1, kind: "z" }));
     const json = (await res.json()) as { details: string[] };
-    expect(json.details).toEqual(["kind: Invalid enum value. Expected 'a' | 'b', received 'z'"]);
+    expect(json.details).toEqual(['kind: Invalid option: expected one of "a"|"b"']);
   });
 
   it("ネストと配列要素の path は '.' 連結 (items.0.n)", async () => {
@@ -71,13 +74,15 @@ describe("parseBody の 400 応答", () => {
       JSON.stringify({ name: "x", count: 1, nested: { items: [{ n: 1 }, { n: "s" }] } }),
     );
     const json = (await res.json()) as { details: string[] };
-    expect(json.details).toEqual(["nested.items.1.n: Expected number, received string"]);
+    expect(json.details).toEqual([
+      "nested.items.1.n: Invalid input: expected number, received string",
+    ]);
   });
 
-  it("ルート直下の型不一致は path が空で ': message' になる (v4 で変わる見込み: 文言)", async () => {
+  it("ルート直下の型不一致は path が空で ': message' になる (zod 4 の文言)", async () => {
     const res = await post(JSON.stringify([1]));
     const json = (await res.json()) as { details: string[] };
-    expect(json.details).toEqual([": Expected object, received array"]);
+    expect(json.details).toEqual([": Invalid input: expected object, received array"]);
   });
 
   it("不正 JSON / 空ボディは raw=null として 400 (例外にならない)", async () => {

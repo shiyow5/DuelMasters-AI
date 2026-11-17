@@ -8,9 +8,9 @@ import {
 } from "../src/schemas.js";
 
 /**
- * Issue #297 (zod 3→4) PR-1: 現行 v3 の挙動を固定する境界値テスト。
- * 期待値は **v3 の実挙動**。v4 に上げて落ちたら、それが v4 での差分 (意図的なら期待値を更新)。
- * 「v4 で変わる見込み」と付いたケースは差分が出る可能性が高いもの。
+ * Issue #297 (zod 3→4): PR-1 で v3 の挙動を固定した境界値テスト。
+ * PR-3 (zod 4 移行) で期待値を **zod 4 の実挙動** に更新した。
+ * v3 から変わったケースには「v3 は通していた」等のコメントを付けている。
  */
 
 const parses = (schema: z.ZodTypeAny, v: unknown) => schema.safeParse(v).success;
@@ -31,13 +31,13 @@ describe("coerce.number().int().positive() (deck /:id と同形)", () => {
     ["0x10", true], // Number("0x10") === 16
     ["Infinity", false],
     ["9007199254740991", true], // MAX_SAFE_INTEGER
-    ["9007199254740992", true], // 超過でも v3 は .int() を通す (v4 で変わる見込み: safe integer 限定になる)
-    ["1e21", true], // 同上 (v4 で変わる見込み)
+    ["9007199254740992", false], // zod 4: .int() は安全整数に限定 (v3 は通していた)
+    ["1e21", false], // 同上 (v3 は通していた)
   ])("入力 %j → success=%s", (v, ok) => {
     expect(parses(S, v)).toBe(ok);
   });
 
-  it("coerce は null / undefined / 配列 / 真偽値を数値化する (v4 で変わる見込み: 入力型が unknown になるだけで挙動は同じはずだが要確認)", () => {
+  it("coerce は null / undefined / 配列 / 真偽値を数値化する (zod 4 でも v3 と同じ挙動)", () => {
     expect(parses(S, null)).toBe(false); // Number(null) = 0
     expect(parses(S, undefined)).toBe(false); // NaN
     expect(parses(S, true)).toBe(true); // Number(true) = 1
@@ -45,7 +45,7 @@ describe("coerce.number().int().positive() (deck /:id と同形)", () => {
   });
 });
 
-describe("number().int() の境界 (v4 で変わる見込み: 安全整数外は int() で失敗)", () => {
+describe("number().int() の境界 (zod 4: 安全整数外は int() で失敗)", () => {
   const cost = (n: number) =>
     CardSchema.safeParse({ name: "x", civilizations: [], cost: n, type: "creature" }).success;
   it.each([
@@ -53,8 +53,8 @@ describe("number().int() の境界 (v4 で変わる見込み: 安全整数外は
     [-1, false],
     [1.5, false],
     [Number.MAX_SAFE_INTEGER, true],
-    [Number.MAX_SAFE_INTEGER + 1, true], // v3 は通る。v4 で変わる見込み
-    [Number.MAX_VALUE, true], // v4 で変わる見込み
+    [Number.MAX_SAFE_INTEGER + 1, false], // zod 4 で失敗に変更 (v3 は通していた)
+    [Number.MAX_VALUE, false], // 同上
     [Infinity, false],
     [NaN, false],
   ])("CardSchema.cost=%s → success=%s", (n, ok) => {
@@ -93,7 +93,7 @@ describe("number().int() の境界 (v4 で変わる見込み: 安全整数外は
   });
 });
 
-describe("conversationId: z.string().uuid() — RFC 非準拠も v3 は通す", () => {
+describe("conversationId: z.string().uuid() — zod 4 は RFC 9562 の version/variant を検査する", () => {
   const ok = (id: string) =>
     ChatRequestSchema.safeParse({ message: "q", conversationId: id }).success;
   it.each([
@@ -101,10 +101,10 @@ describe("conversationId: z.string().uuid() — RFC 非準拠も v3 は通す", 
     ["018f1a2b-3c4d-7e5f-8a6b-7c8d9e0f1a2b", true], // v7 UUID
     ["00000000-0000-0000-0000-000000000000", true], // nil UUID: v4 でも通る
     ["ffffffff-ffff-ffff-ffff-ffffffffffff", true], // max UUID: v4 でも通る
-    ["123e4567-e89b-02d3-a456-426614174000", true], // version=0 (規格外)。v4 で変わる見込み
-    ["123e4567-e89b-92d3-a456-426614174000", true], // version=9 (規格外)。v4 で変わる見込み
-    ["123e4567-e89b-42d3-0456-426614174000", true], // variant=0 (規格外)。v4 で変わる見込み
-    ["123e4567-e89b-42d3-c456-426614174000", true], // variant=c (規格外)。v4 で変わる見込み
+    ["123e4567-e89b-02d3-a456-426614174000", false], // version=0 (規格外)。v3 は通していた
+    ["123e4567-e89b-92d3-a456-426614174000", false], // version=9 (規格外)。v3 は通していた
+    ["123e4567-e89b-42d3-0456-426614174000", false], // variant=0 (規格外)。v3 は通していた
+    ["123e4567-e89b-42d3-c456-426614174000", false], // variant=c (規格外)。v3 は通していた
     ["123E4567-E89B-42D3-A456-426614174000", true], // 大文字
     ["123e4567e89b42d3a456426614174000", false], // ハイフン無し
     ["{123e4567-e89b-42d3-a456-426614174000}", false], // 波括弧
@@ -124,15 +124,15 @@ describe("z.string().url() — v3 の挙動を固定 (v4 は URL パーサ依存
     ["http://example.com", true],
     ["https://localhost:3000/x", true],
     ["https://日本語.example/パス", true],
-    ["ftp://example.com/file", true], // v3 は scheme を問わない
-    ["javascript:alert(1)", true], // v3 は通る (ingest 側の別検査に依存)。v4 で変わる見込み
-    ["mailto:a@example.com", true], // v4 で変わる見込み
-    ["file:///etc/passwd", true], // v4 で変わる見込み
+    ["ftp://example.com/file", true], // zod 4 も scheme を問わない (v3 と同じ)
+    ["javascript:alert(1)", true], // zod 4 も通る (ingest 側の別検査に依存)
+    ["mailto:a@example.com", true], // zod 4 も通る
+    ["file:///etc/passwd", true], // zod 4 も通る
     ["example.com", false],
     ["//example.com", false],
     ["https://", false],
     ["", false],
-    [" https://example.com", true], // 先頭空白: v3 は通る (new URL が trim する)。v4 で変わる見込み
+    [" https://example.com", true], // 先頭空白: zod 4 も通る (new URL が trim する)
   ])("IngestUrlRequestSchema.url=%j → success=%s", (u, expected) => {
     expect(ingest(u)).toBe(expected);
   });

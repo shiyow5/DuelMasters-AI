@@ -173,8 +173,8 @@ describe("AGENT_TOOLS の JSON Schema (Gemini 互換)", () => {
 });
 
 describe("BUILD_DECK_SCHEMA.civilizations の .nonempty() (Issue #297 PR-1: zod 3→4 の境界固定)", () => {
-  // v4 で変わる見込み: .nonempty() の推論型が [T, ...T[]] でなくなる / 空配列の issue メッセージ文言。
-  // ここでは parse の成否と出力だけを現行 v3 で固定する。
+  // zod 4 で空配列の issue メッセージ文言が変わった (v3: "Array must contain at least 1 element(s)")。
+  // parse の成否と出力は v3 と同じ。
   it("空配列は失敗、1 要素以上は通る、省略 (optional) は通りキーが出ない", async () => {
     const { BUILD_DECK_SCHEMA } = await import("../src/tools.js");
     expect(BUILD_DECK_SCHEMA.safeParse({ theme: "x", civilizations: [] }).success).toBe(false);
@@ -183,13 +183,13 @@ describe("BUILD_DECK_SCHEMA.civilizations の .nonempty() (Issue #297 PR-1: zod 
     const none = BUILD_DECK_SCHEMA.parse({ theme: "x" });
     expect("civilizations" in none).toBe(false);
   });
-  it("空配列の issue: path=['civilizations']、メッセージ (v3 固定 / v4 で変わる見込み)", async () => {
+  it("空配列の issue: path=['civilizations']、メッセージ (zod 4 の文言)", async () => {
     const { BUILD_DECK_SCHEMA } = await import("../src/tools.js");
     const r = BUILD_DECK_SCHEMA.safeParse({ theme: "x", civilizations: [] });
     expect(r.success).toBe(false);
     if (!r.success) {
       expect(r.error.issues[0]?.path).toEqual(["civilizations"]);
-      expect(r.error.issues[0]?.message).toBe("Array must contain at least 1 element(s)");
+      expect(r.error.issues[0]?.message).toBe("Too small: expected array to have >=1 items");
     }
   });
   it("min_creatures: 0 / 小数 / 負数は失敗、1 は通る (.int().min(1))", async () => {
