@@ -135,30 +135,39 @@ describe.skipIf(!hasTestDb)("runTool build_deck クリーチャー下限 (統合
 
 describe("AGENT_TOOLS の JSON Schema (Gemini 互換)", () => {
   // Gemini の function declaration は exclusiveMinimum/exclusiveMaximum を受け付けず 400 を返す。
-  // zod の .positive()/.negative() は排他境界 (inclusive: false) を作り、これに変換される。
+  // zod の .positive()/.negative()/.gt()/.lt() は排他境界を作り、JSON Schema 変換でこれらになる。
   // 実際に min_creatures: z.number().int().positive() で eval 35問すべてが ERR になった。
+  //
+  // zod の内部 (_def / _zod) には依存しない: @langchain/google-genai が function declaration 生成に使う
+  // のと同じ変換 (@langchain/core の toJsonSchema。schemaToGenerativeAIParameters は package の
+  // exports に無く import できない) で JSON Schema にし、その出力を再帰的に走査する。
+  const FORBIDDEN = ["exclusiveMinimum", "exclusiveMaximum"];
+
+  /** JSON Schema を再帰的に辿り、禁止キーを持つ位置 (JSON パス風) を集める。 */
+  function findForbiddenKeys(value: unknown, path: string): string[] {
+    if (Array.isArray(value)) {
+      return value.flatMap((v, i) => findForbiddenKeys(v, `${path}[${i}]`));
+    }
+    if (typeof value !== "object" || value === null) return [];
+    return Object.entries(value).flatMap(([k, v]) => [
+      ...(FORBIDDEN.includes(k) ? [`${path}.${k}`] : []),
+      ...findForbiddenKeys(v, `${path}.${k}`),
+    ]);
+  }
+
+  it("検出関数が排他境界を検出できる (偽陰性防止)", async () => {
+    const { z } = await import("zod");
+    const { toJsonSchema } = await import("@langchain/core/utils/json_schema");
+    const js = toJsonSchema(z.object({ n: z.number().int().positive() }));
+    expect(findForbiddenKeys(js, "t").length).toBeGreaterThan(0);
+  });
+
   it("排他境界 (.positive() 等) を使っていない", async () => {
     const { AGENT_TOOLS } = await import("../src/tools.js");
+    const { toJsonSchema } = await import("@langchain/core/utils/json_schema");
 
-    /** zod スキーマを再帰的に辿り、排他境界を持つ数値フィールドのパスを集める。 */
-    function findExclusiveBounds(schema: unknown, path: string): string[] {
-      const def = (schema as { _def?: Record<string, unknown> })?._def;
-      if (!def) return [];
-      const checks = def.checks as Array<{ kind: string; inclusive?: boolean }> | undefined;
-      const hit = (checks ?? [])
-        .filter((c) => (c.kind === "min" || c.kind === "max") && c.inclusive === false)
-        .map(() => path);
-      const shape = def.shape as (() => Record<string, unknown>) | undefined;
-      const nested = shape
-        ? Object.entries(shape()).flatMap(([k, v]) => findExclusiveBounds(v, `${path}.${k}`))
-        : [];
-      const inner = def.innerType ?? def.type ?? def.schema;
-      return [...hit, ...nested, ...(inner ? findExclusiveBounds(inner, path) : [])];
-    }
-
-    const offenders = AGENT_TOOLS.flatMap((t) =>
-      findExclusiveBounds((t as { schema: unknown }).schema, (t as { name: string }).name),
-    );
+    expect(AGENT_TOOLS.length).toBeGreaterThan(0);
+    const offenders = AGENT_TOOLS.flatMap((t) => findForbiddenKeys(toJsonSchema(t.schema), t.name));
     expect(offenders).toEqual([]);
   });
 });
