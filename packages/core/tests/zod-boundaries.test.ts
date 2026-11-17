@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { ChatRequestSchema, DeckBuildRequestSchema } from "../src/schemas.js";
+import {
+  CardSchema,
+  ChatRequestSchema,
+  DECK_MAX_COST_LIMIT,
+  DeckBuildRequestSchema,
+  TournamentResultSchema,
+} from "../src/schemas.js";
 
 /**
  * zod 3→4 移行で挙動が変わりうる境界・既定値の回帰テスト。
@@ -63,5 +69,46 @@ describe("DeckBuildRequestSchema の既定値", () => {
       DeckBuildRequestSchema.safeParse({ theme: "速攻", constraints: { minCreatures: n } }).success;
     expect(at(0)).toBe(false);
     expect(at(1)).toBe(true);
+  });
+});
+
+describe("DeckBuildRequestSchema.constraints.maxCost の境界", () => {
+  const at = (v: unknown) =>
+    DeckBuildRequestSchema.safeParse({ theme: "速攻", constraints: { maxCost: v } }).success;
+  it.each([
+    [-1, false],
+    [0, true],
+    [DECK_MAX_COST_LIMIT, true],
+    [DECK_MAX_COST_LIMIT + 1, false],
+    [1.5, false],
+  ])("maxCost=%s → success=%s", (v, ok) => {
+    expect(at(v)).toBe(ok);
+  });
+  it("上限は 99", () => {
+    expect(DECK_MAX_COST_LIMIT).toBe(99);
+  });
+});
+
+describe(".url().nullable().default(null)", () => {
+  const card = { name: "テスト", civilizations: [], cost: 1, type: "creature" };
+  const result = {
+    event_name: "大会",
+    event_date: "2026-11-17",
+    format: "original",
+    deck_archetype: "速攻",
+    placement: 1,
+  };
+  it("CardSchema.card_image_url: 省略 → null、null → null、正しい URL は通る、不正 URL は失敗", () => {
+    expect(CardSchema.parse(card).card_image_url).toBeNull();
+    expect(CardSchema.parse({ ...card, card_image_url: null }).card_image_url).toBeNull();
+    expect(
+      CardSchema.parse({ ...card, card_image_url: "https://example.com/a.png" }).card_image_url,
+    ).toBe("https://example.com/a.png");
+    expect(CardSchema.safeParse({ ...card, card_image_url: "not a url" }).success).toBe(false);
+  });
+  it("TournamentResultSchema.source_url: 省略 → null、null → null、不正 URL は失敗", () => {
+    expect(TournamentResultSchema.parse(result).source_url).toBeNull();
+    expect(TournamentResultSchema.parse({ ...result, source_url: null }).source_url).toBeNull();
+    expect(TournamentResultSchema.safeParse({ ...result, source_url: "abc" }).success).toBe(false);
   });
 });
