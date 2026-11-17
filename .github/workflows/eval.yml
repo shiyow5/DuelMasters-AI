@@ -1,6 +1,6 @@
 name: Eval (精度回帰ゲート)
 
-# agent の解答精度を golden set (35問) で計測し、閾値割れで失敗させる。
+# agent の解答精度を golden set (43問: seed 40 + injection 3) で計測し、閾値割れで失敗させる。
 #
 # per-PR では回さない: 実 Gemini API を叩くのでコストがかかり、agent は temperature 0.3 で
 # 走るため judge が run 毎に揺れる。毎 PR のゲートにすると偽陽性で信用されなくなる。
@@ -32,7 +32,7 @@ permissions:
 
 jobs:
   eval:
-    name: golden set (35問)
+    name: golden set (43問)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
