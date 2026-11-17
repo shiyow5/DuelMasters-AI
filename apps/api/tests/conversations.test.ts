@@ -21,12 +21,12 @@ function makeApp() {
 
 const ME = {
   "X-Internal-Key": "test-key",
-  "X-User-Id": "u:me",
+  "X-User-Id": "discord:1001",
   "Content-Type": "application/json",
 };
 const OTHER = {
   "X-Internal-Key": "test-key",
-  "X-User-Id": "u:other",
+  "X-User-Id": "discord:1002",
   "Content-Type": "application/json",
 };
 
@@ -296,7 +296,7 @@ describe.skipIf(!hasTestDb)("フィードバック (統合)", () => {
     expect(res.status).toBe(200);
     const rows = await sql`SELECT helpful, user_id FROM message_feedback WHERE message_id = ${mid}`;
     expect(rows[0].helpful).toBe(true);
-    expect(rows[0].user_id).toBe("u:me");
+    expect(rows[0].user_id).toBe("discord:1001");
   });
 
   it("押し直すと上書きされる (二重登録しない)", async () => {

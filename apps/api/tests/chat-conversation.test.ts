@@ -33,12 +33,12 @@ function makeApp() {
 
 const ME = {
   "X-Internal-Key": "test-key",
-  "X-User-Id": "u:me",
+  "X-User-Id": "discord:1001",
   "Content-Type": "application/json",
 };
 const OTHER = {
   "X-Internal-Key": "test-key",
-  "X-User-Id": "u:other",
+  "X-User-Id": "discord:1002",
   "Content-Type": "application/json",
 };
 

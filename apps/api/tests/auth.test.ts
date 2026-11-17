@@ -94,4 +94,20 @@ describe("auth middleware", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ userId: "discord:98765" });
   });
+
+  it.each(["u:me", "test", "", "Discord:1", "discord:", "discord:abc", "xdiscord:1"])(
+    "X-User-Id が許可形式外 (%j) → 401 (#256 L-2)",
+    async (id) => {
+      const res = await makeApp().request("/whoami", {
+        headers: { "X-Internal-Key": "test-key", "X-User-Id": id },
+      });
+      expect(res.status).toBe(401);
+    },
+  );
+
+  it("X-User-Id 無し + 正しい内部キー → userId null で通過 (#256 L-2)", async () => {
+    const res = await makeApp().request("/whoami", { headers: { "X-Internal-Key": "test-key" } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ userId: null });
+  });
 });
