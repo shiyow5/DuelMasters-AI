@@ -27,7 +27,7 @@
  * (週次ランキング記事の本文だけ取りに行く)。
  */
 import { pathToFileURL } from "node:url";
-import { getSql, closeDb } from "@dm-ai/db";
+import { getSql, closeDb, toSafeErrorLog } from "@dm-ai/db";
 import { type Format, normalizeEventName, partitionValidArchetypes } from "@dm-ai/core";
 import { sleep } from "../lib.js";
 import { exceedsSkipRate, parseMaxSkipRate } from "./ingest-deneblog.js";
@@ -412,7 +412,10 @@ export async function runIngestTournaments(
     try {
       html = await fetchPage(url);
     } catch (err) {
-      console.error(`[tournaments] 一覧ページの取得に失敗 (以降を打ち切ります): ${url}`, err);
+      console.error(
+        `[tournaments] 一覧ページの取得に失敗 (以降を打ち切ります): ${url}`,
+        JSON.stringify(toSafeErrorLog(err)),
+      );
       break;
     }
 
@@ -454,7 +457,10 @@ export async function runIngestTournaments(
     try {
       ranking = parseWeeklyRanking(extractEntryBody(await fetchPage(link.url)), link.format);
     } catch (err) {
-      console.error(`[tournaments] ランキング記事の取得に失敗: ${link.url}`, err);
+      console.error(
+        `[tournaments] ランキング記事の取得に失敗: ${link.url}`,
+        JSON.stringify(toSafeErrorLog(err)),
+      );
       rankingSkipped++;
       continue;
     }
@@ -585,7 +591,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exit(0);
     })
     .catch((err) => {
-      console.error("Error:", err);
+      console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
       process.exit(1);
     });
 }

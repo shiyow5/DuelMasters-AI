@@ -2,6 +2,8 @@
  * Worker エントリポイント
  * コマンドライン引数でジョブを実行
  */
+import { toSafeErrorLog } from "@dm-ai/db";
+
 const job = process.argv[2];
 
 async function main() {
@@ -94,6 +96,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Error:", err);
+  console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
   process.exit(1);
 });

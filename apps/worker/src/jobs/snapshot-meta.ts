@@ -8,7 +8,7 @@
  *     記事化された CS だけの偏った標本なので、使えるなら 1 を使う。
  */
 import { pathToFileURL } from "node:url";
-import { getSql, closeDb } from "@dm-ai/db";
+import { getSql, closeDb, toSafeErrorLog } from "@dm-ai/db";
 import { aggregateTierData, mergeArchetypeCounts, type Format } from "@dm-ai/core";
 
 export type SnapshotSource = "weekly" | "events";
@@ -97,7 +97,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   runSnapshotMeta(parsed.format, parsed.weeks)
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error("Error:", err);
+      console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
       process.exit(1);
     });
 }

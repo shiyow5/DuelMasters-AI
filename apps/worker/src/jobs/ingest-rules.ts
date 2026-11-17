@@ -11,7 +11,7 @@
 import { pathToFileURL } from "node:url";
 import { PDFParse } from "pdf-parse";
 import { embed } from "@dm-ai/core";
-import { getSql, closeDb } from "@dm-ai/db";
+import { getSql, closeDb, toSafeErrorLog } from "@dm-ai/db";
 import { chunkRuleText } from "@dm-ai/rag";
 import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
 import { sleep } from "../lib.js";
@@ -92,7 +92,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   runIngestRules()
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error("Error:", err);
+      console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
       process.exit(1);
     });
 }

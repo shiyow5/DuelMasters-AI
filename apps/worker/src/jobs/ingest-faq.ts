@@ -3,7 +3,7 @@
  * HTML → 本文抽出 → Q&A チャンク化 → 埋め込み → INSERT。URL 単位で冪等。
  */
 import { pathToFileURL } from "node:url";
-import { getSql, closeDb } from "@dm-ai/db";
+import { getSql, closeDb, toSafeErrorLog } from "@dm-ai/db";
 import { embed } from "@dm-ai/core";
 import { chunkFaqText, extractTextFromHtml, type Chunk } from "@dm-ai/rag";
 import { fetchWithRetry } from "../lib.js";
@@ -95,7 +95,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   runIngestFaq(parsed.docType, parsed.urls)
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error("Error:", err);
+      console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
       process.exit(1);
     });
 }

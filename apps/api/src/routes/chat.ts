@@ -3,6 +3,7 @@ import { streamSSE } from "hono/streaming";
 import { ChatRequestSchema } from "@dm-ai/core";
 import { runAgent, streamAgent, type AgentOutput } from "@dm-ai/agent";
 import { loadHistory, appendMessage, type StoredMessage } from "../conversation-store.js";
+import { toSafeErrorLog } from "@dm-ai/db";
 
 const chatRouter = new Hono();
 
@@ -134,7 +135,7 @@ chatRouter.post("/stream", async (c) => {
         }
       }
     } catch (err) {
-      console.error("[api/chat] ストリーミング中にエラー:", err);
+      console.error("[api/chat] ストリーミング中にエラー:", JSON.stringify(toSafeErrorLog(err)));
       // ヘッダは送信済みなので HTTP ステータスは変えられない。error イベントで伝える。
       await stream.writeSSE({
         event: "error",

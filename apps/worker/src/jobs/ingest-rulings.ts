@@ -25,7 +25,7 @@
  */
 import { pathToFileURL } from "node:url";
 import * as cheerio from "cheerio";
-import { getSql, closeDb } from "@dm-ai/db";
+import { getSql, closeDb, toSafeErrorLog } from "@dm-ai/db";
 import { embed } from "@dm-ai/core";
 import { sleep, fetchWithRetry } from "../lib.js";
 import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
@@ -334,7 +334,7 @@ export async function runIngestRulings(opts: { limit?: number; version?: string 
       if (buffer.length >= EMBED_FLUSH) await flush();
       await sleep(FETCH_DELAY_MS);
     } catch (err) {
-      console.warn(`スキップ ${item.link}: ${(err as Error).message}`);
+      console.warn(`スキップ ${item.link}: ${JSON.stringify(toSafeErrorLog(err))}`);
       skipped++;
     }
   }
@@ -396,7 +396,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   runIngestRulings(parseRulingsArgs(process.argv.slice(2)))
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error("Error:", err);
+      console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
       process.exit(1);
     });
 }
