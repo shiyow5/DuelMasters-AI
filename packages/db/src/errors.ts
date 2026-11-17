@@ -13,8 +13,8 @@
  *
  *   `cause` を 2 段以上ネストして包んだ例外 (例: アプリ側で DrizzleQueryError をさらに
  *   `new Error(..., { cause })` で包んだもの) からは SQLSTATE を取れず、null になる。
- *   その場合 apps/api の onError は DB 以外の例外として扱い、従来どおり例外本体をログに出す
- *   (params / query を含みうる)。現状そのように包む箇所は無い。tests/errors.test.ts で固定している。
+ *   その場合 apps/api の onError は DB 以外の例外として扱い、種別名と errorId だけをログに出す
+ *   (toSafeErrorLog)。tests/errors.test.ts で固定している。
  *
  * 分類に使うのは SQLSTATE 形式 (英大文字・数字 5 文字) の文字列だけ。
  * 5 文字英大文字の `code` を持つ DB 以外の例外 (Node の `EPIPE` 等) も SQLSTATE として扱う
@@ -29,12 +29,6 @@
 export const SQLSTATE_UNIQUE_VIOLATION = "23505";
 
 const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/;
-
-/**
- * 制約名として採用する形式。PostgreSQL の引用符なし識別子 (63 バイト以内)。
- * 制約名はスキーマ定義由来で入力値を含まないが、引用符付きの任意文字列は採用しない。
- */
-const CONSTRAINT_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_$]{0,62}$/;
 
 /** 分類結果。ログ・応答に出してよい固定の識別子。 */
 export type DbErrorKind = "unique_violation" | "unknown";
@@ -63,29 +57,7 @@ function asSqlState(value: unknown): string | null {
  * どんな値を渡しても throw しない。
  */
 export function getSqlState(err: unknown): string | null {
-  return findSqlStateSource(err)?.sqlstate ?? null;
-}
-
-/** SQLSTATE を採用した例外 (cause か本体) と、その値。優先順位は getSqlState と同じ。 */
-function findSqlStateSource(err: unknown): { source: unknown; sqlstate: string } | null {
-  const cause = readProp(err, "cause");
-  const fromCause = asSqlState(readProp(cause, "code"));
-  if (fromCause !== null) return { source: cause, sqlstate: fromCause };
-  const fromSelf = asSqlState(readProp(err, "code"));
-  if (fromSelf !== null) return { source: err, sqlstate: fromSelf };
-  return null;
-}
-
-/**
- * 例外から制約名を取り出す。SQLSTATE を採用したのと同じ例外の `constraint_name`
- * (postgres.js の PostgresError のフィールド) を見る。無い・形式が不正なら null。
- * どんな値を渡しても throw しない。
- */
-export function getConstraintName(err: unknown): string | null {
-  const found = findSqlStateSource(err);
-  if (found === null) return null;
-  const name = readProp(found.source, "constraint_name");
-  return typeof name === "string" && CONSTRAINT_NAME_PATTERN.test(name) ? name : null;
+  return asSqlState(readProp(readProp(err, "cause"), "code")) ?? asSqlState(readProp(err, "code"));
 }
 
 /** 例外を分類する。どんな値を渡しても throw しない。 */
@@ -99,24 +71,57 @@ export function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
- * ログに出してよい DB 例外の要約。値は固定の識別子・検証済み SQLSTATE・検証済み制約名だけ。
- * 障害調査で「どの制約に当たったか」を追えるよう、制約名 (constraint) を残す。
+ * ログに出してよい DB 例外の要約。値は固定の識別子と検証済み SQLSTATE だけ。
+ * 制約名 (constraint_name) は内部スキーマ構造をログ閲覧者に伝えるので出さない
+ * (#271/#272 事後セキュリティレビュー Low)。
  */
 export interface SafeDbErrorLog {
   event: "db_error";
   kind: DbErrorKind;
   sqlstate: string | null;
-  constraint: string | null;
 }
 
-/** 例外をログ用の要約にする。元例外の message・params・query・cause・stack・detail は含めない。 */
+/**
+ * 例外をログ用の要約にする。元例外の message・params・query・cause・stack・detail・
+ * constraint_name は含めない。
+ */
 export function toSafeDbErrorLog(err: unknown): SafeDbErrorLog {
   return {
     event: "db_error",
     kind: classifyDbError(err),
     sqlstate: getSqlState(err),
-    constraint: getConstraintName(err),
   };
+}
+
+/** ログ用の例外種別として採用する形式 (JS の識別子相当、64 文字以内)。 */
+const ERROR_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
+
+/**
+ * 例外の種別名を返す。`name` が識別子形式の文字列ならそれ、そうでなければ固定値。
+ * Error 以外 (文字列・数値など) が throw された場合は typeof を返す。どんな値でも throw しない。
+ * `name` は書き換え可能なので、形式に合わないもの (入力値が入りうる) は採用しない。
+ */
+export function getErrorName(err: unknown): string {
+  if (err === null || (typeof err !== "object" && typeof err !== "function")) {
+    return err === null ? "null" : typeof err;
+  }
+  const name = readProp(err, "name");
+  return typeof name === "string" && ERROR_NAME_PATTERN.test(name) ? name : "UnknownError";
+}
+
+/**
+ * DB 以外も含めた、ログに出してよい例外の要約。
+ * DB 例外 (SQLSTATE が取れるもの) は toSafeDbErrorLog の内容、それ以外は種別名だけ。
+ * どちらも errorId (呼び出しごとの乱数 ID) を付け、同一障害の複数ログ行を突き合わせられるようにする。
+ * 元例外の message・stack・cause は、入力値や接続情報を含みうるので出さない。
+ */
+export type SafeErrorLog =
+  (SafeDbErrorLog & { errorId: string }) | { event: "error"; name: string; errorId: string };
+
+/** 例外をログ用の要約にする。どんな値を渡しても throw しない。 */
+export function toSafeErrorLog(err: unknown, errorId: string = crypto.randomUUID()): SafeErrorLog {
+  if (getSqlState(err) !== null) return { ...toSafeDbErrorLog(err), errorId };
+  return { event: "error", name: getErrorName(err), errorId };
 }
 
 /** HTTP 応答に使う固定の本文。kind ごとに決め打ちで、例外の内容は入れない。 */

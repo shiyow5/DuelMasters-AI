@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from "hono";
-import { getSql } from "@dm-ai/db";
+import { getSql, toSafeErrorLog } from "@dm-ai/db";
 
 /**
  * /api/chat のユーザー単位・日次クォータ (F-1)。
@@ -73,7 +73,10 @@ export function dailyChatQuota(
       count = await counter(userId, quotaDay(now()));
     } catch (err) {
       // #260 L-6: fail-open 検知 → アラート用ログ (監視が検出可能)
-      console.error("[api] QUOTA_FAIL_OPEN 日次クォータのカウント失敗 (通過させる):", err);
+      console.error(
+        "[api] QUOTA_FAIL_OPEN 日次クォータのカウント失敗 (通過させる):",
+        JSON.stringify(toSafeErrorLog(err)),
+      );
       return next();
     }
     if (count > DAILY_CHAT_LIMIT) return c.json(DAILY_QUOTA_EXCEEDED, 429);
