@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const getUserMock = vi.fn();
-vi.mock("@dm-ai/db", () => ({
+vi.mock("@dm-ai/db", async (importOriginal) => ({
+  // chat.ts / card.ts / meta.ts が toSafeErrorLog を import するので実物を残す (#294)。
+  toSafeErrorLog: (await importOriginal<typeof import("@dm-ai/db")>()).toSafeErrorLog,
   getSupabase: () => ({ auth: { getUser: getUserMock } }),
   configureDb: () => {},
   getSql: () => {

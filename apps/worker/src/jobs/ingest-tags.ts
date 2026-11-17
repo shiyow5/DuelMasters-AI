@@ -3,7 +3,7 @@
  * ルールで1個以上付けば採用、0個のカードのみ Gemini でまとめて推定する。
  */
 import { pathToFileURL } from "node:url";
-import { getSql, closeDb } from "@dm-ai/db";
+import { getSql, closeDb, toSafeErrorLog } from "@dm-ai/db";
 import {
   generateStructured,
   Type,
@@ -141,7 +141,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   runIngestTags({ onlyEmpty: !process.argv.includes("--all") })
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error("Error:", err);
+      console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
       process.exit(1);
     });
 }

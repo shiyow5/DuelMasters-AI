@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { getSql } from "@dm-ai/db";
+import { getSql, toSafeErrorLog } from "@dm-ai/db";
 import { resolveMainCards } from "../main-card.js";
 import {
   FORMATS,
@@ -325,7 +325,10 @@ metaRouter.get("/tier", async (c) => {
       snapshot_created_at: new Date(snapshots[0].created_at as string | Date).toISOString(),
     });
   } catch (err) {
-    console.error("[api/meta] tier 取得に失敗 (フォールバック応答を返します):", err);
+    console.error(
+      "[api/meta] tier 取得に失敗 (フォールバック応答を返します):",
+      JSON.stringify(toSafeErrorLog(err)),
+    );
     // DB未接続の場合は空データを返す
     return c.json({
       format,
@@ -406,7 +409,10 @@ metaRouter.get("/archetype/:name", async (c) => {
       recent_results: results,
     });
   } catch (err) {
-    console.error("[api/meta] archetype 取得に失敗 (フォールバック応答を返します):", err);
+    console.error(
+      "[api/meta] archetype 取得に失敗 (フォールバック応答を返します):",
+      JSON.stringify(toSafeErrorLog(err)),
+    );
     return c.json({
       archetype: name,
       format,
@@ -442,7 +448,7 @@ metaRouter.post("/ingest/url", requireInternal, async (c) => {
   try {
     html = await fetchPublicPage(url);
   } catch (err) {
-    console.error("[api/meta] ページ取得失敗:", err);
+    console.error("[api/meta] ページ取得失敗:", JSON.stringify(toSafeErrorLog(err)));
     return c.json({ error: "ページを取得できませんでした" }, 502);
   }
 
@@ -450,7 +456,7 @@ metaRouter.post("/ingest/url", requireInternal, async (c) => {
   try {
     extracted = await extractTournament(extractTextFromHtml(html));
   } catch (err) {
-    console.error("[api/meta] 大会結果抽出失敗:", err);
+    console.error("[api/meta] 大会結果抽出失敗:", JSON.stringify(toSafeErrorLog(err)));
     return c.json({ error: "大会結果を抽出できませんでした" }, 422);
   }
 

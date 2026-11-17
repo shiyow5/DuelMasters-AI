@@ -47,7 +47,7 @@
 import { pathToFileURL } from "node:url";
 import { writeFile } from "node:fs/promises";
 import { z } from "zod";
-import { getSql, closeDb } from "@dm-ai/db";
+import { getSql, closeDb, toSafeErrorLog } from "@dm-ai/db";
 import { generateStructured, embedSingle, Type } from "@dm-ai/core";
 
 /** 総合ルールの1条文。 */
@@ -426,7 +426,9 @@ export async function runAuditRulings(
       articles = await fetchRelatedArticles(sql, ruling.id);
     } catch (err) {
       errors++;
-      console.warn(`  qa_id ${ruling.qaId}: 条文の取得に失敗 ${(err as Error).message}`);
+      console.warn(
+        `  qa_id ${ruling.qaId}: 条文の取得に失敗 ${JSON.stringify(toSafeErrorLog(err))}`,
+      );
       return;
     }
     if (articles.length === 0) return;
@@ -439,7 +441,9 @@ export async function runAuditRulings(
     } catch (err) {
       // 検証できなかったものは落とす (安全側)。握りつぶさず数える。
       errors++;
-      console.warn(`  qa_id ${ruling.qaId}: 判定失敗のため不採用 ${(err as Error).message}`);
+      console.warn(
+        `  qa_id ${ruling.qaId}: 判定失敗のため不採用 ${JSON.stringify(toSafeErrorLog(err))}`,
+      );
       return;
     }
     judged++;
@@ -610,7 +614,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   run
     .then((code) => process.exit(code))
     .catch((err) => {
-      console.error("Error:", err);
+      console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
       process.exit(1);
     });
 }

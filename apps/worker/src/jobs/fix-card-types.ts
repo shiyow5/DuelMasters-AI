@@ -2,7 +2,7 @@
  * 既存 cards.type を CardType enum に正規化する補正スクリプト。
  * 変換できた行のみ UPDATE し、変換不能な種別は件数を列挙して残す。
  */
-import { getSql, closeDb } from "@dm-ai/db";
+import { getSql, closeDb, toSafeErrorLog } from "@dm-ai/db";
 import { normalizeCardType } from "../card-type-map.js";
 
 async function main() {
@@ -33,6 +33,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Error:", err);
+  console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
   process.exit(1);
 });

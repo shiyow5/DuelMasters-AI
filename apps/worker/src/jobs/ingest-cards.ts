@@ -8,7 +8,7 @@
  */
 import { pathToFileURL } from "node:url";
 import * as cheerio from "cheerio";
-import { getSql, closeDb } from "@dm-ai/db";
+import { getSql, closeDb, toSafeErrorLog } from "@dm-ai/db";
 import { OFFICIAL_SITE_BASE_URL } from "../constants.js";
 import { sleep, fetchWithRetry } from "../lib.js";
 import { normalizeCardType } from "../card-type-map.js";
@@ -249,7 +249,7 @@ export async function crawlCards(deps: CrawlDeps, opts: CardsOptions = {}): Prom
       try {
         ids = await deps.fetchListIds(page);
       } catch (err) {
-        warn(`ページ ${page} 一覧取得失敗: ${(err as Error).message}`);
+        warn(`ページ ${page} 一覧取得失敗: ${JSON.stringify(toSafeErrorLog(err))}`);
         stop = "list-error";
         break pageLoop;
       }
@@ -276,7 +276,7 @@ export async function crawlCards(deps: CrawlDeps, opts: CardsOptions = {}): Prom
           inserted++;
         }
       } catch (err) {
-        warn(`カード ${id} 取得失敗: ${(err as Error).message}`);
+        warn(`カード ${id} 取得失敗: ${JSON.stringify(toSafeErrorLog(err))}`);
       }
       if (opts.limit && inserted >= opts.limit) {
         stop = "limit";
@@ -374,7 +374,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     opts = parseCardsArgs(process.argv.slice(2));
   } catch (err) {
-    console.error((err as Error).message);
+    console.error(JSON.stringify(toSafeErrorLog(err)));
     console.error(
       "使用法: tsx src/jobs/ingest-cards.ts [limit] [--full | --list-only] [--start-page N] [--max-pages M]",
     );
@@ -385,7 +385,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     // 途中のページでの一覧取得失敗は従来どおり warning で終える。
     .then((r) => process.exit(r.stop === "list-error" && r.pages === 0 ? 1 : 0))
     .catch((err) => {
-      console.error("Error:", err);
+      console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
       process.exit(1);
     });
 }

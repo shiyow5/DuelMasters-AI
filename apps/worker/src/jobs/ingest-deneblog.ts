@@ -16,7 +16,7 @@
  * リクエスト間に 1 秒のウェイト、識別可能な User-Agent。
  */
 import { pathToFileURL } from "node:url";
-import { getSql, closeDb } from "@dm-ai/db";
+import { getSql, closeDb, toSafeErrorLog } from "@dm-ai/db";
 import { sleep } from "../lib.js";
 
 const SITE_BASE_URL = "https://deneblog.jp";
@@ -255,7 +255,10 @@ export async function runIngestDeneblog(
     try {
       html = await fetchPage(url);
     } catch (err) {
-      console.error(`[deneblog] 一覧ページの取得に失敗 (以降を打ち切ります): ${url}`, err);
+      console.error(
+        `[deneblog] 一覧ページの取得に失敗 (以降を打ち切ります): ${url}`,
+        JSON.stringify(toSafeErrorLog(err)),
+      );
       break;
     }
 
@@ -279,7 +282,7 @@ export async function runIngestDeneblog(
     try {
       body = parseRecipeBody(await fetchPage(url));
     } catch (err) {
-      console.error(`[deneblog] 記事の取得に失敗: ${url}`, err);
+      console.error(`[deneblog] 記事の取得に失敗: ${url}`, JSON.stringify(toSafeErrorLog(err)));
       skipped++;
       // 失敗時こそ待つ。ここで continue して即次を叩くと、相手が不調なときに
       // ウェイト無しで連打することになる。
@@ -373,7 +376,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exit(0);
     })
     .catch((err) => {
-      console.error("Error:", err);
+      console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
       process.exit(1);
     });
 }

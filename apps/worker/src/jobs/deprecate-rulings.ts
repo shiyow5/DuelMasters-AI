@@ -10,7 +10,7 @@
  * DB に残り続けて戻せなくなる (= 実質「削除」と同じ不可逆性になる)。
  */
 import { pathToFileURL } from "node:url";
-import { getSql, closeDb } from "@dm-ai/db";
+import { getSql, closeDb, toSafeErrorLog } from "@dm-ai/db";
 import { DEPRECATED_RULINGS, type DeprecatedRuling } from "../data/deprecated-rulings.js";
 
 type Sql = ReturnType<typeof getSql>;
@@ -87,7 +87,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   runDeprecateRulings()
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error("Error:", err);
+      console.error("Error:", JSON.stringify(toSafeErrorLog(err)));
       process.exit(1);
     });
 }

@@ -1,4 +1,4 @@
-import { getSql } from "@dm-ai/db";
+import { getSql, toSafeErrorLog } from "@dm-ai/db";
 
 /**
  * カード名 → 画像URL (#129)。
@@ -59,7 +59,7 @@ export async function resolveCardImages(names: string[]): Promise<Map<string, st
     // DB 未接続でも落とさない。全 null で返し、UI はカード名テキストにフォールバックする。
     console.warn(
       "カード画像の解決に失敗したため、画像なしで返します:",
-      err instanceof Error ? err.message : err,
+      JSON.stringify(toSafeErrorLog(err)),
     );
   }
   return out;
