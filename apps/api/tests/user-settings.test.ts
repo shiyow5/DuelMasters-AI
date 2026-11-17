@@ -11,7 +11,7 @@ function makeApp() {
   return app;
 }
 
-const INTERNAL = { "X-Internal-Key": "test-key", "X-User-Id": "discord:me" };
+const INTERNAL = { "X-Internal-Key": "test-key", "X-User-Id": "discord:2001" };
 
 function put(body: unknown) {
   return makeApp().request("/api/user/settings", {

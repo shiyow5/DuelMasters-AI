@@ -30,7 +30,7 @@ describe.skipIf(!hasTestDb)("resolveCardImages (統合)", () => {
         headers: {
           "Content-Type": "application/json",
           "X-Internal-Key": "test-key",
-          "X-User-Id": "test",
+          "X-User-Id": "discord:1",
         },
         body: JSON.stringify(body),
       },

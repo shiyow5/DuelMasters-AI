@@ -15,6 +15,12 @@ function getInternalApiKey(c: Context): string | undefined {
 }
 
 /**
+ * 内部キー経由で受け付ける X-User-Id の許可形式 (bot の Discord ID 名前空間)。
+ * `discord:` + 数字 (snowflake) のみ。`supabase:` 等の他名前空間は拒否する (#256 L-2)。
+ */
+const INTERNAL_USER_ID_PATTERN = /^discord:[0-9]{1,32}$/;
+
+/**
  * 認証を試みて userId を設定する (無認証でも通す)。
  * - X-Internal-Key 一致: userId = X-User-Id (Bot/内部サービス)
  * - Authorization: Bearer <token>: Supabase で検証し userId = supabase:<id>
@@ -29,9 +35,10 @@ export const optionalAuth: MiddlewareHandler = async (c, next) => {
       return c.json({ error: "内部APIキーが不正です" }, 401);
     }
     // X-User-Id は X-Internal-Key が正しい場合のみ信用する
-    // #256 L-2: supabase: プレフィックスは内部利用専用。外部からは受け付けない
+    // #256 L-2: 名前空間を discord:<数字> に限定 (supabase: なりすまし防止)。
+    // ヘッダ無しは許可 (ingest 等 userId 不要の内部呼び出し)。値は応答・ログに出さない。
     const rawUserId = c.req.header("x-user-id");
-    if (rawUserId?.startsWith("supabase:")) {
+    if (rawUserId !== undefined && !INTERNAL_USER_ID_PATTERN.test(rawUserId)) {
       return c.json({ error: "不正なユーザーID形式です" }, 401);
     }
     c.set("userId", rawUserId ?? null);

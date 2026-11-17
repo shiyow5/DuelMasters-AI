@@ -21,7 +21,7 @@ vi.mock("@dm-ai/db", () => ({
 const { optionalAuth } = await import("../src/middleware/auth.js");
 const { deckRouter } = await import("../src/routes/deck.js");
 
-const HEADERS = { "X-Internal-Key": "test-key", "X-User-Id": "discord:me" };
+const HEADERS = { "X-Internal-Key": "test-key", "X-User-Id": "discord:2001" };
 
 function makeApp() {
   const app = new Hono();

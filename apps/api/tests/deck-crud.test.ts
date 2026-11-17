@@ -11,8 +11,8 @@ function makeApp() {
   return app;
 }
 
-const INTERNAL = { "X-Internal-Key": "test-key", "X-User-Id": "discord:me" };
-const OTHER = { "X-Internal-Key": "test-key", "X-User-Id": "discord:other" };
+const INTERNAL = { "X-Internal-Key": "test-key", "X-User-Id": "discord:2001" };
+const OTHER = { "X-Internal-Key": "test-key", "X-User-Id": "discord:2002" };
 
 // --- 認証ゲート (DB 不要) ---
 describe("deck CRUD 認証ゲート", () => {
@@ -63,7 +63,7 @@ describe.skipIf(!hasTestDb)("deck CRUD (統合)", () => {
     );
     expect(res.status).toBe(201);
     const rows = await sql`SELECT user_id, scores FROM decks`;
-    expect(rows[0].user_id).toBe("discord:me");
+    expect(rows[0].user_id).toBe("discord:2001");
     expect(typeof (rows[0].scores as Record<string, unknown>).overall).toBe("number");
   });
 
