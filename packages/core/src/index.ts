@@ -6,3 +6,4 @@ export * from "./archetype.js";
 export * from "./archetype-name.js";
 export * from "./card-name.js";
 export * from "./like.js";
+export * from "./error-name.js";

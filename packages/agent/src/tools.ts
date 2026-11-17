@@ -27,7 +27,7 @@ import {
   type RegulationCheck,
   type RestrictedInDeck,
 } from "@dm-ai/deck-engine";
-import { getSql } from "@dm-ai/db";
+import { getSql, toSafeErrorLog } from "@dm-ai/db";
 import { buildCardSearchArgs, normalizeCardName } from "./card-search.js";
 import { citationsFromChunks } from "./citations.js";
 import type { Citation } from "./state.js";
@@ -198,7 +198,10 @@ async function findCardNamesLike(names: readonly string[]): Promise<string[] | n
     }
     return [...out];
   } catch (err) {
-    console.error("[agent] check_regulation: cards の参照に失敗:", err);
+    console.error(
+      "[agent] check_regulation: cards の参照に失敗:",
+      JSON.stringify(toSafeErrorLog(err)),
+    );
     return null;
   }
 }
@@ -443,7 +446,10 @@ export async function runTool(
         return { text: `不明なツール: ${name}`, ok: false };
     }
   } catch (err) {
-    console.error(`[agent] ツール実行エラー (${name}):`, err);
+    console.error(
+      "[agent] ツール実行エラー:",
+      JSON.stringify({ tool: name, ...toSafeErrorLog(err) }),
+    );
     // **ここで捏造を止める。** 以前は「エラーが発生しました」とだけ返しており、モデルは
     // それを「ツールが使えないので記憶で答えよう」と解釈して**誤ったカードテキストを創作した**
     // (本番で《ヘブンズ・ゲート》を「コスト7以上のブロッカーを2体」と誤答。#112)。

@@ -25,6 +25,8 @@
  * 元例外・message・params・query・cause・stack は、入力値や接続情報を含みうるので出さない。
  */
 
+import { getErrorName } from "@dm-ai/core";
+
 /** 一意制約違反 (unique_violation) の SQLSTATE。 */
 export const SQLSTATE_UNIQUE_VIOLATION = "23505";
 
@@ -93,21 +95,11 @@ export function toSafeDbErrorLog(err: unknown): SafeDbErrorLog {
   };
 }
 
-/** ログ用の例外種別として採用する形式 (JS の識別子相当、64 文字以内)。 */
-const ERROR_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
-
 /**
- * 例外の種別名を返す。`name` が識別子形式の文字列ならそれ、そうでなければ固定値。
- * Error 以外 (文字列・数値など) が throw された場合は typeof を返す。どんな値でも throw しない。
- * `name` は書き換え可能なので、形式に合わないもの (入力値が入りうる) は採用しない。
+ * 例外の種別名。実装は `@dm-ai/core` (DB に依存しないアプリでも使うため。#311)。
+ * 既存の import 元を変えないよう、ここからも再 export する。
  */
-export function getErrorName(err: unknown): string {
-  if (err === null || (typeof err !== "object" && typeof err !== "function")) {
-    return err === null ? "null" : typeof err;
-  }
-  const name = readProp(err, "name");
-  return typeof name === "string" && ERROR_NAME_PATTERN.test(name) ? name : "UnknownError";
-}
+export { getErrorName };
 
 /**
  * DB 以外も含めた、ログに出してよい例外の要約。

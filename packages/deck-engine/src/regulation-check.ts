@@ -1,5 +1,5 @@
 import { MAX_COPIES, type Format } from "@dm-ai/core";
-import { getSql } from "@dm-ai/db";
+import { getSql, toSafeErrorLog } from "@dm-ai/db";
 import type { ParsedDeck } from "./parser.js";
 import { mergeEntriesByName, regulationNameKey, twinpactSideKeys } from "./card-name.js";
 import {
@@ -86,7 +86,10 @@ export async function loadRegulations(format: Format): Promise<RegulationsLoad> 
       fetchedAt: latest ? latest.toISOString().slice(0, 10) : null,
     };
   } catch (err) {
-    console.error("[deck-engine] regulations の読み込みに失敗:", err);
+    console.error(
+      "[deck-engine] regulations の読み込みに失敗:",
+      JSON.stringify(toSafeErrorLog(err)),
+    );
     return { ok: false, reason: "殿堂データベースに接続できませんでした" };
   }
 }
