@@ -18,7 +18,7 @@
 1. Cloudflare ダッシュボード → Workers & Pages → `dm-ai-api` → **Logs** (Observability)。
 2. 期間を指定する (直近 10分 / 1時間 / 24時間)。
 3. 検索欄に `QUOTA_FAIL_OPEN` を入力する (文字列検索)。必要なら Level = `error` で絞る。
-4. ヒット件数を確認する。同じ `errorId` / `sqlstate` が続くなら同一原因、複数種類なら複数の障害を疑う。`db_error` で絞ると DB 系に限定できる。
+4. ヒット件数を確認する。`errorId` は毎回新規のため同一性の判定には使わない。`kind` / `sqlstate` / `event` が同じなら同一原因、複数種類なら複数の障害を疑う。`db_error` で絞ると DB 系に限定できる。
 
 ※ 画面の項目名は Cloudflare 側の更新で変わりうる。見つからない場合は Logs 画面の検索機能を使う。
 参考: `wrangler tail dm-ai-api --search QUOTA_FAIL_OPEN` でもリアルタイムに確認できる
@@ -44,4 +44,4 @@
 ## 4. アラート化の状況
 
 - **Cloudflare 通知 (自動アラート): 未設定・承認待ち。** 現状は上記の手動確認のみ。
-- ログ形式の構造化 (`event` フィールド化) は未実施。必要になれば別 PR で検討する。
+- ログ形式の変更 (検索用の専用フィールド追加など) は未実施。必要になれば別 PR で検討する。
