@@ -5,7 +5,9 @@ import { Hono } from "hono";
  * /api/chat の日次クォータ (F-1)。カウンタは mock (DB での UPSERT は daily-quota-db.test.ts)。
  */
 
-vi.mock("@dm-ai/db", () => ({
+vi.mock("@dm-ai/db", async (importOriginal) => ({
+  // ログ要約は実装をそのまま使う (DB には触れない)
+  toSafeErrorLog: (await importOriginal<typeof import("@dm-ai/db")>()).toSafeErrorLog,
   getSql: () => {
     throw new Error("カウンタは mock なので DB には到達しないはず");
   },
@@ -102,6 +104,20 @@ describe("dailyChatQuota", () => {
     });
     expect((await post(app, "supabase:u1")).status).toBe(200);
     expect(console.error).toHaveBeenCalled();
+  });
+
+  it("fail-open のログは QUOTA_FAIL_OPEN と種別名・errorId だけで、例外の message を出さない", async () => {
+    const marker = "SYNTH_MARKER_quota_5c1a";
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const app = makeApp(async () => {
+      throw new Error(`connect failed ${marker}`);
+    });
+    expect((await post(app, "supabase:u1")).status).toBe(200);
+    const logged = spy.mock.calls.map((args) => args.map(String).join(" ")).join("\n");
+    expect(logged).toContain("QUOTA_FAIL_OPEN");
+    expect(logged).toContain('"name":"Error"');
+    expect(logged).toMatch(/"errorId":"[0-9a-f-]{36}"/);
+    expect(logged).not.toContain(marker);
   });
 });
 

@@ -7,7 +7,7 @@
  * ここではデネブログが書いていることをそのまま返す。
  */
 import { Hono } from "hono";
-import { getSql } from "@dm-ai/db";
+import { getSql, toSafeErrorLog } from "@dm-ai/db";
 import { likeContains } from "@dm-ai/core";
 
 const recipesRouter = new Hono();
@@ -82,7 +82,7 @@ recipesRouter.get("/", async (c) => {
       offset,
     });
   } catch (err) {
-    console.error("デッキレシピ一覧の取得に失敗:", err);
+    console.error("デッキレシピ一覧の取得に失敗:", JSON.stringify(toSafeErrorLog(err)));
     return c.json({ error: "デッキレシピを取得できませんでした" }, 500);
   }
 });

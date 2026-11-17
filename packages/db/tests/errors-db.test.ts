@@ -4,7 +4,6 @@ import { getDb, runWithSql } from "../src/client.js";
 import { userSettings } from "../src/schema.js";
 import {
   classifyDbError,
-  getConstraintName,
   getSqlState,
   toDbErrorResponse,
   toSafeDbErrorLog,
@@ -39,9 +38,8 @@ describe.skipIf(!hasTestDb)("DB 例外の正規化 (統合)", () => {
 
     expect(getSqlState(err)).toBe("23505");
     expect(classifyDbError(err)).toBe("unique_violation");
-    // 障害調査用に制約名がログ要約に残る (PostgreSQL 既定の主キー制約名)。
-    expect(getConstraintName(err)).toBe("user_settings_pkey");
-    expect(toSafeDbErrorLog(err).constraint).toBe("user_settings_pkey");
+    // 制約名 (内部スキーマ識別子) はログ要約に出さない。
+    expect(JSON.stringify(toSafeDbErrorLog(err))).not.toContain("user_settings_pkey");
     expect(JSON.stringify(toSafeDbErrorLog(err))).not.toContain(MARKER);
     expect(toDbErrorResponse(err).status).toBe(409);
     expect(JSON.stringify(toDbErrorResponse(err))).not.toContain(MARKER);
@@ -55,7 +53,6 @@ describe.skipIf(!hasTestDb)("DB 例外の正規化 (統合)", () => {
 
     expect(getSqlState(err)).toBe("22001");
     expect(classifyDbError(err)).toBe("unknown");
-    expect(toSafeDbErrorLog(err).constraint).toBeNull();
     expect(JSON.stringify(toSafeDbErrorLog(err))).not.toContain(MARKER);
     expect(toDbErrorResponse(err).status).toBe(500);
     expect(JSON.stringify(toDbErrorResponse(err))).not.toContain(MARKER);
