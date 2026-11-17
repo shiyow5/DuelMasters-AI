@@ -235,7 +235,86 @@ POST /api/chat
 }
 ```
 
-`mode`: `"integrated"` | `"rule"` | `"deck"` | `"meta"`
+`mode`: `"integrated"` | `"rule"` | `"deck"` | `"meta"`(省略時 `"integrated"`)。
+任意項目: `format`(フォーマット)、`conversationId`(uuid。指定すると履歴を DB から読み、発言を DB に保存する。他人の会話・存在しない ID は 404 `{ "error": "会話が見つかりません" }`)。
+`conversationId` がある場合、またはログイン済みの場合、クライアントが送る `history` は使われない(履歴はサーバ側が正)。
+
+レスポンス: `{ response, citations, toolCalls, mode }`。会話に保存した場合は `messageId` も付く。
+
+```
+POST /api/chat/stream
+```
+
+リクエストは `POST /api/chat` と同じ。SSE (`text/event-stream`) で次のイベントを流す。
+
+| event   | 内容                                                                               |
+| ------- | ---------------------------------------------------------------------------------- |
+| `token` | 回答の断片(進行表示専用)                                                           |
+| `tool`  | ツール実行開始(クライアントはここまでの `token` を捨てる)                          |
+| `done`  | 確定結果。`POST /api/chat` と同じ形。**表示する回答はこれを使う**                  |
+| `saved` | 会話に保存した回答の `{ "messageId": "..." }`(`conversationId` 指定かつログイン時) |
+| `error` | 生成失敗。`{ "message": "回答の生成に失敗しました" }`                              |
+
+検証エラー (400) と会話不在 (404) はストリームを開く前に通常の JSON で返る。
+
+### エラー形式
+
+リクエストボディの検証に失敗すると 400 を返す。
+
+```json
+{ "error": "リクエストが不正です", "details": ["message: message は必須です"] }
+```
+
+`details` は `"<項目パス>: <メッセージ>"` の配列。`/api/conversations` 系の 400 は `details` を含まず `{ "error": "リクエストが不正です" }` のみ。
+予期しない例外は 500 `{ "error": "内部エラーが発生しました" }`、DB の一意制約違反は 409。
+
+### カード
+
+```
+POST /api/card/resolve
+```
+
+```json
+{ "names": ["ボルシャック・ドラゴン", "ナチュラル・トラップ"] }
+```
+
+`names` は 1〜200 件(各 1〜200 文字)。レスポンス: `{ "cards": [{ "name": "...", "image_url": "https://... または null" }] }`。
+引けない名前は `image_url: null`。
+
+### デッキレシピ
+
+```
+GET /api/recipes?q=&limit=&offset=
+```
+
+CS 入賞デッキレシピの一覧(新着順)。`q` はデッキ名・大会名の部分一致(100 文字まで)、`limit` は既定 24・最大 60、`offset` は既定 0・最大 100000。
+不正な数値は 400 にせず既定値に落とし、上限超えは上限に丸める。
+
+レスポンス: `{ recipes: [{ source_url, posted_date, event_name, placement_label, deck_name, player, participants, decklist_image_url }], total, limit, offset }`。取得失敗は 500 `{ "error": "デッキレシピを取得できませんでした" }`。
+
+### 会話履歴
+
+全て要認証。自分の会話だけが対象で、他人の会話・不正な ID は 403 ではなく 404 `{ "error": "会話が見つかりません" }` を返す。
+
+```
+GET    /api/conversations                                 # 一覧 (新しい順・最大100件)
+POST   /api/conversations                                 # 作成
+GET    /api/conversations/:id                             # 取得 (メッセージ込み・直近200件)
+PATCH  /api/conversations/:id                             # タイトル変更
+DELETE /api/conversations/:id                             # 削除 (メッセージも削除)
+POST   /api/conversations/:id/messages                    # メッセージ追記
+PUT    /api/conversations/:id/messages/:messageId/feedback # 役に立った / 立たなかった
+```
+
+| エンドポイント                          | リクエスト body                                                                                                   | レスポンス                                                                                                                     |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /`                                 | なし                                                                                                              | `{ conversations: [{ id, title, mode, created_at, updated_at, message_count }] }`                                              |
+| `POST /`                                | `{ title(1〜200文字), mode? }`(`mode` 省略時 `"integrated"`)                                                      | 201 `{ id, title, mode, created_at, updated_at }`                                                                              |
+| `GET /:id`                              | なし                                                                                                              | `{ id, title, mode, created_at, updated_at, messages: [{ id, role, content, citations?, toolCalls?, helpful?, created_at }] }` |
+| `PATCH /:id`                            | `{ title(1〜200文字) }`                                                                                           | `{ id, title, mode, updated_at }`                                                                                              |
+| `DELETE /:id`                           | なし                                                                                                              | `{ ok: true }`                                                                                                                 |
+| `POST /:id/messages`                    | `{ role: "user"｜"assistant", content(1〜32000文字), citations?(最大50), toolCalls?(最大20, 各 { name, args }) }` | 201 `{ id, role, content, created_at }`                                                                                        |
+| `PUT /:id/messages/:messageId/feedback` | `{ helpful: boolean }`(押し直しは上書き)                                                                          | `{ ok: true }`(メッセージ不在は 404 `{ "error": "メッセージが見つかりません" }`)                                               |
 
 ### デッキ
 

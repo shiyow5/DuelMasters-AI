@@ -639,6 +639,11 @@ curl -X POST http://localhost:3001/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"S・トリガーとは？","mode":"rule"}'
 
+# チャットAPI (SSE ストリーミング。-N でバッファリングを無効化)
+curl -N -X POST http://localhost:3001/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"message":"S・トリガーとは？","mode":"rule"}'
+
 # デッキ評価API（デッキリストのパース）
 curl -X POST http://localhost:3001/api/deck/parse \
   -H "Content-Type: application/json" \
