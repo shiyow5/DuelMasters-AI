@@ -21,9 +21,9 @@
     "@dm-ai/db": "workspace:*",
     "@dm-ai/deck-engine": "workspace:*",
     "@dm-ai/rag": "workspace:*",
-    "@langchain/core": "^1.4.1",
+    "@langchain/core": "^1.4.2",
     "@langchain/google-genai": "^2.3.6",
-    "@langchain/langgraph": "^1.7.4",
+    "@langchain/langgraph": "^1.7.5",
     "zod": "^4.6.7"
   },
   "devDependencies": {
